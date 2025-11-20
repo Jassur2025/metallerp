@@ -10,7 +10,15 @@ const PURCHASES_KEY = 'metal_erp_purchases';
 
 const DEFAULT_SETTINGS: AppSettings = {
   vatRate: 12, // 12% VAT
-  defaultExchangeRate: DEFAULT_EXCHANGE_RATE
+  defaultExchangeRate: DEFAULT_EXCHANGE_RATE,
+  modules: {
+    dashboard: true,
+    inventory: true,
+    import: true,
+    sales: true,
+    reports: true,
+    balance: true
+  }
 };
 
 export const storageService = {
@@ -40,34 +48,34 @@ export const storageService = {
   },
 
   getExpenses: (): Expense[] => {
-      const stored = localStorage.getItem(EXPENSES_KEY);
-      if (!stored) {
-          return INITIAL_EXPENSES;
-      }
-      return JSON.parse(stored);
+    const stored = localStorage.getItem(EXPENSES_KEY);
+    if (!stored) {
+      return INITIAL_EXPENSES;
+    }
+    return JSON.parse(stored);
   },
 
   saveExpenses: (expenses: Expense[]) => {
-      localStorage.setItem(EXPENSES_KEY, JSON.stringify(expenses));
+    localStorage.setItem(EXPENSES_KEY, JSON.stringify(expenses));
   },
 
   getPurchases: (): Purchase[] => {
-      const stored = localStorage.getItem(PURCHASES_KEY);
-      if (!stored) {
-          return INITIAL_PURCHASES;
-      }
-      return JSON.parse(stored);
+    const stored = localStorage.getItem(PURCHASES_KEY);
+    if (!stored) {
+      return INITIAL_PURCHASES;
+    }
+    return JSON.parse(stored);
   },
 
   savePurchases: (purchases: Purchase[]) => {
-      localStorage.setItem(PURCHASES_KEY, JSON.stringify(purchases));
+    localStorage.setItem(PURCHASES_KEY, JSON.stringify(purchases));
   },
 
   getSettings: (): AppSettings => {
     const stored = localStorage.getItem(SETTINGS_KEY);
     if (!stored) {
-        localStorage.setItem(SETTINGS_KEY, JSON.stringify(DEFAULT_SETTINGS));
-        return DEFAULT_SETTINGS;
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(DEFAULT_SETTINGS));
+      return DEFAULT_SETTINGS;
     }
     return JSON.parse(stored);
   },
@@ -75,12 +83,12 @@ export const storageService = {
   saveSettings: (settings: AppSettings) => {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
   },
-  
+
   reset: () => {
-      localStorage.removeItem(PRODUCTS_KEY);
-      localStorage.removeItem(ORDERS_KEY);
-      localStorage.removeItem(SETTINGS_KEY);
-      localStorage.removeItem(EXPENSES_KEY);
-      localStorage.removeItem(PURCHASES_KEY);
+    localStorage.removeItem(PRODUCTS_KEY);
+    localStorage.removeItem(ORDERS_KEY);
+    localStorage.removeItem(SETTINGS_KEY);
+    localStorage.removeItem(EXPENSES_KEY);
+    localStorage.removeItem(PURCHASES_KEY);
   }
 };

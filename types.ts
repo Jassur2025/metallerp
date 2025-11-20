@@ -16,6 +16,14 @@ export enum Unit {
 export interface AppSettings {
   vatRate: number; // Percentage (e.g. 12)
   defaultExchangeRate: number;
+  modules?: {
+    dashboard: boolean;
+    inventory: boolean;
+    import: boolean;
+    sales: boolean;
+    reports: boolean;
+    balance: boolean;
+  };
 }
 
 export interface Product {
@@ -29,6 +37,7 @@ export interface Product {
   pricePerUnit: number; // Base currency (USD) - Selling Price
   costPrice: number; // Base currency (USD) - Weighted Average Cost
   minStockLevel: number;
+  origin?: 'import' | 'local'; // New field: Origin of the product
 }
 
 export interface OrderItem {
@@ -45,26 +54,34 @@ export interface Order {
   id: string;
   date: string;
   customerName: string;
-  sellerName?: string; // Added: Who made the sale
+  sellerName: string; // Added: Who made the sale
   items: OrderItem[];
-  
+
   // Financials
-  subtotalAmount: number; // USD before tax
+  subtotalAmount: number; // USD
   vatRateSnapshot: number; // VAT % at time of sale
-  vatAmount: number; // USD tax amount
-  totalAmount: number; // USD total (Subtotal + VAT)
-  
+  vatAmount: number; // USD
+  totalAmount: number; // USD
+
   exchangeRate: number; // Rate at time of sale (USD -> UZS)
   totalAmountUZS: number; // Sales currency (UZS)
-  status: 'completed' | 'pending' | 'cancelled';
+  status: 'pending' | 'completed' | 'cancelled';
+
+  // Payment Info
+  paymentMethod: 'cash' | 'bank' | 'card' | 'debt';
+  paymentStatus: 'paid' | 'unpaid' | 'partial';
+  paymentCurrency?: 'USD' | 'UZS'; // New field for cash currency
+  amountPaid: number; // Amount actually paid (USD)
 }
 
 export interface Expense {
   id: string;
   date: string;
-  category: string; // e.g. Rent, Salary, Logistics, Purchase
-  amount: number; // USD
   description: string;
+  amount: number; // USD
+  category: string;
+  paymentMethod: 'cash' | 'bank' | 'card';
+  currency: 'USD' | 'UZS';
 }
 
 export interface PurchaseOverheads {

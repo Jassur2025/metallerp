@@ -169,11 +169,18 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts }) =
             <tbody className="divide-y divide-slate-700">
               {filteredProducts.map((product) => (
                 <tr key={product.id} className="hover:bg-slate-700/30 transition-colors">
-                  <td className="px-6 py-4 font-medium text-white">{product.name}</td>
+                  <td className="px-6 py-4 font-medium text-white">
+                    <div>{product.name}</div>
+                    {product.origin === 'import' && (
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-500/10 text-purple-400 border border-purple-500/20 mt-1">
+                        ИМПОРТ
+                      </span>
+                    )}
+                  </td>
                   <td className="px-6 py-4">
                     <span className={`px-2 py-1 rounded-full text-xs font-medium border ${product.type === ProductType.PIPE ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
-                        product.type === ProductType.PROFILE ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
-                          'bg-slate-500/10 text-slate-400 border-slate-500/20'
+                      product.type === ProductType.PROFILE ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
+                        'bg-slate-500/10 text-slate-400 border-slate-500/20'
                       }`}>
                       {product.type}
                     </span>
@@ -321,6 +328,8 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts }) =
                     ))}
                   </select>
                 </div>
+
+                {/* Origin selector removed: Default is Local */}
 
                 <div className="space-y-1 md:col-span-2">
                   <label className="text-xs font-medium text-slate-400">Количество</label>

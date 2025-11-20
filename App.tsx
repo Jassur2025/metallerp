@@ -126,21 +126,87 @@ const MainApp: React.FC = () => {
   };
 
   const handleCompletePurchase = (purchase: Purchase) => {
-    setPurchases([purchase, ...purchases]);
-    const updatedProducts = products.map(p => {
-      const incomingItem = purchase.items.find(item => item.productId === p.id);
-      if (incomingItem) {
-        const currentTotalValue = p.quantity * (p.costPrice || 0);
-        const incomingTotalValue = incomingItem.quantity * incomingItem.landedCost;
-        const newQuantity = p.quantity + incomingItem.quantity;
-        const newCostPrice = newQuantity > 0
-          ? (currentTotalValue + incomingTotalValue) / newQuantity
-          : incomingItem.landedCost;
-        return { ...p, quantity: newQuantity, costPrice: newCostPrice };
+    // Deep copy products to mutate
+    let nextProducts = [...products];
+
+    // Deep copy purchase to update item references (if we switch from Local -> Import product)
+    const finalPurchase = {
+      ...purchase,
+      items: purchase.items.map(item => ({ ...item }))
+    };
+
+    finalPurchase.items.forEach((item, index) => {
+      const sourceProduct = products.find(p => p.id === item.productId);
+      if (!sourceProduct) return;
+
+      // Logic: If product is Local, we must NOT add stock to it. 
+      // We must find or create an equivalent "Import" product.
+      if (sourceProduct.origin === 'local' || !sourceProduct.origin) {
+
+        // 1. Try to find existing Import version
+        let importProductIndex = nextProducts.findIndex(p =>
+          p.origin === 'import' &&
+          p.name === sourceProduct.name &&
+          p.dimensions === sourceProduct.dimensions &&
+          p.type === sourceProduct.type &&
+          p.steelGrade === sourceProduct.steelGrade
+        );
+
+        if (importProductIndex !== -1) {
+          // Found existing Import product -> Update it
+          const p = nextProducts[importProductIndex];
+
+          const currentTotalValue = p.quantity * (p.costPrice || 0);
+          const incomingTotalValue = item.quantity * item.landedCost;
+          const newQuantity = p.quantity + item.quantity;
+          const newCostPrice = newQuantity > 0
+            ? (currentTotalValue + incomingTotalValue) / newQuantity
+            : item.landedCost;
+
+          nextProducts[importProductIndex] = { ...p, quantity: newQuantity, costPrice: newCostPrice };
+
+          // Update Purchase Item to point to this Import product
+          finalPurchase.items[index].productId = p.id;
+          finalPurchase.items[index].productName = p.name; // Should be same
+
+        } else {
+          // No existing Import product -> Create NEW one
+          const newId = `IMP-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+          const newImportProduct: Product = {
+            ...sourceProduct,
+            id: newId,
+            origin: 'import',
+            quantity: item.quantity,
+            costPrice: item.landedCost,
+            // Keep other fields (price, unit, etc) from source
+          };
+
+          nextProducts.push(newImportProduct);
+
+          // Update Purchase Item to point to this NEW Import product
+          finalPurchase.items[index].productId = newId;
+          finalPurchase.items[index].productName = sourceProduct.name;
+        }
+
+      } else {
+        // Product is ALREADY Import (or other) -> Just update it normally
+        const pIndex = nextProducts.findIndex(p => p.id === item.productId);
+        if (pIndex !== -1) {
+          const p = nextProducts[pIndex];
+          const currentTotalValue = p.quantity * (p.costPrice || 0);
+          const incomingTotalValue = item.quantity * item.landedCost;
+          const newQuantity = p.quantity + item.quantity;
+          const newCostPrice = newQuantity > 0
+            ? (currentTotalValue + incomingTotalValue) / newQuantity
+            : item.landedCost;
+
+          nextProducts[pIndex] = { ...p, quantity: newQuantity, costPrice: newCostPrice };
+        }
       }
-      return p;
     });
-    setProducts(updatedProducts);
+
+    setPurchases([finalPurchase, ...purchases]);
+    setProducts(nextProducts);
   };
 
   const handleNavClick = (view: View) => {
@@ -173,53 +239,65 @@ const MainApp: React.FC = () => {
         </div>
 
         <nav className="p-4 space-y-2 overflow-y-auto h-[calc(100vh-140px)] custom-scrollbar">
-          <button
-            onClick={() => handleNavClick('dashboard')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${currentView === 'dashboard' ? 'bg-primary-600 text-white shadow-lg shadow-primary-900/50' : 'text-slate-400 hover:bg-slate-700/50 hover:text-slate-200'}`}
-          >
-            <LayoutDashboard size={20} />
-            <span className="font-medium">Дашборд v1</span>
-          </button>
+          {(settings.modules?.dashboard ?? true) && (
+            <button
+              onClick={() => handleNavClick('dashboard')}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${currentView === 'dashboard' ? 'bg-primary-600 text-white shadow-lg shadow-primary-900/50' : 'text-slate-400 hover:bg-slate-700/50 hover:text-slate-200'}`}
+            >
+              <LayoutDashboard size={20} />
+              <span className="font-medium">Дашборд</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => handleNavClick('inventory')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${currentView === 'inventory' ? 'bg-primary-600 text-white shadow-lg shadow-primary-900/50' : 'text-slate-400 hover:bg-slate-700/50 hover:text-slate-200'}`}
-          >
-            <Package size={20} />
-            <span className="font-medium">Склад</span>
-          </button>
+          {(settings.modules?.inventory ?? true) && (
+            <button
+              onClick={() => handleNavClick('inventory')}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${currentView === 'inventory' ? 'bg-primary-600 text-white shadow-lg shadow-primary-900/50' : 'text-slate-400 hover:bg-slate-700/50 hover:text-slate-200'}`}
+            >
+              <Package size={20} />
+              <span className="font-medium">Склад</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => handleNavClick('import')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${currentView === 'import' ? 'bg-primary-600 text-white shadow-lg shadow-primary-900/50' : 'text-slate-400 hover:bg-slate-700/50 hover:text-slate-200'}`}
-          >
-            <Container size={20} />
-            <span className="font-medium">Закупка (Импорт)</span>
-          </button>
+          {(settings.modules?.import ?? true) && (
+            <button
+              onClick={() => handleNavClick('import')}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${currentView === 'import' ? 'bg-primary-600 text-white shadow-lg shadow-primary-900/50' : 'text-slate-400 hover:bg-slate-700/50 hover:text-slate-200'}`}
+            >
+              <Container size={20} />
+              <span className="font-medium">Закупка (Импорт)</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => handleNavClick('sales')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${currentView === 'sales' ? 'bg-primary-600 text-white shadow-lg shadow-primary-900/50' : 'text-slate-400 hover:bg-slate-700/50 hover:text-slate-200'}`}
-          >
-            <ShoppingCart size={20} />
-            <span className="font-medium">Продажи</span>
-          </button>
+          {(settings.modules?.sales ?? true) && (
+            <button
+              onClick={() => handleNavClick('sales')}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${currentView === 'sales' ? 'bg-primary-600 text-white shadow-lg shadow-primary-900/50' : 'text-slate-400 hover:bg-slate-700/50 hover:text-slate-200'}`}
+            >
+              <ShoppingCart size={20} />
+              <span className="font-medium">Касса</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => handleNavClick('reports')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${currentView === 'reports' ? 'bg-primary-600 text-white shadow-lg shadow-primary-900/50' : 'text-slate-400 hover:bg-slate-700/50 hover:text-slate-200'}`}
-          >
-            <FileText size={20} />
-            <span className="font-medium">Финанс. Отчеты</span>
-          </button>
+          {(settings.modules?.reports ?? true) && (
+            <button
+              onClick={() => handleNavClick('reports')}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${currentView === 'reports' ? 'bg-primary-600 text-white shadow-lg shadow-primary-900/50' : 'text-slate-400 hover:bg-slate-700/50 hover:text-slate-200'}`}
+            >
+              <FileText size={20} />
+              <span className="font-medium">Финанс. Отчеты</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => handleNavClick('balance')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${currentView === 'balance' ? 'bg-primary-600 text-white shadow-lg shadow-primary-900/50' : 'text-slate-400 hover:bg-slate-700/50 hover:text-slate-200'}`}
-          >
-            <PieChartIcon size={20} />
-            <span className="font-medium">Баланс</span>
-          </button>
+          {(settings.modules?.balance ?? true) && (
+            <button
+              onClick={() => handleNavClick('balance')}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${currentView === 'balance' ? 'bg-primary-600 text-white shadow-lg shadow-primary-900/50' : 'text-slate-400 hover:bg-slate-700/50 hover:text-slate-200'}`}
+            >
+              <PieChartIcon size={20} />
+              <span className="font-medium">Баланс</span>
+            </button>
+          )}
 
           <button
             onClick={() => handleNavClick('settings')}
@@ -287,7 +365,17 @@ const MainApp: React.FC = () => {
         <div className="flex-1 overflow-auto bg-slate-900 print:bg-white print:overflow-visible">
           {currentView === 'dashboard' && <Dashboard products={products} orders={orders} />}
           {currentView === 'inventory' && <Inventory products={products} setProducts={setProducts} />}
-          {currentView === 'sales' && <Sales products={products} setProducts={setProducts} orders={orders} setOrders={setOrders} settings={settings} />}
+          {currentView === 'sales' && (
+            <Sales
+              products={products}
+              setProducts={setProducts}
+              orders={orders}
+              setOrders={setOrders}
+              settings={settings}
+              expenses={expenses}
+              setExpenses={setExpenses}
+            />
+          )}
           {currentView === 'reports' && <Reports orders={orders} expenses={expenses} onAddExpense={handleAddExpense} />}
           {currentView === 'balance' && <Balance products={products} orders={orders} expenses={expenses} />}
           {currentView === 'import' && <Import products={products} onCompletePurchase={handleCompletePurchase} />}
@@ -321,7 +409,7 @@ const MainApp: React.FC = () => {
                         onClick={async () => {
                           if (!accessToken) return alert("Сначала войдите в аккаунт!");
                           try {
-                            const msg = await sheetsService.testConnection(accessToken);
+                            const msg = await sheetsService.testConnection(accessToken, spreadsheetId);
                             alert(msg);
                           } catch (e: any) {
                             alert("Ошибка: " + e.message + "\n\nПопробуйте выйти и зайти снова, чтобы обновить права доступа.");

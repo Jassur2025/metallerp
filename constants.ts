@@ -77,25 +77,28 @@ export const INITIAL_ORDERS: Order[] = [
         unit: Unit.METER,
         total: 150.00
       }
-    ]
+    ],
+    paymentMethod: 'bank',
+    paymentStatus: 'paid',
+    amountPaid: 168.00
   }
 ];
 
 export const INITIAL_EXPENSES: Expense[] = [
-    {
-        id: 'EXP-001',
-        date: new Date(Date.now() - 86400000 * 5).toISOString(),
-        category: 'Аренда',
-        amount: 500.00,
-        description: 'Аренда склада за Июнь'
-    },
-    {
-        id: 'EXP-002',
-        date: new Date(Date.now() - 86400000 * 1).toISOString(),
-        category: 'Логистика',
-        amount: 120.00,
-        description: 'Доставка арматуры'
-    }
+  {
+    id: 'EXP-001',
+    date: new Date(Date.now() - 86400000 * 5).toISOString(),
+    category: 'Аренда',
+    amount: 500.00,
+    description: 'Аренда склада за Июнь'
+  },
+  {
+    id: 'EXP-002',
+    date: new Date(Date.now() - 86400000 * 1).toISOString(),
+    category: 'Логистика',
+    amount: 120.00,
+    description: 'Доставка арматуры'
+  }
 ];
 
 export const INITIAL_PURCHASES: Purchase[] = [];
