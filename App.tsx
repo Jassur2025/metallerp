@@ -178,7 +178,7 @@ const MainApp: React.FC = () => {
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${currentView === 'dashboard' ? 'bg-primary-600 text-white shadow-lg shadow-primary-900/50' : 'text-slate-400 hover:bg-slate-700/50 hover:text-slate-200'}`}
           >
             <LayoutDashboard size={20} />
-            <span className="font-medium">Дашборд</span>
+            <span className="font-medium">Дашборд v1</span>
           </button>
 
           <button
