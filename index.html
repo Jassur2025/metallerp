@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MetalMaster ERP</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        slate: {
+                            850: '#1e293b',
+                            900: '#0f172a',
+                        },
+                        primary: {
+                            500: '#3b82f6',
+                            600: '#2563eb',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1e293b; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #475569; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #64748b; 
+        }
+
+        /* Print Styles */
+        @media print {
+            @page {
+                margin: 10mm;
+                size: auto; 
+            }
+            
+            body {
+                background-color: white !important;
+                color: black !important;
+                overflow: visible !important;
+                height: auto !important;
+            }
+
+            #root, .h-screen, .overflow-hidden, .overflow-auto, .flex-1 {
+                height: auto !important;
+                overflow: visible !important;
+                display: block !important;
+                position: static !important;
+            }
+
+            .print\:hidden {
+                display: none !important;
+            }
+
+            .print\:bg-white {
+                background-color: white !important;
+            }
+
+            .print\:text-black {
+                color: black !important;
+            }
+            
+            .print\:shadow-none {
+                box-shadow: none !important;
+            }
+
+            .print\:border-gray-300 {
+                border-color: #d1d5db !important;
+            }
+
+            /* Ensure graphs and tables don't break awkwardly */
+            .break-inside-avoid {
+                break-inside: avoid;
+            }
+
+            /* Hide scrollbars in print */
+            ::-webkit-scrollbar {
+                display: none;
+            }
+        }
+    </style>
+<script type="importmap">
+{
+  "imports": {
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.30.0",
+    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.554.0",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "recharts": "https://aistudiocdn.com/recharts@^3.4.1",
+    "jspdf": "https://aistudiocdn.com/jspdf@^2.5.1",
+    "html2canvas": "https://aistudiocdn.com/html2canvas@^1.4.1"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+<body class="bg-slate-900 text-slate-100 font-sans antialiased selection:bg-primary-500 selection:text-white">
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+</body>
+</html>
