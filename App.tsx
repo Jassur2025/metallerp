@@ -306,16 +306,20 @@ const AppContent: React.FC = () => {
   };
 
   // Current Employee Permissions
-  const currentEmployee = employees.find(e => e.email.toLowerCase() === user?.email?.toLowerCase());
+  const normalizedUserEmail = user?.email?.toLowerCase() || null;
+  const currentEmployee = employees.find(e => e.email.toLowerCase() === normalizedUserEmail);
+  const superAdminEmails = (typeof SUPER_ADMIN_EMAILS !== 'undefined'
+    ? SUPER_ADMIN_EMAILS.map(email => email.toLowerCase())
+    : []);
 
   const checkPermission = (module: keyof typeof settings.modules) => {
     // 0. Dev Mode Bypass
     if (IS_DEV_MODE) return true;
 
     // 1. Super Admin Bypass
-    if (user?.email && (
+    if (normalizedUserEmail && (
       // Check against hardcoded super admins
-      (typeof SUPER_ADMIN_EMAILS !== 'undefined' && SUPER_ADMIN_EMAILS.includes(user.email)) ||
+      superAdminEmails.includes(normalizedUserEmail) ||
       // Or check if the user is marked as 'admin' role in the staff list (optional, but good practice)
       currentEmployee?.role === 'admin'
     )) {
