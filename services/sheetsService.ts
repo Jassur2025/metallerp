@@ -1,4 +1,4 @@
-import { Product, Order, Expense, Purchase } from '../types';
+import { Product, Order, Expense, Purchase, FixedAsset, Client, Employee, UserRole, Transaction } from '../types';
 
 const SPREADSHEET_ID_KEY = 'metal_erp_spreadsheet_id';
 
@@ -107,6 +107,60 @@ const mapExpenseToRow = (e: Expense) => [
     e.id, e.date, e.description, e.amount, e.category, e.paymentMethod || 'cash', e.currency || 'USD'
 ];
 
+// Map FixedAsset <-> Row
+const mapRowToFixedAsset = (row: any[]): FixedAsset => ({
+    id: row[0],
+    name: row[1],
+    category: row[2] as any,
+    purchaseDate: row[3],
+    purchaseCost: Number(row[4]),
+    currentValue: Number(row[5]),
+    accumulatedDepreciation: Number(row[6]),
+    depreciationRate: Number(row[7]),
+    lastDepreciationDate: row[8] || undefined
+});
+
+const mapFixedAssetToRow = (fa: FixedAsset) => [
+    fa.id, fa.name, fa.category, fa.purchaseDate, fa.purchaseCost, fa.currentValue, fa.accumulatedDepreciation, fa.depreciationRate, fa.lastDepreciationDate || ''
+];
+
+// Map Client <-> Row
+const mapRowToClient = (row: any[]): Client => ({
+    id: row[0],
+    name: row[1],
+    phone: row[2],
+    email: row[3],
+    address: row[4],
+    creditLimit: Number(row[5]),
+    notes: row[6],
+    totalPurchases: Number(row[7]) || 0,
+    totalDebt: Number(row[8]) || 0
+});
+
+const mapClientToRow = (c: Client) => [
+    c.id, c.name, c.phone, c.email || '', c.address || '', c.creditLimit, c.notes || '', c.totalPurchases || 0, c.totalDebt || 0
+];
+
+// Map Employee <-> Row
+const mapRowToEmployee = (row: any[]): Employee => ({
+    id: row[0],
+    name: row[1],
+    email: row[2],
+    phone: row[3],
+    position: row[4],
+    role: row[5] as UserRole,
+    hireDate: row[6],
+    salary: Number(row[7]) || 0,
+    status: (row[8] as 'active' | 'inactive') || 'active',
+    notes: row[9],
+    permissions: row[10] ? JSON.parse(row[10]) : undefined
+});
+
+const mapEmployeeToRow = (e: Employee) => [
+    e.id, e.name, e.email, e.phone || '', e.position, e.role, e.hireDate, e.salary || 0, e.status, e.notes || '',
+    e.permissions ? JSON.stringify(e.permissions) : ''
+];
+
 // --- Service Methods ---
 
 export const sheetsService = {
@@ -140,6 +194,7 @@ export const sheetsService = {
         await createSheetIfNotExists('Products');
         await createSheetIfNotExists('Orders');
         await createSheetIfNotExists('Expenses');
+        await createSheetIfNotExists('FixedAssets');
 
         // 2. Check and create headers for Products
         try {
@@ -161,6 +216,93 @@ export const sheetsService = {
                 values: [['ID', 'Date', 'Description', 'Amount (USD)', 'Category', 'Payment Method', 'Currency']]
             });
         } catch (e) { console.error("Error init Expenses", e); }
+
+        // 5. Check and create headers for FixedAssets
+        try {
+            await fetchSheets(accessToken, 'FixedAssets!A1:I1', 'PUT', {
+                values: [['ID', 'Name', 'Category', 'Purchase Date', 'Cost (USD)', 'Current Value (USD)', 'Accum. Depreciation', 'Annual Rate (%)', 'Last Depr. Date']]
+            });
+        } catch (e) { console.error("Error init FixedAssets", e); }
+
+        // 6. Check and create headers for Clients
+        await createSheetIfNotExists('Clients');
+        try {
+            await fetchSheets(accessToken, 'Clients!A1:I1', 'PUT', {
+                values: [['ID', 'Name', 'Phone', 'Email', 'Address', 'Credit Limit', 'Notes', 'Total Purchases', 'Total Debt']]
+            });
+        } catch (e) { console.error("Error init Clients", e); }
+
+        // 7. Check and create headers for Staff (Renamed from Employees)
+        await createSheetIfNotExists('Staff');
+        try {
+            await fetchSheets(accessToken, 'Staff!A1:K1', 'PUT', {
+                values: [['ID', 'Name', 'Email', 'Phone', 'Position', 'Role', 'Hire Date', 'Salary (USD)', 'Status', 'Notes', 'Permissions']]
+            });
+        } catch (e) { console.error("Error init Staff", e); }
+
+        // 8. Check and create headers for Purchases (Import) - Update existing or create new
+        await createSheetIfNotExists('Purchases');
+        try {
+            // We need to update headers if they exist, but for now let's just ensure the sheet exists.
+            // If we want to be safe, we can update headers.
+            await fetchSheets(accessToken, 'Purchases!A1:K1', 'PUT', {
+                values: [['ID', 'Date', 'Supplier', 'Status', 'Items JSON', 'Overheads JSON', 'Total Invoice', 'Total Landed', 'Payment Method', 'Payment Status', 'Amount Paid']]
+            });
+        } catch (e) { console.error("Error init Purchases", e); }
+
+        // 9. Check and create headers for Transactions
+        await createSheetIfNotExists('Transactions');
+        try {
+            await fetchSheets(accessToken, 'Transactions!A1:I1', 'PUT', {
+                values: [['ID', 'Date', 'Type', 'Amount', 'Currency', 'Exchange Rate', 'Method', 'Description', 'Related ID']]
+            });
+        } catch (e) { console.error("Error init Transactions", e); }
+    },
+
+    // --- Purchases (Import) ---
+    getPurchases: async (accessToken: string): Promise<Purchase[]> => {
+        try {
+            const data = await fetchSheets(accessToken, 'Purchases!A2:K');
+            return (data.values || [])
+                .filter(row => row[0] && row[0] !== 'ID')
+                .map(row => ({
+                    id: row[0],
+                    date: row[1],
+                    supplierName: row[2],
+                    status: row[3] as any,
+                    items: JSON.parse(row[4] || '[]'),
+                    overheads: JSON.parse(row[5] || '{}'),
+                    totalInvoiceAmount: Number(row[6]),
+                    totalLandedAmount: Number(row[7]),
+                    paymentMethod: (row[8] as any) || 'cash',
+                    paymentStatus: (row[9] as any) || 'paid',
+                    amountPaid: Number(row[10]) || Number(row[7]) // Default to full amount if missing
+                }));
+        } catch (e) {
+            console.error("Failed to fetch purchases", e);
+            return [];
+        }
+    },
+
+    saveAllPurchases: async (accessToken: string, purchases: Purchase[]) => {
+        const rows = purchases.map(p => [
+            p.id, p.date, p.supplierName, p.status, JSON.stringify(p.items), JSON.stringify(p.overheads),
+            p.totalInvoiceAmount, p.totalLandedAmount, p.paymentMethod, p.paymentStatus, p.amountPaid
+        ]);
+        const spreadsheetId = getSpreadsheetId();
+
+        // Clear
+        await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Purchases!A2:K:clear`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
+
+        // Write
+        await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Purchases!A2:K?valueInputOption=USER_ENTERED`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ values: rows })
+        });
     },
 
     // --- Products ---
@@ -256,6 +398,99 @@ export const sheetsService = {
         });
     },
 
+    // --- Fixed Assets ---
+    getFixedAssets: async (accessToken: string): Promise<FixedAsset[]> => {
+        try {
+            const data = await fetchSheets(accessToken, 'FixedAssets!A2:I');
+            return (data.values || [])
+                .filter(row => row[0] && row[0] !== 'ID')
+                .map(mapRowToFixedAsset);
+        } catch (e) {
+            console.error("Failed to fetch fixed assets", e);
+            return [];
+        }
+    },
+
+    saveAllFixedAssets: async (accessToken: string, assets: FixedAsset[]) => {
+        const rows = assets.map(mapFixedAssetToRow);
+        const spreadsheetId = getSpreadsheetId();
+
+        // Clear
+        await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/FixedAssets!A2:I:clear`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
+
+        // Write
+        await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/FixedAssets!A2:I?valueInputOption=USER_ENTERED`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ values: rows })
+        });
+    },
+
+    // --- Clients ---
+    getClients: async (accessToken: string): Promise<Client[]> => {
+        try {
+            const data = await fetchSheets(accessToken, 'Clients!A2:I');
+            return (data.values || [])
+                .filter(row => row[0] && row[0] !== 'ID')
+                .map(mapRowToClient);
+        } catch (e) {
+            console.error("Failed to fetch clients", e);
+            return [];
+        }
+    },
+
+    saveAllClients: async (accessToken: string, clients: Client[]) => {
+        const rows = clients.map(mapClientToRow);
+        const spreadsheetId = getSpreadsheetId();
+
+        // Clear
+        await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Clients!A2:I:clear`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
+
+        // Write
+        await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Clients!A2:I?valueInputOption=USER_ENTERED`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ values: rows })
+        });
+    },
+
+    // --- Employees (Staff) ---
+    getEmployees: async (accessToken: string): Promise<Employee[]> => {
+        try {
+            const data = await fetchSheets(accessToken, 'Staff!A2:K');
+            return (data.values || [])
+                .filter(row => row[0] && row[0] !== 'ID')
+                .map(mapRowToEmployee);
+        } catch (e) {
+            console.error("Failed to fetch employees", e);
+            return [];
+        }
+    },
+
+    saveAllEmployees: async (accessToken: string, employees: Employee[]) => {
+        const rows = employees.map(mapEmployeeToRow);
+        const spreadsheetId = getSpreadsheetId();
+
+        // Clear
+        await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Staff!A2:K:clear`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
+
+        // Write
+        await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Staff!A2:K?valueInputOption=USER_ENTERED`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ values: rows })
+        });
+    },
+
     testConnection: async (accessToken: string, providedId?: string) => {
         try {
             const spreadsheetId = providedId || getSpreadsheetId();
@@ -273,5 +508,56 @@ export const sheetsService = {
         } catch (e: any) {
             throw new Error(e.message || "Ошибка соединения");
         }
+    },
+
+    // --- Transactions ---
+    getTransactions: async (accessToken: string): Promise<Transaction[]> => {
+        try {
+            const data = await fetchSheets(accessToken, 'Transactions!A2:I');
+            return (data.values || [])
+                .filter(row => row[0] && row[0] !== 'ID')
+                .map(row => ({
+                    id: row[0],
+                    date: row[1],
+                    type: row[2] as any,
+                    amount: Number(row[3]) || 0,
+                    currency: (row[4] as 'USD' | 'UZS') || 'USD',
+                    exchangeRate: row[5] ? Number(row[5]) : undefined,
+                    method: (row[6] as any) || 'cash',
+                    description: row[7] || '',
+                    relatedId: row[8] || undefined
+                }));
+        } catch (e) {
+            console.error("Failed to fetch transactions", e);
+            return [];
+        }
+    },
+
+    saveAllTransactions: async (accessToken: string, transactions: Transaction[]) => {
+        const rows = transactions.map(t => [
+            t.id, 
+            t.date, 
+            t.type, 
+            t.amount, 
+            t.currency || 'USD',
+            t.exchangeRate || '',
+            t.method, 
+            t.description, 
+            t.relatedId || ''
+        ]);
+        const spreadsheetId = getSpreadsheetId();
+
+        // Clear
+        await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Transactions!A2:I:clear`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
+
+        // Write
+        await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Transactions!A2:I?valueInputOption=USER_ENTERED`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ values: rows })
+        });
     }
 };

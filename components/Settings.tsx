@@ -1,7 +1,9 @@
 
 import React, { useState } from 'react';
 import { AppSettings } from '../types';
-import { Save, Settings as SettingsIcon, AlertCircle } from 'lucide-react';
+import { Save, Settings as SettingsIcon, AlertCircle, Database, CheckCircle, XCircle, Loader2 } from 'lucide-react';
+import { getSpreadsheetId, saveSpreadsheetId, sheetsService } from '../services/sheetsService';
+import { useAuth } from '../contexts/AuthContext';
 
 interface SettingsProps {
     settings: AppSettings;
@@ -9,8 +11,35 @@ interface SettingsProps {
 }
 
 export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
+    const { accessToken } = useAuth();
     const [formData, setFormData] = useState<AppSettings>(settings);
     const [message, setMessage] = useState<string | null>(null);
+
+    // Google Sheets State
+    const [spreadsheetId, setSpreadsheetId] = useState(getSpreadsheetId());
+    const [connectionStatus, setConnectionStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+    const [connectionMessage, setConnectionMessage] = useState('');
+
+    const handleSaveId = () => {
+        saveSpreadsheetId(spreadsheetId);
+        setConnectionMessage('ID сохранен локально');
+        setConnectionStatus('idle');
+        setTimeout(() => setConnectionMessage(''), 3000);
+    };
+
+    const handleTestConnection = async () => {
+        if (!accessToken) return;
+        setConnectionStatus('loading');
+        try {
+            const msg = await sheetsService.testConnection(accessToken, spreadsheetId);
+            setConnectionStatus('success');
+            setConnectionMessage(msg);
+            saveSpreadsheetId(spreadsheetId); // Auto-save on success
+        } catch (e: any) {
+            setConnectionStatus('error');
+            setConnectionMessage(e.message);
+        }
+    };
 
     const handleSave = () => {
         onSave(formData);
@@ -29,6 +58,62 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
             </div>
 
             <div className="bg-slate-800 rounded-2xl border border-slate-700 p-8 shadow-lg space-y-8">
+
+                {/* Google Sheets Connection */}
+                <div className="space-y-6">
+                    <h3 className="text-xl font-bold text-white border-l-4 border-blue-500 pl-4 flex items-center gap-2">
+                        <Database size={24} className="text-blue-500" />
+                        Подключение к Google Sheets
+                    </h3>
+
+                    <div className="space-y-2">
+                        <label className="block text-sm font-medium text-slate-300">
+                            ID Таблицы (Spreadsheet ID)
+                        </label>
+                        <div className="flex gap-2">
+                            <input
+                                type="text"
+                                className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm"
+                                value={spreadsheetId}
+                                onChange={(e) => setSpreadsheetId(e.target.value)}
+                                placeholder="1Sz3dpCAJqgY5oF-d0K50TlItj7gySubJ-iNhPFS5RzE"
+                            />
+                            <button
+                                onClick={handleSaveId}
+                                className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-lg font-medium transition-colors"
+                            >
+                                Сохранить
+                            </button>
+                        </div>
+
+                        <div className="flex items-center justify-between mt-2">
+                            <button
+                                onClick={handleTestConnection}
+                                disabled={connectionStatus === 'loading' || !spreadsheetId}
+                                className="text-sm text-blue-400 hover:text-blue-300 underline underline-offset-4 disabled:opacity-50 disabled:no-underline"
+                            >
+                                Проверить соединение
+                            </button>
+
+                            {connectionStatus !== 'idle' && (
+                                <div className={`text-sm flex items-center gap-2 ${connectionStatus === 'success' ? 'text-emerald-400' :
+                                    connectionStatus === 'error' ? 'text-red-400' : 'text-slate-400'
+                                    }`}>
+                                    {connectionStatus === 'loading' && <Loader2 size={16} className="animate-spin" />}
+                                    {connectionStatus === 'success' && <CheckCircle size={16} />}
+                                    {connectionStatus === 'error' && <XCircle size={16} />}
+                                    {connectionMessage}
+                                </div>
+                            )}
+                        </div>
+
+                        <p className="text-xs text-slate-500">
+                            Вставьте ID вашей Google Таблицы. Приложение будет автоматически сохранять туда товары и заказы.
+                        </p>
+                    </div>
+                </div>
+
+                <div className="border-t border-slate-700 my-6"></div>
 
                 {/* Financial Settings */}
                 <div className="space-y-6">
@@ -75,45 +160,7 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
                     </div>
                 </div>
 
-                {/* Visibility Settings */}
-                <div className="space-y-6 pt-6 border-t border-slate-700">
-                    <h3 className="text-xl font-bold text-white border-l-4 border-purple-500 pl-4">
-                        Видимость разделов (Меню)
-                    </h3>
-                    <p className="text-sm text-slate-400">
-                        Выберите разделы, которые должны отображаться в боковом меню.
-                    </p>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {[
-                            { key: 'dashboard', label: 'Дашборд' },
-                            { key: 'inventory', label: 'Склад' },
-                            { key: 'import', label: 'Закупка (Импорт)' },
-                            { key: 'sales', label: 'Продажи' },
-                            { key: 'reports', label: 'Финанс. Отчеты' },
-                            { key: 'balance', label: 'Баланс' },
-                        ].map((module) => (
-                            <label key={module.key} className="flex items-center gap-3 p-4 bg-slate-900/50 rounded-xl border border-slate-700 cursor-pointer hover:bg-slate-900 transition-colors">
-                                <input
-                                    type="checkbox"
-                                    className="w-5 h-5 rounded border-slate-600 text-primary-600 focus:ring-primary-500 bg-slate-800"
-                                    checked={formData.modules?.[module.key as keyof typeof formData.modules] ?? true}
-                                    onChange={(e) => {
-                                        const newModules = {
-                                            ...(formData.modules || {
-                                                dashboard: true, inventory: true, import: true, sales: true, reports: true, balance: true
-                                            })
-                                        };
-                                        // @ts-ignore
-                                        newModules[module.key] = e.target.checked;
-                                        setFormData({ ...formData, modules: newModules });
-                                    }}
-                                />
-                                <span className="text-slate-200 font-medium">{module.label}</span>
-                            </label>
-                        ))}
-                    </div>
-                </div>
 
                 <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 flex items-start gap-3">
                     <AlertCircle className="text-amber-500 shrink-0 mt-1" size={20} />

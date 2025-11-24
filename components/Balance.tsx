@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Product, Order, Expense } from '../types';
+import { Product, Order, Expense, FixedAsset, AppSettings, Transaction } from '../types';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { ShieldCheck, Wallet, Building2, Scale, Landmark } from 'lucide-react';
 
@@ -8,42 +8,107 @@ interface BalanceProps {
     products: Product[];
     orders: Order[];
     expenses: Expense[];
+    fixedAssets: FixedAsset[];
+    settings: AppSettings;
+    transactions: Transaction[];
 }
 
-export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses }) => {
+export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fixedAssets, settings, transactions }) => {
     // --- ASSETS (АКТИВЫ) ---
 
     // 1. Inventory Value (USD) - Stock on hand
     const inventoryValue = products.reduce((sum, p) => sum + (p.quantity * p.pricePerUnit), 0);
 
     // 2. Cash Breakdown
-    // Filter orders by payment method and sum amounts
+    // Initial Sales Cash (Direct Sales)
     const cashSales = orders.filter(o => o.paymentMethod === 'cash').reduce((sum, o) => sum + o.amountPaid, 0);
     const bankSales = orders.filter(o => o.paymentMethod === 'bank').reduce((sum, o) => sum + o.amountPaid, 0);
     const cardSales = orders.filter(o => o.paymentMethod === 'card').reduce((sum, o) => sum + o.amountPaid, 0);
 
-    // Debtors (Unpaid amounts)
-    // If paymentStatus is 'unpaid' or 'partial', we count the difference between totalAmount and amountPaid
-    const accountsReceivable = orders.reduce((sum, o) => {
-        const paid = o.amountPaid || 0;
-        return sum + (o.totalAmount - paid);
-    }, 0);
+    // Add Client Repayments (Inflow)
+    const clientRepaymentsCash = transactions
+        .filter(t => t.type === 'client_payment' && t.method === 'cash')
+        .reduce((sum, t) => {
+            const amountUSD = t.currency === 'UZS' && t.exchangeRate && t.exchangeRate > 0 
+                ? t.amount / t.exchangeRate 
+                : t.amount;
+            return sum + amountUSD;
+        }, 0);
+    const clientRepaymentsBank = transactions
+        .filter(t => t.type === 'client_payment' && t.method === 'bank')
+        .reduce((sum, t) => {
+            // Bank is always UZS, but let's be safe and check currency or assume UZS if rate exists
+            const amountUSD = t.currency === 'UZS' && t.exchangeRate && t.exchangeRate > 0 
+                ? t.amount / t.exchangeRate 
+                : t.amount;
+            return sum + amountUSD;
+        }, 0);
+    const clientRepaymentsCard = transactions
+        .filter(t => t.type === 'client_payment' && t.method === 'card')
+        .reduce((sum, t) => {
+            const amountUSD = t.currency === 'UZS' && t.exchangeRate && t.exchangeRate > 0 
+                ? t.amount / t.exchangeRate 
+                : t.amount;
+            return sum + amountUSD;
+        }, 0);
 
-    // Total Expenses (Assuming paid from Cash for now, or we need expense types too. Let's assume Cash for simplicity or split proportionally)
-    // For MVP, let's subtract expenses from "Cash" (Safe) or "Bank" if specified. 
-    // Since we don't track expense source yet, let's just show Gross Cash/Bank/Card and separate Expenses line, 
-    // OR subtract from Total Liquid Assets.
-    // Let's subtract from Total Liquid Assets for the "Net Cash" figure, but show breakdown of Gross Inflows.
+    // Subtract Client Returns (Outflow - Refund)
+    const clientReturnsCash = transactions
+        .filter(t => t.type === 'client_return' && t.method === 'cash')
+        .reduce((sum, t) => {
+            const amountUSD = t.currency === 'UZS' && t.exchangeRate && t.exchangeRate > 0 
+                ? t.amount / t.exchangeRate 
+                : t.amount;
+            return sum + amountUSD;
+        }, 0);
 
-    const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
+    // Subtract Supplier Payments (Outflow)
+    const supplierPaymentsCash = transactions
+        .filter(t => t.type === 'supplier_payment' && t.method === 'cash')
+        .reduce((sum, t) => sum + t.amount, 0); // Assuming supplier payments are currently just USD or handled simply. 
+    // TODO: If supplier payments become multi-currency, update here too. For now, Import.tsx handles debt in USD.
+    const supplierPaymentsBank = transactions
+        .filter(t => t.type === 'supplier_payment' && t.method === 'bank')
+        .reduce((sum, t) => sum + t.amount, 0);
 
-    // Liquid Assets (Gross)
-    const totalLiquidAssets = cashSales + bankSales + cardSales;
+    // Subtract Expenses (Outflow)
+    const expensesCash = expenses.filter(e => e.paymentMethod === 'cash').reduce((sum, e) => sum + e.amount, 0);
+    const expensesBank = expenses.filter(e => e.paymentMethod === 'bank').reduce((sum, e) => sum + e.amount, 0);
+    const expensesCard = expenses.filter(e => e.paymentMethod === 'card').reduce((sum, e) => sum + e.amount, 0); // Assuming card expenses reduce card balance
 
-    // Net Liquid Assets (after expenses)
-    const netLiquidAssets = Math.max(0, totalLiquidAssets - totalExpenses);
+    // Net Cash Positions
+    const netCash = Math.max(0, cashSales + clientRepaymentsCash - supplierPaymentsCash - expensesCash - clientReturnsCash);
+    const netBank = Math.max(0, bankSales + clientRepaymentsBank - supplierPaymentsBank - expensesBank);
+    const netCard = Math.max(0, cardSales + clientRepaymentsCard - expensesCard);
 
-    const totalAssets = inventoryValue + netLiquidAssets + accountsReceivable;
+    // 3. Fixed Assets Value
+    const fixedAssetsValue = fixedAssets.reduce((sum, asset) => sum + asset.currentValue, 0);
+
+    // Debtors (Unpaid amounts from Sales)
+    // Note: Client debt is now tracked in Client object, but we can calculate from orders - repayments
+    // Or better, rely on the calculated debt from orders vs paid.
+    // Let's stick to Order based calculation for consistency with previous logic, 
+    // but we must account for repayments.
+    // Actually, simpler: Sum of (Order Total - Order Paid) is the initial debt.
+    // BUT, we have `amountPaid` in Order. If we update `amountPaid` in Order when repayment happens, it's easy.
+    // However, our current Repayment logic in CRM creates a Transaction and updates Client.totalDebt, 
+    // it DOES NOT update individual Orders.
+    // So, Total Accounts Receivable = Sum(Client.totalDebt).
+    // Since we don't have Clients passed here, we can approximate:
+    // Total Sales - Total Paid (via Orders) - Total Repayments (via Transactions)
+    const totalSalesAmount = orders.reduce((sum, o) => sum + o.totalAmount, 0);
+    const totalPaidDirectly = orders.reduce((sum, o) => sum + o.amountPaid, 0);
+    const totalRepaidLater = transactions.filter(t => t.type === 'client_payment').reduce((sum, t) => sum + t.amount, 0);
+
+    const accountsReceivable = Math.max(0, totalSalesAmount - totalPaidDirectly - totalRepaidLater);
+
+    // Total Expenses (already subtracted from cash, but needed for net profit calc)
+    const totalExpensesAll = expenses.reduce((sum, e) => sum + e.amount, 0);
+
+    // Liquid Assets (Net)
+    const totalLiquidAssets = netCash + netBank + netCard;
+
+    const totalAssets = inventoryValue + totalLiquidAssets + accountsReceivable + fixedAssetsValue;
 
     // --- PASSIVES (ПАССИВЫ) ---
 
@@ -53,24 +118,32 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses }) 
     // 2. Equity / Capital
     const equity = inventoryValue;
 
-    // 3. Retained Earnings
-    const retainedEarnings = netLiquidAssets + accountsReceivable - vatLiability;
+    // 3. Fixed Assets Fund (Equity source for Fixed Assets)
+    const fixedAssetsFund = fixedAssetsValue;
 
-    const totalPassives = equity + retainedEarnings + vatLiability;
+    // 4. Retained Earnings
+    // Assets - Liabilities - Capital
+    // = (Inventory + Cash + AR + FixedAssets) - VAT - (Inventory + FixedAssets)
+    // = Cash + AR - VAT
+    const retainedEarnings = totalLiquidAssets + accountsReceivable - vatLiability;
+
+    const totalPassives = equity + fixedAssetsFund + retainedEarnings + vatLiability;
 
     // Chart Data
     const assetsData = [
+        { name: 'Осн. Средства', value: fixedAssetsValue, color: '#0ea5e9' }, // Sky blue
         { name: 'Товар', value: inventoryValue, color: '#3b82f6' },
-        { name: 'Касса (Нал)', value: cashSales, color: '#10b981' },
-        { name: 'Р/С (Банк)', value: bankSales, color: '#8b5cf6' },
+        { name: 'Касса (Нал)', value: netCash, color: '#10b981' },
+        { name: 'Р/С (Банк)', value: netBank, color: '#8b5cf6' },
         { name: 'Дебиторка', value: accountsReceivable, color: '#f59e0b' },
-    ];
+    ].filter(item => item.value > 0);
 
     const passivesData = [
         { name: 'Товарный капитал', value: equity, color: '#8b5cf6' },
+        { name: 'Фонд ОС', value: fixedAssetsFund, color: '#0ea5e9' },
         { name: 'Чистая выручка', value: retainedEarnings > 0 ? retainedEarnings : 0, color: '#f59e0b' },
         { name: 'Обязательства по НДС', value: vatLiability, color: '#ef4444' },
-    ];
+    ].filter(item => item.value > 0);
 
     const formatCurrency = (val: number) =>
         `$${val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -110,6 +183,14 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses }) 
                     <div className="space-y-3">
                         <div className="flex justify-between items-center p-2 bg-slate-900/50 rounded-lg border border-slate-700/50">
                             <div className="flex items-center gap-3">
+                                <div className="w-2 h-8 bg-sky-500 rounded-full"></div>
+                                <span className="text-slate-300">Основные средства</span>
+                            </div>
+                            <span className="font-mono text-sky-400">{formatCurrency(fixedAssetsValue)}</span>
+                        </div>
+
+                        <div className="flex justify-between items-center p-2 bg-slate-900/50 rounded-lg border border-slate-700/50">
+                            <div className="flex items-center gap-3">
                                 <div className="w-2 h-8 bg-blue-500 rounded-full"></div>
                                 <span className="text-slate-300">Товарные запасы</span>
                             </div>
@@ -121,7 +202,7 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses }) 
                                 <div className="w-2 h-8 bg-emerald-500 rounded-full"></div>
                                 <span className="text-slate-300">Касса (Наличные)</span>
                             </div>
-                            <span className="font-mono text-emerald-400">{formatCurrency(cashSales)}</span>
+                            <span className="font-mono text-emerald-400">{formatCurrency(netCash)}</span>
                         </div>
 
                         <div className="flex justify-between items-center p-2 bg-slate-900/50 rounded-lg border border-slate-700/50">
@@ -129,7 +210,7 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses }) 
                                 <div className="w-2 h-8 bg-purple-500 rounded-full"></div>
                                 <span className="text-slate-300">Расчетный счет</span>
                             </div>
-                            <span className="font-mono text-purple-400">{formatCurrency(bankSales)}</span>
+                            <span className="font-mono text-purple-400">{formatCurrency(netBank)}</span>
                         </div>
 
                         <div className="flex justify-between items-center p-2 bg-slate-900/50 rounded-lg border border-slate-700/50">
@@ -137,7 +218,7 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses }) 
                                 <div className="w-2 h-8 bg-indigo-400 rounded-full"></div>
                                 <span className="text-slate-300">Терминал / Карта</span>
                             </div>
-                            <span className="font-mono text-indigo-400">{formatCurrency(cardSales)}</span>
+                            <span className="font-mono text-indigo-400">{formatCurrency(netCard)}</span>
                         </div>
 
                         <div className="flex justify-between items-center p-2 bg-slate-900/50 rounded-lg border border-slate-700/50">
@@ -146,14 +227,6 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses }) 
                                 <span className="text-slate-300">Дебиторская задолженность</span>
                             </div>
                             <span className="font-mono text-amber-400">{formatCurrency(accountsReceivable)}</span>
-                        </div>
-
-                        <div className="flex justify-between items-center p-2 bg-red-900/20 rounded-lg border border-red-900/30 mt-2">
-                            <div className="flex items-center gap-3">
-                                <div className="w-2 h-8 bg-red-500 rounded-full"></div>
-                                <span className="text-slate-300">Расходы (минус)</span>
-                            </div>
-                            <span className="font-mono text-red-400">-{formatCurrency(totalExpenses)}</span>
                         </div>
                     </div>
                 </div>
@@ -182,6 +255,17 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses }) 
                                 </div>
                             </div>
                             <p className="font-mono text-lg text-indigo-400">{formatCurrency(equity)}</p>
+                        </div>
+
+                        <div className="flex justify-between items-center p-3 bg-slate-900/50 rounded-xl border border-slate-700/50">
+                            <div className="flex items-center gap-3">
+                                <div className="w-2 h-10 bg-sky-500 rounded-full"></div>
+                                <div>
+                                    <p className="text-white font-medium">Фонд основных средств</p>
+                                    <p className="text-xs text-slate-500">Инвестиции в ОС</p>
+                                </div>
+                            </div>
+                            <p className="font-mono text-lg text-sky-400">{formatCurrency(fixedAssetsFund)}</p>
                         </div>
 
                         <div className="flex justify-between items-center p-3 bg-slate-900/50 rounded-xl border border-slate-700/50">
@@ -260,7 +344,7 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses }) 
                         </div>
                         <div>
                             <p className="text-xs text-slate-500">Расходы</p>
-                            <p className="text-red-400 font-bold">{formatCurrency(totalExpenses)}</p>
+                            <p className="text-red-400 font-bold">{formatCurrency(totalExpensesAll)}</p>
                         </div>
                     </div>
                 </div>

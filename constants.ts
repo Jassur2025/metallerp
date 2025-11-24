@@ -3,6 +3,11 @@ import { Product, ProductType, Unit, Order, Expense, Purchase } from './types';
 
 export const DEFAULT_EXCHANGE_RATE = 12650; // 1 USD = 12650 UZS
 
+export const SUPER_ADMIN_EMAILS = [
+  'jasurmc@gmail.com', // Replace with your actual email
+  'admin@example.com'
+];
+
 export const INITIAL_PRODUCTS: Product[] = [
   {
     id: '1',
@@ -90,15 +95,21 @@ export const INITIAL_EXPENSES: Expense[] = [
     date: new Date(Date.now() - 86400000 * 5).toISOString(),
     category: 'Аренда',
     amount: 500.00,
-    description: 'Аренда склада за Июнь'
+    description: 'Аренда склада за Июнь',
+    paymentMethod: 'cash',
+    currency: 'USD'
   },
   {
     id: 'EXP-002',
     date: new Date(Date.now() - 86400000 * 1).toISOString(),
     category: 'Логистика',
     amount: 120.00,
-    description: 'Доставка арматуры'
+    description: 'Доставка арматуры',
+    paymentMethod: 'bank',
+    currency: 'UZS'
   }
 ];
+
+export const IS_DEV_MODE = false;
 
 export const INITIAL_PURCHASES: Purchase[] = [];

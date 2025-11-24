@@ -1,8 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { Product, Purchase, PurchaseItem, PurchaseOverheads, Transaction, AppSettings } from '../types';
-import { Plus, Trash2, Save, Calculator, Container, DollarSign, AlertTriangle, Truck, Scale, FileText, History, Wallet, CheckCircle } from 'lucide-react';
+import { Plus, Trash2, Save, Calculator, Container, DollarSign, AlertTriangle, Truck, Scale, FileText, History, Wallet, CheckCircle, Globe, MapPin } from 'lucide-react';
 
-interface ImportProps {
+interface ProcurementProps {
     products: Product[];
     setProducts: (products: Product[]) => void;
     settings: AppSettings;
@@ -12,8 +12,9 @@ interface ImportProps {
     setTransactions: (t: Transaction[]) => void;
 }
 
-export const Import: React.FC<ImportProps> = ({ products, setProducts, settings, purchases, onSavePurchases, transactions, setTransactions }) => {
+export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts, settings, purchases, onSavePurchases, transactions, setTransactions }) => {
     const [activeTab, setActiveTab] = useState<'new' | 'history'>('new');
+    const [procurementType, setProcurementType] = useState<'local' | 'import'>('local'); // Main switch
     const [supplierName, setSupplierName] = useState('');
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
 
@@ -24,11 +25,11 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
     // Cart logic
     const [selectedProductId, setSelectedProductId] = useState('');
     const [inputQty, setInputQty] = useState<number>(0);
-    const [inputInvoicePrice, setInputInvoicePrice] = useState<number>(0);
+    const [inputPrice, setInputPrice] = useState<number>(0); // Invoice Price for Import, Purchase Price for Local
 
     const [cart, setCart] = useState<PurchaseItem[]>([]);
 
-    // Overheads
+    // Overheads (Only for Import)
     const [overheads, setOverheads] = useState<PurchaseOverheads>({
         logistics: 0,
         customsDuty: 0,
@@ -43,7 +44,7 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
 
     // --- Logic to Add Item ---
     const handleAddItem = () => {
-        if (!selectedProductId || inputQty <= 0 || inputInvoicePrice <= 0) return;
+        if (!selectedProductId || inputQty <= 0 || inputPrice <= 0) return;
 
         const product = products.find(p => p.id === selectedProductId);
         if (!product) return;
@@ -58,9 +59,9 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
             productName: product.name,
             quantity: inputQty,
             unit: product.unit,
-            invoicePrice: inputInvoicePrice,
-            landedCost: inputInvoicePrice, // Placeholder, updated dynamically
-            totalLineCost: inputQty * inputInvoicePrice
+            invoicePrice: inputPrice,
+            landedCost: inputPrice, // Will be updated dynamically for Import, same as price for Local
+            totalLineCost: inputQty * inputPrice
         };
 
         setCart([...cart, newItem]);
@@ -68,7 +69,7 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
         // Reset inputs
         setSelectedProductId('');
         setInputQty(0);
-        setInputInvoicePrice(0);
+        setInputPrice(0);
     };
 
     const removeItem = (productId: string) => {
@@ -78,23 +79,37 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
     // --- Calculation Logic ---
     const totals = useMemo(() => {
         const totalInvoiceValue = cart.reduce((sum, item) => sum + (item.quantity * item.invoicePrice), 0);
-        const totalOverheads = overheads.logistics + overheads.customsDuty + overheads.importVat + overheads.other;
-        const totalLandedValue = totalInvoiceValue + totalOverheads;
 
-        const itemsWithLandedCost = cart.map(item => {
-            if (totalInvoiceValue === 0) return item;
+        let totalOverheads = 0;
+        let totalLandedValue = totalInvoiceValue;
+        let itemsWithLandedCost = cart;
 
-            const lineValue = item.quantity * item.invoicePrice;
-            const proportion = lineValue / totalInvoiceValue;
-            const allocatedOverhead = totalOverheads * proportion;
-            const landedCostPerUnit = item.invoicePrice + (allocatedOverhead / item.quantity);
+        if (procurementType === 'import') {
+            totalOverheads = overheads.logistics + overheads.customsDuty + overheads.importVat + overheads.other;
+            totalLandedValue = totalInvoiceValue + totalOverheads;
 
-            return {
+            itemsWithLandedCost = cart.map(item => {
+                if (totalInvoiceValue === 0) return item;
+
+                const lineValue = item.quantity * item.invoicePrice;
+                const proportion = lineValue / totalInvoiceValue;
+                const allocatedOverhead = totalOverheads * proportion;
+                const landedCostPerUnit = item.invoicePrice + (allocatedOverhead / item.quantity);
+
+                return {
+                    ...item,
+                    landedCost: landedCostPerUnit,
+                    totalLineCost: (landedCostPerUnit * item.quantity)
+                };
+            });
+        } else {
+            // Local: Landed Cost = Invoice Price
+            itemsWithLandedCost = cart.map(item => ({
                 ...item,
-                landedCost: landedCostPerUnit,
-                totalLineCost: (landedCostPerUnit * item.quantity)
-            };
-        });
+                landedCost: item.invoicePrice,
+                totalLineCost: item.quantity * item.invoicePrice
+            }));
+        }
 
         return {
             totalInvoiceValue,
@@ -102,7 +117,7 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
             totalLandedValue,
             itemsWithLandedCost
         };
-    }, [cart, overheads]);
+    }, [cart, overheads, procurementType]);
 
     // Update amountPaid when totals change if method is not debt
     React.useEffect(() => {
@@ -123,7 +138,7 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
             supplierName,
             status: 'completed',
             items: totals.itemsWithLandedCost,
-            overheads,
+            overheads: procurementType === 'import' ? overheads : { logistics: 0, customsDuty: 0, importVat: 0, other: 0 },
             totalInvoiceAmount: totals.totalInvoiceValue,
             totalLandedAmount: totals.totalLandedValue,
             paymentMethod,
@@ -141,23 +156,20 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
                 date: new Date().toISOString(),
                 type: 'supplier_payment',
                 amount: totals.totalInvoiceValue,
+                currency: 'USD',
                 method: paymentMethod as 'cash' | 'bank',
-                description: `Оплата поставщику: ${supplierName} (Закупка #${purchase.id})`,
+                description: `Оплата поставщику (${procurementType === 'local' ? 'Местный' : 'Импорт'}): ${supplierName} (Закупка #${purchase.id})`,
                 relatedId: purchase.id
             };
             setTransactions([...transactions, newTransaction]);
         }
 
-        // 3. Update Product Stock & Cost (Simplified: just update local state, ideally should be robust)
-        // Note: In a real app, we should recalculate weighted average cost here.
-        // Current logic in App.tsx or backend should handle this. 
-        // For now, let's assume the user manually updates stock or we trust the system to reload.
-        // Actually, we should update `products` state here to reflect new stock immediately.
+        // 3. Update Product Stock & Cost
         const updatedProducts = products.map(p => {
             const item = totals.itemsWithLandedCost.find(i => i.productId === p.id);
             if (item) {
                 const newQuantity = p.quantity + item.quantity;
-                // Weighted Average Cost: ((OldQty * OldCost) + (NewQty * NewCost)) / (OldQty + NewQty)
+                // Weighted Average Cost
                 const oldValue = p.quantity * p.costPrice;
                 const newValue = item.quantity * item.landedCost;
                 const newCost = (oldValue + newValue) / newQuantity;
@@ -195,6 +207,7 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
             date: new Date().toISOString(),
             type: 'supplier_payment',
             amount: repaymentAmount,
+            currency: 'USD',
             method: 'cash', // Default
             description: `Погашение долга поставщику: ${selectedPurchaseForRepayment.supplierName} (Закупка #${selectedPurchaseForRepayment.id})`,
             relatedId: selectedPurchaseForRepayment.id
@@ -219,26 +232,40 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
         alert('Оплата поставщику проведена успешно!');
     };
 
-    // Filter unpaid purchases
-    const unpaidPurchases = purchases.filter(p => p.paymentStatus !== 'paid');
-
     return (
         <div className="p-6 space-y-6 animate-fade-in h-[calc(100vh-2rem)] flex flex-col">
             <div className="flex justify-between items-end">
                 <div>
-                    <h2 className="text-3xl font-bold text-white tracking-tight">Импорт и Закупка</h2>
-                    <p className="text-slate-400 mt-1">Оформление прихода и расчеты с поставщиками</p>
+                    <h2 className="text-3xl font-bold text-white tracking-tight">Закуп и Импорт</h2>
+                    <p className="text-slate-400 mt-1">Управление поставками и расчетами</p>
                 </div>
+
+                {/* Main Mode Switcher */}
+                <div className="flex bg-slate-800 p-1 rounded-lg border border-slate-700 mr-auto ml-8">
+                    <button
+                        onClick={() => setProcurementType('local')}
+                        className={`px-4 py-2 rounded-md text-sm font-bold flex items-center gap-2 transition-all ${procurementType === 'local' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
+                    >
+                        <MapPin size={16} /> Местный Закуп
+                    </button>
+                    <button
+                        onClick={() => setProcurementType('import')}
+                        className={`px-4 py-2 rounded-md text-sm font-bold flex items-center gap-2 transition-all ${procurementType === 'import' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
+                    >
+                        <Globe size={16} /> Импорт
+                    </button>
+                </div>
+
                 <div className="flex bg-slate-800 p-1 rounded-lg border border-slate-700">
                     <button
                         onClick={() => setActiveTab('new')}
-                        className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'new' ? 'bg-primary-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
+                        className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'new' ? 'bg-slate-700 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
                     >
                         Новая закупка
                     </button>
                     <button
                         onClick={() => setActiveTab('history')}
-                        className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'history' ? 'bg-primary-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
+                        className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'history' ? 'bg-slate-700 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
                     >
                         История и Долги
                     </button>
@@ -252,7 +279,7 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
                         {/* Document Info */}
                         <div className="bg-slate-800 p-5 rounded-xl border border-slate-700 space-y-4 shadow-lg">
                             <h3 className="text-white font-bold flex items-center gap-2">
-                                <FileText size={18} className="text-primary-500" /> Основное
+                                <FileText size={18} className="text-primary-500" /> Основное ({procurementType === 'local' ? 'Местный' : 'Импорт'})
                             </h3>
                             <div className="space-y-2">
                                 <label className="text-xs font-medium text-slate-400">Поставщик</label>
@@ -314,7 +341,7 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
                                     <option value="">-- Выберите товар --</option>
                                     {products.map(p => (
                                         <option key={p.id} value={p.id}>
-                                            {p.name} ({p.dimensions}) {p.origin === 'import' ? '[Imp]' : '[Loc]'}
+                                            {p.name} ({p.dimensions})
                                         </option>
                                     ))}
                                 </select>
@@ -332,13 +359,15 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
                                     />
                                 </div>
                                 <div className="space-y-2">
-                                    <label className="text-xs font-medium text-slate-400">Цена Invoice (USD)</label>
+                                    <label className="text-xs font-medium text-slate-400">
+                                        {procurementType === 'import' ? 'Цена Invoice (USD)' : 'Цена закупки (USD)'}
+                                    </label>
                                     <input
                                         type="number"
                                         className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-emerald-500 outline-none"
                                         placeholder="0.00"
-                                        value={inputInvoicePrice || ''}
-                                        onChange={e => setInputInvoicePrice(Number(e.target.value))}
+                                        value={inputPrice || ''}
+                                        onChange={e => setInputPrice(Number(e.target.value))}
                                     />
                                 </div>
                             </div>
@@ -351,55 +380,57 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
                             </button>
                         </div>
 
-                        {/* Overheads Form */}
-                        <div className="bg-slate-800 p-5 rounded-xl border border-slate-700 space-y-4 shadow-lg relative overflow-hidden">
-                            <div className="absolute -right-6 -top-6 text-slate-700 opacity-20">
-                                <Container size={100} />
-                            </div>
-                            <h3 className="text-white font-bold flex items-center gap-2">
-                                <Truck size={18} className="text-amber-500" /> Накладные расходы (USD)
-                            </h3>
-                            <p className="text-xs text-slate-500">Распределяются на себестоимость пропорционально сумме.</p>
+                        {/* Overheads Form - ONLY FOR IMPORT */}
+                        {procurementType === 'import' && (
+                            <div className="bg-slate-800 p-5 rounded-xl border border-slate-700 space-y-4 shadow-lg relative overflow-hidden animate-fade-in">
+                                <div className="absolute -right-6 -top-6 text-slate-700 opacity-20">
+                                    <Container size={100} />
+                                </div>
+                                <h3 className="text-white font-bold flex items-center gap-2">
+                                    <Truck size={18} className="text-amber-500" /> Накладные расходы (USD)
+                                </h3>
+                                <p className="text-xs text-slate-500">Распределяются на себестоимость пропорционально сумме.</p>
 
-                            <div className="grid grid-cols-2 gap-3">
-                                <div className="space-y-1">
-                                    <label className="text-xs text-slate-400">Логистика</label>
-                                    <input
-                                        type="number"
-                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-amber-500 outline-none text-sm"
-                                        value={overheads.logistics || ''}
-                                        onChange={e => setOverheads({ ...overheads, logistics: Number(e.target.value) })}
-                                    />
-                                </div>
-                                <div className="space-y-1">
-                                    <label className="text-xs text-slate-400">Тамож. Пошлина</label>
-                                    <input
-                                        type="number"
-                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-amber-500 outline-none text-sm"
-                                        value={overheads.customsDuty || ''}
-                                        onChange={e => setOverheads({ ...overheads, customsDuty: Number(e.target.value) })}
-                                    />
-                                </div>
-                                <div className="space-y-1">
-                                    <label className="text-xs text-slate-400">Тамож. НДС</label>
-                                    <input
-                                        type="number"
-                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-amber-500 outline-none text-sm"
-                                        value={overheads.importVat || ''}
-                                        onChange={e => setOverheads({ ...overheads, importVat: Number(e.target.value) })}
-                                    />
-                                </div>
-                                <div className="space-y-1">
-                                    <label className="text-xs text-slate-400">Прочее</label>
-                                    <input
-                                        type="number"
-                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-amber-500 outline-none text-sm"
-                                        value={overheads.other || ''}
-                                        onChange={e => setOverheads({ ...overheads, other: Number(e.target.value) })}
-                                    />
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="space-y-1">
+                                        <label className="text-xs text-slate-400">Логистика</label>
+                                        <input
+                                            type="number"
+                                            className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-amber-500 outline-none text-sm"
+                                            value={overheads.logistics || ''}
+                                            onChange={e => setOverheads({ ...overheads, logistics: Number(e.target.value) })}
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-xs text-slate-400">Тамож. Пошлина</label>
+                                        <input
+                                            type="number"
+                                            className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-amber-500 outline-none text-sm"
+                                            value={overheads.customsDuty || ''}
+                                            onChange={e => setOverheads({ ...overheads, customsDuty: Number(e.target.value) })}
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-xs text-slate-400">Тамож. НДС</label>
+                                        <input
+                                            type="number"
+                                            className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-amber-500 outline-none text-sm"
+                                            value={overheads.importVat || ''}
+                                            onChange={e => setOverheads({ ...overheads, importVat: Number(e.target.value) })}
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-xs text-slate-400">Прочее</label>
+                                        <input
+                                            type="number"
+                                            className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-amber-500 outline-none text-sm"
+                                            value={overheads.other || ''}
+                                            onChange={e => setOverheads({ ...overheads, other: Number(e.target.value) })}
+                                        />
+                                    </div>
                                 </div>
                             </div>
-                        </div>
+                        )}
                     </div>
 
                     {/* Right: Items Table & Summary */}
@@ -420,8 +451,10 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
                                     <tr>
                                         <th className="px-4 py-3">Товар</th>
                                         <th className="px-4 py-3 text-right">Кол-во</th>
-                                        <th className="px-4 py-3 text-right">Цена (Inv.)</th>
-                                        <th className="px-4 py-3 text-right bg-amber-500/5 text-amber-200">Себест. (Landed)</th>
+                                        <th className="px-4 py-3 text-right">Цена</th>
+                                        {procurementType === 'import' && (
+                                            <th className="px-4 py-3 text-right bg-amber-500/5 text-amber-200">Себест. (Landed)</th>
+                                        )}
                                         <th className="px-4 py-3 text-right">Сумма</th>
                                         <th className="px-4 py-3 text-center"></th>
                                     </tr>
@@ -432,7 +465,9 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
                                             <td className="px-4 py-3 font-medium text-slate-200">{item.productName}</td>
                                             <td className="px-4 py-3 text-right font-mono">{item.quantity} <span className="text-xs text-slate-500">{item.unit}</span></td>
                                             <td className="px-4 py-3 text-right font-mono text-slate-400">${item.invoicePrice.toFixed(2)}</td>
-                                            <td className="px-4 py-3 text-right font-mono font-bold text-amber-400 bg-amber-500/5">${item.landedCost.toFixed(2)}</td>
+                                            {procurementType === 'import' && (
+                                                <td className="px-4 py-3 text-right font-mono font-bold text-amber-400 bg-amber-500/5">${item.landedCost.toFixed(2)}</td>
+                                            )}
                                             <td className="px-4 py-3 text-right font-mono text-slate-200">${item.totalLineCost.toFixed(2)}</td>
                                             <td className="px-4 py-3 text-center">
                                                 <button onClick={() => removeItem(item.productId)} className="text-slate-600 hover:text-red-400 transition-colors">
@@ -443,7 +478,7 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
                                     ))}
                                     {cart.length === 0 && (
                                         <tr>
-                                            <td colSpan={6} className="px-6 py-12 text-center text-slate-500">
+                                            <td colSpan={procurementType === 'import' ? 6 : 5} className="px-6 py-12 text-center text-slate-500">
                                                 Список пуст. Добавьте товары слева.
                                             </td>
                                         </tr>
@@ -456,13 +491,15 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
                         <div className="bg-slate-900 p-6 border-t border-slate-700">
                             <div className="grid grid-cols-3 gap-8 mb-6">
                                 <div>
-                                    <p className="text-xs text-slate-500 uppercase">Сумма по Инвойсу</p>
+                                    <p className="text-xs text-slate-500 uppercase">Сумма закупки</p>
                                     <p className="text-xl font-mono font-bold text-slate-300">${totals.totalInvoiceValue.toFixed(2)}</p>
                                 </div>
-                                <div>
-                                    <p className="text-xs text-slate-500 uppercase">Накладные расходы</p>
-                                    <p className="text-xl font-mono font-bold text-amber-400">+${totals.totalOverheads.toFixed(2)}</p>
-                                </div>
+                                {procurementType === 'import' && (
+                                    <div>
+                                        <p className="text-xs text-slate-500 uppercase">Накладные расходы</p>
+                                        <p className="text-xl font-mono font-bold text-amber-400">+${totals.totalOverheads.toFixed(2)}</p>
+                                    </div>
+                                )}
                                 <div>
                                     <p className="text-xs text-slate-500 uppercase">Итого Себестоимость</p>
                                     <p className="text-2xl font-mono font-bold text-white border-b-2 border-primary-500 inline-block">
@@ -474,7 +511,7 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
                             <div className="flex items-center gap-4 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg mb-4">
                                 <AlertTriangle className="text-amber-500 shrink-0" size={20} />
                                 <p className="text-xs text-amber-200/80">
-                                    При проведении документа остатки товаров увеличатся, а их учетная цена (Cost Price) будет пересчитана по методу <strong>средневзвешенной</strong> стоимости с учетом всех расходов.
+                                    При проведении документа остатки товаров увеличатся, а их учетная цена (Cost Price) будет пересчитана по методу <strong>средневзвешенной</strong> стоимости.
                                 </p>
                             </div>
 

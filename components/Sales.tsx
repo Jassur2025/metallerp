@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Product, Order, OrderItem, AppSettings, Expense } from '../types';
-import { ShoppingCart, Plus, Trash2, CheckCircle, RefreshCw, Package, FileText, FileSpreadsheet, User, ArrowUpDown, Wallet, CreditCard, Building2, ArrowDownRight, ArrowUpRight } from 'lucide-react';
+import { Product, Order, OrderItem, AppSettings, Expense, Employee, Client, Transaction } from '../types';
+import { ShoppingCart, Plus, Trash2, CheckCircle, RefreshCw, Package, FileText, FileSpreadsheet, User, ArrowUpDown, Wallet, CreditCard, Building2, ArrowDownRight, ArrowUpRight, Phone, Mail, MapPin } from 'lucide-react';
+
+
 
 interface SalesProps {
   products: Product[];
@@ -10,7 +12,17 @@ interface SalesProps {
   settings: AppSettings;
   expenses: Expense[];
   setExpenses: (e: Expense[]) => void;
+  employees: Employee[];
+  onNavigateToStaff: () => void;
+  clients: Client[];
+  onSaveClients: (clients: Client[]) => void;
+  transactions: Transaction[];
+  setTransactions: (t: Transaction[]) => void;
+  onSaveOrders?: (orders: Order[]) => Promise<boolean | void>;
+  onSaveTransactions?: (transactions: Transaction[]) => Promise<boolean | void>;
 }
+
+// ... (FlyingIcon component remains unchanged)
 
 interface FlyingIconProps {
   startX: number;
@@ -20,7 +32,6 @@ interface FlyingIconProps {
   onComplete: () => void;
 }
 
-// Sub-component for the single flying animation
 const FlyingIcon: React.FC<FlyingIconProps> = ({
   startX, startY, targetX, targetY, onComplete
 }) => {
@@ -55,15 +66,43 @@ const FlyingIcon: React.FC<FlyingIconProps> = ({
   }, [targetX, targetY, onComplete]);
 
   return (
-    <div style={style} className="text-primary-400 pointer-events-none">
+    <div style={style} className="text-emerald-400 pointer-events-none">
       <Package size={24} fill="currentColor" fillOpacity={0.2} />
     </div>
   );
 };
 
-export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, setOrders, settings, expenses, setExpenses }) => {
-  // Mode: 'sale' or 'expense'
-  const [mode, setMode] = useState<'sale' | 'expense'>('sale');
+export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, setOrders, settings, expenses, setExpenses, employees, onNavigateToStaff, clients, onSaveClients, transactions, setTransactions, onSaveOrders, onSaveTransactions }) => {
+  // Mode: 'sale' or 'expense' or 'return'
+  const [mode, setMode] = useState<'sale' | 'expense' | 'return'>('sale');
+
+  // Client Modal State
+  const [isClientModalOpen, setIsClientModalOpen] = useState(false);
+  const [newClientData, setNewClientData] = useState<Partial<Client>>({
+    name: '',
+    phone: '',
+    email: '',
+    address: '',
+    creditLimit: 0,
+    notes: ''
+  });
+
+  const handleSaveClient = () => {
+    if (!newClientData.name || !newClientData.phone) {
+      alert('Имя и Телефон обязательны!');
+      return;
+    }
+
+    const newClient: Client = {
+      id: Date.now().toString(),
+      ...newClientData as Client
+    };
+
+    onSaveClients([...clients, newClient]);
+    setCustomerName(newClient.name); // Auto-select
+    setIsClientModalOpen(false);
+    setNewClientData({ name: '', phone: '', email: '', address: '', creditLimit: 0, notes: '' });
+  };
 
   // Sale State
   const [cart, setCart] = useState<OrderItem[]>([]);
@@ -82,6 +121,12 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
   const [expenseMethod, setExpenseMethod] = useState<'cash' | 'bank' | 'card'>('cash');
   const [expenseCurrency, setExpenseCurrency] = useState<'USD' | 'UZS'>('UZS');
 
+  // Return State
+  const [returnClientName, setReturnClientName] = useState('');
+  const [returnProductName, setReturnProductName] = useState('');
+  const [returnQuantity, setReturnQuantity] = useState('');
+  const [returnMethod, setReturnMethod] = useState<'cash' | 'debt'>('cash');
+
   // Animation State
   const [flyingItems, setFlyingItems] = useState<{ id: number, startX: number, startY: number, targetX: number, targetY: number }[]>([]);
 
@@ -90,7 +135,7 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
   }, [settings.defaultExchangeRate]);
 
   const toUZS = (usd: number) => Math.round(usd * exchangeRate);
-  const toUSD = (uzs: number) => uzs / exchangeRate;
+  const toUSD = (uzs: number) => exchangeRate > 0 ? uzs / exchangeRate : 0;
 
   // --- Balance Calculations ---
   const calculateBalance = () => {
@@ -198,8 +243,24 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
   const totalAmountUSD = subtotalUSD + vatAmountUSD;
   const totalAmountUZS = toUZS(totalAmountUSD);
 
-  const completeOrder = () => {
+  const completeOrder = async () => {
     if (cart.length === 0 || !customerName) return;
+
+    // Проверка достаточности товара на складе
+    const insufficientStock: string[] = [];
+    cart.forEach(cartItem => {
+      const product = products.find(p => p.id === cartItem.productId);
+      if (!product) {
+        insufficientStock.push(`${cartItem.productName} (товар не найден)`);
+      } else if (product.quantity < cartItem.quantity) {
+        insufficientStock.push(`${cartItem.productName} (запрошено: ${cartItem.quantity}, доступно: ${product.quantity})`);
+      }
+    });
+
+    if (insufficientStock.length > 0) {
+      alert(`❌ Недостаточно товара на складе:\n\n${insufficientStock.join('\n')}\n\nПожалуйста, обновите количество в корзине.`);
+      return;
+    }
 
     const isDebt = paymentMethod === 'debt';
     const amountPaid = isDebt ? 0 : totalAmountUSD;
@@ -238,13 +299,64 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
       return p;
     });
 
-    setOrders([newOrder, ...orders]);
+    const updatedOrders = [newOrder, ...orders];
+    setOrders(updatedOrders);
+    
     setProducts(updatedProducts);
+
+    // Update Client Debt & Purchases
+    const clientIndex = clients.findIndex(c => c.name === customerName);
+    if (clientIndex !== -1) {
+      const updatedClients = [...clients];
+      const client = updatedClients[clientIndex];
+
+      updatedClients[clientIndex] = {
+        ...client,
+        totalPurchases: (client.totalPurchases || 0) + totalAmountUSD,
+        totalDebt: isDebt ? (client.totalDebt || 0) + totalAmountUSD : (client.totalDebt || 0)
+      };
+
+      onSaveClients(updatedClients);
+    }
+
+    // Create Transaction for Debt History
+    let transactionSaved = true;
+    if (isDebt) {
+      const newTransaction: Transaction = {
+        id: `TRX-${Date.now()}`,
+        date: new Date().toISOString(),
+        type: 'debt_obligation',
+        amount: totalAmountUSD,
+        currency: 'USD',
+        method: 'debt',
+        description: `Покупка в долг: Заказ #${newOrder.id}`,
+        relatedId: clientIndex !== -1 ? clients[clientIndex].id : undefined
+      };
+      const updatedTransactions = [...transactions, newTransaction];
+      setTransactions(updatedTransactions);
+      if (onSaveTransactions) {
+        transactionSaved = await onSaveTransactions(updatedTransactions) ?? true;
+      }
+    }
+
+    // Save orders to Google Sheets
+    let orderSaved = true;
+    if (onSaveOrders) {
+      orderSaved = await onSaveOrders(updatedOrders) ?? true;
+    }
+
+    // Clear form
     setCart([]);
     setCustomerName('');
     setSellerName('');
     setPaymentMethod('cash');
-    alert(`Заказ оформлен!\nСумма: ${totalAmountUZS.toLocaleString()} UZS\nМетод: ${paymentMethod === 'debt' ? 'Долг' : paymentMethod}`);
+
+    // Show success message
+    if (orderSaved && transactionSaved) {
+      alert(`✅ Заказ успешно сохранен в Google Sheets!\n\nСумма: ${totalAmountUZS.toLocaleString()} сўм ($${totalAmountUSD.toFixed(2)})\nМетод оплаты: ${paymentMethod === 'debt' ? 'Долг (USD)' : paymentMethod === 'cash' ? `Наличные (${paymentCurrency})` : paymentMethod === 'card' ? 'Карта (UZS)' : 'Перечисление (UZS)'}\nЗаказ #${newOrder.id}`);
+    } else {
+      alert(`⚠️ Заказ оформлен, но произошла ошибка при сохранении в Google Sheets.\n\nСумма: ${totalAmountUZS.toLocaleString()} сўм ($${totalAmountUSD.toFixed(2)})\nМетод оплаты: ${paymentMethod === 'debt' ? 'Долг (USD)' : paymentMethod === 'cash' ? `Наличные (${paymentCurrency})` : paymentMethod === 'card' ? 'Карта (UZS)' : 'Перечисление (UZS)'}\nЗаказ #${newOrder.id}`);
+    }
   };
 
   // --- Expense Logic ---
@@ -269,6 +381,86 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
     setExpenseDesc('');
     setExpenseAmount('');
     alert('Расход добавлен!');
+  };
+
+  const handleReturnSubmit = () => {
+    if (!returnClientName || !returnProductName || !returnQuantity) {
+      alert('Заполните все поля!');
+      return;
+    }
+
+    const product = products.find(p => p.name === returnProductName);
+    const client = clients.find(c => c.name === returnClientName);
+    const qty = Number(returnQuantity);
+
+    if (!product) {
+      alert('Товар не найден!');
+      return;
+    }
+    if (qty <= 0) {
+      alert('Некорректное количество!');
+      return;
+    }
+
+    // 1. Update Stock
+    const updatedProducts = products.map(p => {
+      if (p.id === product.id) {
+        return { ...p, quantity: p.quantity + qty };
+      }
+      return p;
+    });
+    setProducts(updatedProducts);
+
+    // 2. Financial Impact
+    const returnAmountUSD = qty * product.pricePerUnit; // Using current price for simplicity
+
+    if (returnMethod === 'debt') {
+      // Decrease Client Debt
+      if (client) {
+        const updatedClients = clients.map(c => {
+          if (c.id === client.id) {
+            return { ...c, totalDebt: Math.max(0, (c.totalDebt || 0) - returnAmountUSD) };
+          }
+          return c;
+        });
+        onSaveClients(updatedClients);
+      }
+    } else {
+      // Cash Refund
+      const newTransaction = {
+        id: `TRX-${Date.now()}`,
+        date: new Date().toISOString(),
+        type: 'client_return',
+        amount: returnAmountUSD,
+        currency: 'USD', // Returns calculated in USD
+        method: 'cash',
+        description: `Возврат товара: ${product.name} (${qty} ${product.unit})`,
+        relatedId: client ? client.id : undefined
+      };
+      setTransactions([...transactions, newTransaction]);
+    }
+
+    // Always create a transaction record for the return (even if debt) for history?
+    // If debt, we already updated client debt. But a history record is good.
+    if (returnMethod === 'debt') {
+      const newTransaction = {
+        id: `TRX-${Date.now()}`,
+        date: new Date().toISOString(),
+        type: 'client_return',
+        amount: returnAmountUSD,
+        currency: 'USD',
+        method: 'debt',
+        description: `Возврат на долг: ${product.name} (${qty} ${product.unit})`,
+        relatedId: client ? client.id : undefined
+      };
+      setTransactions([...transactions, newTransaction]);
+    }
+
+    alert(`Возврат оформлен!\nТовар: ${product.name} (+${qty})\nСумма: $${returnAmountUSD.toFixed(2)}`);
+    setMode('sale');
+    setReturnClientName('');
+    setReturnProductName('');
+    setReturnQuantity('');
   };
 
   // --- Render ---
@@ -340,6 +532,12 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
               className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${mode === 'expense' ? 'bg-red-600 text-white shadow-lg shadow-red-900/20' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
             >
               <ArrowUpRight size={20} /> Новый Расход
+            </button>
+            <button
+              onClick={() => setMode('return')}
+              className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${mode === 'return' ? 'bg-amber-600 text-white shadow-lg shadow-amber-900/20' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
+            >
+              <RefreshCw size={20} /> Возврат
             </button>
           </div>
 
@@ -560,23 +758,55 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
                   <label className="text-xs font-medium text-slate-400 uppercase flex items-center gap-1"><User size={12} /> Клиент</label>
-                  <input
-                    type="text"
-                    placeholder="Клиент"
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-primary-500 outline-none"
-                    value={customerName}
-                    onChange={e => setCustomerName(e.target.value)}
-                  />
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <input
+                        type="text"
+                        placeholder="Поиск или выбор клиента..."
+                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-primary-500 outline-none"
+                        value={customerName}
+                        onChange={e => setCustomerName(e.target.value)}
+                        list="clients-list"
+                      />
+                      <datalist id="clients-list">
+                        {clients.map(c => (
+                          <option key={c.id} value={c.name} />
+                        ))}
+                      </datalist>
+                    </div>
+                    <button
+                      onClick={() => setIsClientModalOpen(true)}
+                      className="bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg px-3 text-slate-400 hover:text-white transition-colors"
+                      title="Новый клиент"
+                    >
+                      <Plus size={16} />
+                    </button>
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <label className="text-xs font-medium text-slate-400 uppercase flex items-center gap-1"><User size={12} /> Продавец</label>
-                  <input
-                    type="text"
-                    placeholder="Продавец"
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-primary-500 outline-none"
-                    value={sellerName}
-                    onChange={e => setSellerName(e.target.value)}
-                  />
+                  <div className="flex gap-2">
+                    <select
+                      className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-primary-500 outline-none appearance-none"
+                      value={sellerName}
+                      onChange={e => setSellerName(e.target.value)}
+                    >
+                      <option value="">Выберите продавца</option>
+                      {employees
+                        .filter(e => ['sales', 'manager', 'admin'].includes(e.role) && e.status === 'active')
+                        .map(e => (
+                          <option key={e.id} value={e.name}>{e.name}</option>
+                        ))
+                      }
+                    </select>
+                    <button
+                      onClick={onNavigateToStaff}
+                      className="bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg px-3 text-slate-400 hover:text-white transition-colors"
+                      title="Добавить сотрудника"
+                    >
+                      <Plus size={16} />
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -660,6 +890,97 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
           </div>
         )}
       </div>
-    </div>
+
+      {/* Return Modal */}
+      {
+        mode === 'return' && (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-slate-800 rounded-2xl w-full max-w-lg border border-slate-700 shadow-2xl animate-scale-in">
+              <div className="p-6 border-b border-slate-700 flex justify-between items-center">
+                <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                  <RefreshCw className="text-amber-500" /> Возврат товара
+                </h3>
+                <button onClick={() => setMode('sale')} className="text-slate-400 hover:text-white">&times;</button>
+              </div>
+              <div className="p-6 space-y-4">
+                {/* Client Selection */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-400 mb-1">Клиент *</label>
+                  <input
+                    type="text"
+                    placeholder="Выберите клиента..."
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-amber-500 outline-none"
+                    value={returnClientName}
+                    onChange={e => setReturnClientName(e.target.value)}
+                    list="return-clients-list"
+                  />
+                  <datalist id="return-clients-list">
+                    {clients.map(c => (
+                      <option key={c.id} value={c.name} />
+                    ))}
+                  </datalist>
+                </div>
+
+                {/* Product Selection */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-400 mb-1">Товар *</label>
+                  <input
+                    type="text"
+                    placeholder="Выберите товар..."
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-amber-500 outline-none"
+                    value={returnProductName}
+                    onChange={e => setReturnProductName(e.target.value)}
+                    list="return-products-list"
+                  />
+                  <datalist id="return-products-list">
+                    {products.map(p => (
+                      <option key={p.id} value={p.name} />
+                    ))}
+                  </datalist>
+                </div>
+
+                {/* Quantity */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-400 mb-1">Количество *</label>
+                  <input
+                    type="number"
+                    value={returnQuantity}
+                    onChange={e => setReturnQuantity(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-amber-500 outline-none"
+                    placeholder="0"
+                  />
+                </div>
+
+                {/* Refund Method */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-400 mb-2">Метод возврата</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => setReturnMethod('cash')}
+                      className={`py-2 rounded-lg text-sm font-medium border transition-all ${returnMethod === 'cash' ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : 'bg-slate-900 border-slate-600 text-slate-400'}`}
+                    >
+                      Вернуть деньги (Нал)
+                    </button>
+                    <button
+                      onClick={() => setReturnMethod('debt')}
+                      className={`py-2 rounded-lg text-sm font-medium border transition-all ${returnMethod === 'debt' ? 'bg-red-500/20 border-red-500 text-red-400' : 'bg-slate-900 border-slate-600 text-slate-400'}`}
+                    >
+                      Списать с долга
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleReturnSubmit}
+                  className="w-full bg-amber-600 hover:bg-amber-500 text-white py-3 rounded-xl font-bold text-lg shadow-lg shadow-amber-600/20 transition-all mt-4"
+                >
+                  Оформить Возврат
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      }
+    </div >
   );
 };

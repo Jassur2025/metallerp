@@ -335,7 +335,8 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts }) =
                   <label className="text-xs font-medium text-slate-400">Количество</label>
                   <input
                     type="number"
-                    className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 outline-none"
+                    disabled
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 outline-none text-slate-500 cursor-not-allowed"
                     value={formData.quantity}
                     onChange={e => setFormData({ ...formData, quantity: Number(e.target.value) })}
                   />
@@ -348,7 +349,8 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts }) =
                     <TrendingUp className="absolute left-2 top-2.5 text-slate-400" size={14} />
                     <input
                       type="number"
-                      className="w-full bg-slate-700 border border-slate-600 rounded-lg pl-7 pr-3 py-2 outline-none"
+                      disabled
+                      className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-7 pr-3 py-2 outline-none text-slate-500 cursor-not-allowed"
                       placeholder="0.00"
                       value={formData.costPrice}
                       onChange={e => setFormData({ ...formData, costPrice: Number(e.target.value) })}
