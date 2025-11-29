@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Product, Order, Expense, FixedAsset, AppSettings, Transaction } from '../types';
+import { Product, Order, Expense, FixedAsset, AppSettings, Transaction, Client } from '../types';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { ShieldCheck, Wallet, Building2, Scale, Landmark } from 'lucide-react';
 
@@ -11,70 +11,79 @@ interface BalanceProps {
     fixedAssets: FixedAsset[];
     settings: AppSettings;
     transactions: Transaction[];
+    clients: Client[];
 }
 
-export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fixedAssets, settings, transactions }) => {
+export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fixedAssets, settings, transactions, clients }) => {
+    // Safety checks - ensure arrays are defined
+    const safeProducts = products || [];
+    const safeOrders = orders || [];
+    const safeExpenses = expenses || [];
+    const safeFixedAssets = fixedAssets || [];
+    const safeTransactions = transactions || [];
+    const safeClients = clients || [];
+
     // --- ASSETS (АКТИВЫ) ---
 
     // 1. Inventory Value (USD) - Stock on hand
-    const inventoryValue = products.reduce((sum, p) => sum + (p.quantity * p.pricePerUnit), 0);
+    const inventoryValue = safeProducts.reduce((sum, p) => sum + ((p.quantity || 0) * (p.pricePerUnit || 0)), 0);
 
     // 2. Cash Breakdown
     // Initial Sales Cash (Direct Sales)
-    const cashSales = orders.filter(o => o.paymentMethod === 'cash').reduce((sum, o) => sum + o.amountPaid, 0);
-    const bankSales = orders.filter(o => o.paymentMethod === 'bank').reduce((sum, o) => sum + o.amountPaid, 0);
-    const cardSales = orders.filter(o => o.paymentMethod === 'card').reduce((sum, o) => sum + o.amountPaid, 0);
+    const cashSales = safeOrders.filter(o => o.paymentMethod === 'cash').reduce((sum, o) => sum + (o.amountPaid || 0), 0);
+    const bankSales = safeOrders.filter(o => o.paymentMethod === 'bank').reduce((sum, o) => sum + (o.amountPaid || 0), 0);
+    const cardSales = safeOrders.filter(o => o.paymentMethod === 'card').reduce((sum, o) => sum + (o.amountPaid || 0), 0);
 
     // Add Client Repayments (Inflow)
-    const clientRepaymentsCash = transactions
-        .filter(t => t.type === 'client_payment' && t.method === 'cash')
+    const clientRepaymentsCash = safeTransactions
+        .filter(t => t && t.type === 'client_payment' && t.method === 'cash')
         .reduce((sum, t) => {
-            const amountUSD = t.currency === 'UZS' && t.exchangeRate && t.exchangeRate > 0 
-                ? t.amount / t.exchangeRate 
-                : t.amount;
+            const amountUSD = t.currency === 'UZS' && t.exchangeRate && t.exchangeRate > 0
+                ? (t.amount || 0) / t.exchangeRate
+                : (t.amount || 0);
             return sum + amountUSD;
         }, 0);
-    const clientRepaymentsBank = transactions
-        .filter(t => t.type === 'client_payment' && t.method === 'bank')
+    const clientRepaymentsBank = safeTransactions
+        .filter(t => t && t.type === 'client_payment' && t.method === 'bank')
         .reduce((sum, t) => {
             // Bank is always UZS, but let's be safe and check currency or assume UZS if rate exists
-            const amountUSD = t.currency === 'UZS' && t.exchangeRate && t.exchangeRate > 0 
-                ? t.amount / t.exchangeRate 
-                : t.amount;
+            const amountUSD = t.currency === 'UZS' && t.exchangeRate && t.exchangeRate > 0
+                ? (t.amount || 0) / t.exchangeRate
+                : (t.amount || 0);
             return sum + amountUSD;
         }, 0);
-    const clientRepaymentsCard = transactions
-        .filter(t => t.type === 'client_payment' && t.method === 'card')
+    const clientRepaymentsCard = safeTransactions
+        .filter(t => t && t.type === 'client_payment' && t.method === 'card')
         .reduce((sum, t) => {
-            const amountUSD = t.currency === 'UZS' && t.exchangeRate && t.exchangeRate > 0 
-                ? t.amount / t.exchangeRate 
-                : t.amount;
+            const amountUSD = t.currency === 'UZS' && t.exchangeRate && t.exchangeRate > 0
+                ? (t.amount || 0) / t.exchangeRate
+                : (t.amount || 0);
             return sum + amountUSD;
         }, 0);
 
     // Subtract Client Returns (Outflow - Refund)
-    const clientReturnsCash = transactions
-        .filter(t => t.type === 'client_return' && t.method === 'cash')
+    const clientReturnsCash = safeTransactions
+        .filter(t => t && t.type === 'client_return' && t.method === 'cash')
         .reduce((sum, t) => {
-            const amountUSD = t.currency === 'UZS' && t.exchangeRate && t.exchangeRate > 0 
-                ? t.amount / t.exchangeRate 
-                : t.amount;
+            const amountUSD = t.currency === 'UZS' && t.exchangeRate && t.exchangeRate > 0
+                ? (t.amount || 0) / t.exchangeRate
+                : (t.amount || 0);
             return sum + amountUSD;
         }, 0);
 
     // Subtract Supplier Payments (Outflow)
-    const supplierPaymentsCash = transactions
-        .filter(t => t.type === 'supplier_payment' && t.method === 'cash')
-        .reduce((sum, t) => sum + t.amount, 0); // Assuming supplier payments are currently just USD or handled simply. 
+    const supplierPaymentsCash = safeTransactions
+        .filter(t => t && t.type === 'supplier_payment' && t.method === 'cash')
+        .reduce((sum, t) => sum + (t.amount || 0), 0); // Assuming supplier payments are currently just USD or handled simply. 
     // TODO: If supplier payments become multi-currency, update here too. For now, Import.tsx handles debt in USD.
-    const supplierPaymentsBank = transactions
-        .filter(t => t.type === 'supplier_payment' && t.method === 'bank')
-        .reduce((sum, t) => sum + t.amount, 0);
+    const supplierPaymentsBank = safeTransactions
+        .filter(t => t && t.type === 'supplier_payment' && t.method === 'bank')
+        .reduce((sum, t) => sum + (t.amount || 0), 0);
 
     // Subtract Expenses (Outflow)
-    const expensesCash = expenses.filter(e => e.paymentMethod === 'cash').reduce((sum, e) => sum + e.amount, 0);
-    const expensesBank = expenses.filter(e => e.paymentMethod === 'bank').reduce((sum, e) => sum + e.amount, 0);
-    const expensesCard = expenses.filter(e => e.paymentMethod === 'card').reduce((sum, e) => sum + e.amount, 0); // Assuming card expenses reduce card balance
+    const expensesCash = safeExpenses.filter(e => e && e.paymentMethod === 'cash').reduce((sum, e) => sum + (e.amount || 0), 0);
+    const expensesBank = safeExpenses.filter(e => e && e.paymentMethod === 'bank').reduce((sum, e) => sum + (e.amount || 0), 0);
+    const expensesCard = safeExpenses.filter(e => e && e.paymentMethod === 'card').reduce((sum, e) => sum + (e.amount || 0), 0); // Assuming card expenses reduce card balance
 
     // Net Cash Positions
     const netCash = Math.max(0, cashSales + clientRepaymentsCash - supplierPaymentsCash - expensesCash - clientReturnsCash);
@@ -82,28 +91,14 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fi
     const netCard = Math.max(0, cardSales + clientRepaymentsCard - expensesCard);
 
     // 3. Fixed Assets Value
-    const fixedAssetsValue = fixedAssets.reduce((sum, asset) => sum + asset.currentValue, 0);
+    const fixedAssetsValue = safeFixedAssets.reduce((sum, asset) => sum + ((asset.currentValue || 0)), 0);
 
-    // Debtors (Unpaid amounts from Sales)
-    // Note: Client debt is now tracked in Client object, but we can calculate from orders - repayments
-    // Or better, rely on the calculated debt from orders vs paid.
-    // Let's stick to Order based calculation for consistency with previous logic, 
-    // but we must account for repayments.
-    // Actually, simpler: Sum of (Order Total - Order Paid) is the initial debt.
-    // BUT, we have `amountPaid` in Order. If we update `amountPaid` in Order when repayment happens, it's easy.
-    // However, our current Repayment logic in CRM creates a Transaction and updates Client.totalDebt, 
-    // it DOES NOT update individual Orders.
-    // So, Total Accounts Receivable = Sum(Client.totalDebt).
-    // Since we don't have Clients passed here, we can approximate:
-    // Total Sales - Total Paid (via Orders) - Total Repayments (via Transactions)
-    const totalSalesAmount = orders.reduce((sum, o) => sum + o.totalAmount, 0);
-    const totalPaidDirectly = orders.reduce((sum, o) => sum + o.amountPaid, 0);
-    const totalRepaidLater = transactions.filter(t => t.type === 'client_payment').reduce((sum, t) => sum + t.amount, 0);
-
-    const accountsReceivable = Math.max(0, totalSalesAmount - totalPaidDirectly - totalRepaidLater);
+    // 4. Accounts Receivable (Дебиторская задолженность)
+    // Use totalDebt from clients - this is the most accurate source
+    const accountsReceivable = safeClients.reduce((sum, client) => sum + (client.totalDebt || 0), 0);
 
     // Total Expenses (already subtracted from cash, but needed for net profit calc)
-    const totalExpensesAll = expenses.reduce((sum, e) => sum + e.amount, 0);
+    const totalExpensesAll = safeExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
 
     // Liquid Assets (Net)
     const totalLiquidAssets = netCash + netBank + netCard;
@@ -113,19 +108,38 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fi
     // --- PASSIVES (ПАССИВЫ) ---
 
     // 1. VAT Liability (Owed to Government)
-    const vatLiability = orders.reduce((sum, o) => sum + (o.vatAmount || 0), 0);
+    const vatLiability = safeOrders.reduce((sum, o) => sum + (o.vatAmount || 0), 0);
 
-    // 2. Equity / Capital
+    // 2. Equity / Capital (Initial Investment in Inventory)
+    // This represents the initial capital invested to purchase inventory
     const equity = inventoryValue;
 
-    // 3. Fixed Assets Fund (Equity source for Fixed Assets)
+    // 3. Fixed Assets Fund (Capital invested in Fixed Assets)
     const fixedAssetsFund = fixedAssetsValue;
 
-    // 4. Retained Earnings
-    // Assets - Liabilities - Capital
-    // = (Inventory + Cash + AR + FixedAssets) - VAT - (Inventory + FixedAssets)
-    // = Cash + AR - VAT
-    const retainedEarnings = totalLiquidAssets + accountsReceivable - vatLiability;
+    // 4. Net Profit (for display purposes - from PnL)
+    // Revenue (excluding VAT)
+    const revenue = safeOrders.reduce((sum, o) => sum + (o.subtotalAmount || 0), 0);
+
+    // COGS (Cost of Goods Sold)
+    const cogs = safeOrders.reduce((sumOrder, order) => {
+        if (!order.items || !Array.isArray(order.items)) return sumOrder;
+        const orderCost = order.items.reduce((sumItem, item) => {
+            return sumItem + ((item.quantity || 0) * (item.costAtSale || 0));
+        }, 0);
+        return sumOrder + orderCost;
+    }, 0);
+
+    // Gross Profit
+    const grossProfit = revenue - cogs;
+
+    // Net Profit = Gross Profit - Operating Expenses
+    const netProfit = grossProfit - totalExpensesAll;
+
+    // 5. Retained Earnings (Balancing Item)
+    // This is what makes Assets = Liabilities + Equity
+    // Retained Earnings = Total Assets - (Equity + Fixed Assets Fund + VAT Liability)
+    const retainedEarnings = totalAssets - equity - fixedAssetsFund - vatLiability;
 
     const totalPassives = equity + fixedAssetsFund + retainedEarnings + vatLiability;
 
@@ -141,7 +155,7 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fi
     const passivesData = [
         { name: 'Товарный капитал', value: equity, color: '#8b5cf6' },
         { name: 'Фонд ОС', value: fixedAssetsFund, color: '#0ea5e9' },
-        { name: 'Чистая выручка', value: retainedEarnings > 0 ? retainedEarnings : 0, color: '#f59e0b' },
+        { name: 'Нераспр. прибыль', value: retainedEarnings > 0 ? retainedEarnings : 0, color: '#f59e0b' },
         { name: 'Обязательства по НДС', value: vatLiability, color: '#ef4444' },
     ].filter(item => item.value > 0);
 
@@ -272,8 +286,8 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fi
                             <div className="flex items-center gap-3">
                                 <div className="w-2 h-10 bg-amber-500 rounded-full"></div>
                                 <div>
-                                    <p className="text-white font-medium">Чистая прибыль</p>
-                                    <p className="text-xs text-slate-500">Накопленная (после НДС)</p>
+                                    <p className="text-white font-medium">Нераспределенная прибыль</p>
+                                    <p className="text-xs text-slate-500">Retained Earnings</p>
                                 </div>
                             </div>
                             <p className={`font-mono text-lg ${retainedEarnings >= 0 ? 'text-amber-400' : 'text-red-400'}`}>
@@ -338,8 +352,8 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fi
                     <div className="w-full bg-slate-700/50 rounded-lg p-4 grid grid-cols-2 gap-4 divide-x divide-slate-600">
                         <div>
                             <p className="text-xs text-slate-500">Чистая Прибыль</p>
-                            <p className={`font-bold ${retainedEarnings >= 0 ? 'text-amber-400' : 'text-red-400'}`}>
-                                {formatCurrency(retainedEarnings)}
+                            <p className={`font-bold ${netProfit >= 0 ? 'text-amber-400' : 'text-red-400'}`}>
+                                {formatCurrency(netProfit)}
                             </p>
                         </div>
                         <div>

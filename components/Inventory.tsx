@@ -7,9 +7,10 @@ import { Plus, Search, Loader2, BrainCircuit, Trash2, DollarSign, Pencil, Trendi
 interface InventoryProps {
   products: Product[];
   setProducts: (products: Product[]) => void;
+  onSaveProducts?: (products: Product[]) => Promise<void>;
 }
 
-export const Inventory: React.FC<InventoryProps> = ({ products, setProducts }) => {
+export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onSaveProducts }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [isAiLoading, setIsAiLoading] = useState(false);
@@ -31,7 +32,11 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts }) =
 
   const handleDelete = (id: string) => {
     if (confirm('Вы уверены, что хотите удалить этот товар?')) {
-      setProducts(products.filter(p => p.id !== id));
+      const updatedProducts = products.filter(p => p.id !== id);
+      setProducts(updatedProducts);
+      if (onSaveProducts) {
+        onSaveProducts(updatedProducts);
+      }
     }
   };
 
@@ -59,9 +64,11 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts }) =
   const handleSaveProduct = () => {
     if (!formData.name) return;
 
+    let updatedProducts: Product[];
+
     if (editingId) {
       // Edit Mode
-      const updatedProducts = products.map(p => {
+      updatedProducts = products.map(p => {
         if (p.id === editingId) {
           return {
             ...p,
@@ -77,7 +84,6 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts }) =
         }
         return p;
       });
-      setProducts(updatedProducts);
     } else {
       // Create Mode
       const product: Product = {
@@ -92,7 +98,12 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts }) =
         costPrice: Number(formData.costPrice) || 0,
         minStockLevel: 0
       };
-      setProducts([...products, product]);
+      updatedProducts = [...products, product];
+    }
+
+    setProducts(updatedProducts);
+    if (onSaveProducts) {
+      onSaveProducts(updatedProducts);
     }
 
     setShowAddModal(false);
@@ -124,17 +135,17 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts }) =
   );
 
   return (
-    <div className="p-6 space-y-6 animate-fade-in">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="p-3 sm:p-4 lg:p-6 space-y-4 lg:space-y-6 animate-fade-in">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-white">Складской Учет</h2>
-          <p className="text-slate-400">Управление остатками труб и профиля (Цены в USD)</p>
+          <h2 className="text-xl sm:text-2xl font-bold text-white">Складской Учет</h2>
+          <p className="text-xs sm:text-sm text-slate-400">Управление остатками труб и профиля (Цены в USD)</p>
         </div>
         <button
           onClick={openAddModal}
-          className="bg-primary-600 hover:bg-primary-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-lg shadow-primary-600/20"
+          className="bg-primary-600 hover:bg-primary-500 text-white px-3 sm:px-4 py-2 rounded-lg flex items-center justify-center gap-2 transition-colors shadow-lg shadow-primary-600/20 text-sm sm:text-base"
         >
-          <Plus size={20} /> Добавить товар
+          <Plus size={18} /> <span className="hidden sm:inline">Добавить товар</span><span className="sm:hidden">Добавить</span>
         </button>
       </div>
 
@@ -150,8 +161,8 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts }) =
         />
       </div>
 
-      {/* Table */}
-      <div className="bg-slate-800/50 rounded-xl border border-slate-700 overflow-hidden backdrop-blur-sm">
+      {/* Table - Desktop */}
+      <div className="hidden lg:block bg-slate-800/50 rounded-xl border border-slate-700 overflow-hidden backdrop-blur-sm">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-slate-300">
             <thead className="bg-slate-900/50 text-xs uppercase tracking-wider text-slate-400 font-medium">
@@ -228,10 +239,82 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts }) =
         </div>
       </div>
 
+      {/* Cards - Mobile/Tablet */}
+      <div className="lg:hidden space-y-3">
+        {filteredProducts.map((product) => (
+          <div key={product.id} className="bg-slate-800/50 rounded-xl border border-slate-700 p-4 space-y-3">
+            <div className="flex justify-between items-start">
+              <div className="flex-1">
+                <h3 className="font-medium text-white text-sm sm:text-base">{product.name}</h3>
+                {product.origin === 'import' && (
+                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-500/10 text-purple-400 border border-purple-500/20 mt-1">
+                    ИМПОРТ
+                  </span>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => openEditModal(product)}
+                  className="text-slate-500 hover:text-primary-400 transition-colors p-2 rounded-lg hover:bg-primary-400/10"
+                  title="Редактировать"
+                >
+                  <Pencil size={18} />
+                </button>
+                <button
+                  onClick={() => handleDelete(product.id)}
+                  className="text-slate-500 hover:text-red-400 transition-colors p-2 rounded-lg hover:bg-red-400/10"
+                  title="Удалить"
+                >
+                  <Trash2 size={18} />
+                </button>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3 text-xs sm:text-sm">
+              <div>
+                <p className="text-slate-400 mb-1">Тип</p>
+                <span className={`px-2 py-1 rounded-full text-xs font-medium border ${product.type === ProductType.PIPE ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
+                  product.type === ProductType.PROFILE ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
+                    'bg-slate-500/10 text-slate-400 border-slate-500/20'
+                  }`}>
+                  {product.type}
+                </span>
+              </div>
+              <div>
+                <p className="text-slate-400 mb-1">Размеры</p>
+                <p className="text-white">{product.dimensions}</p>
+              </div>
+              <div>
+                <p className="text-slate-400 mb-1">Сталь</p>
+                <p className="text-white">{product.steelGrade}</p>
+              </div>
+              <div>
+                <p className="text-slate-400 mb-1">Остаток</p>
+                <p className={`font-mono ${product.quantity <= product.minStockLevel ? 'text-red-400' : 'text-slate-200'}`}>
+                  {product.quantity} <span className="text-xs text-slate-500">{product.unit}</span>
+                </p>
+              </div>
+              <div>
+                <p className="text-slate-400 mb-1">Себестоимость</p>
+                <p className="font-mono text-slate-400">${(product.costPrice || 0).toFixed(2)}</p>
+              </div>
+              <div>
+                <p className="text-slate-400 mb-1">Цена</p>
+                <p className="font-mono text-emerald-400">${product.pricePerUnit.toFixed(2)}</p>
+              </div>
+            </div>
+          </div>
+        ))}
+        {filteredProducts.length === 0 && (
+          <div className="bg-slate-800/50 rounded-xl border border-slate-700 p-12 text-center text-slate-500">
+            Товары не найдены
+          </div>
+        )}
+      </div>
+
       {/* Add/Edit Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-          <div className="bg-slate-800 rounded-2xl w-full max-w-2xl border border-slate-700 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/70 backdrop-blur-sm">
+          <div className="bg-slate-800 rounded-xl sm:rounded-2xl w-full max-w-2xl border border-slate-700 shadow-2xl overflow-hidden flex flex-col max-h-[95vh] sm:max-h-[90vh]">
             <div className="p-6 border-b border-slate-700 flex justify-between items-center bg-slate-900/50">
               <h3 className="text-xl font-bold text-white">
                 {editingId ? 'Редактировать товар' : 'Новый товар'}

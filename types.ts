@@ -26,6 +26,7 @@ export interface AppSettings {
     fixedAssets: boolean;
     crm: boolean;
     staff: boolean;
+    journal: boolean;
   };
 }
 
@@ -206,6 +207,7 @@ export interface Employee {
     fixedAssets?: boolean;
     crm?: boolean;
     staff?: boolean;
+    journal?: boolean;
   };
 }
 
@@ -221,7 +223,48 @@ export interface RolePermissions {
     fixedAssets?: boolean;
     crm?: boolean;
     staff?: boolean;
+    journal?: boolean;
   };
   canEdit: boolean; // Can edit data or view only
+}
+
+// Journal Events - для отслеживания операций сотрудников и событий системы
+export type JournalEventType =
+  | 'employee_action'    // Действия сотрудников (создание заказа, изменение товара и т.д.)
+  | 'receipt_operation'  // Операции с чеками (печать, отмена, редактирование)
+  | 'system_event'       // Системные события (вход, выход, настройки)
+  | 'data_change';       // Изменения данных (обновление товара, клиента и т.d.)
+
+export interface JournalEvent {
+  id: string;
+  date: string;
+  type: JournalEventType;
+
+  // Информация о сотруднике
+  employeeId?: string;
+  employeeName?: string;
+  employeeEmail?: string;
+
+  // Детали события
+  action: string;        // Например: "Создан заказ", "Распечатан чек", "Изменен товар"
+  description: string;   // Подробное описание
+  module?: string;       // Модуль системы (sales, inventory, crm и т.д.)
+
+  // Связанные данные
+  relatedType?: 'order' | 'product' | 'client' | 'expense' | 'purchase' | 'transaction';
+  relatedId?: string;
+
+  // Дополнительные данные (для чеков)
+  receiptDetails?: {
+    orderId: string;
+    customerName: string;
+    totalAmount: number;
+    itemsCount: number;
+    paymentMethod: string;
+    operation: 'printed' | 'cancelled' | 'edited' | 'created';
+  };
+
+  // Метаданные
+  metadata?: Record<string, any>;
 }
 

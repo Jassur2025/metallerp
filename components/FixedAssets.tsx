@@ -5,9 +5,10 @@ import { Plus, Trash2, RefreshCw, Landmark, Calendar, DollarSign, TrendingDown, 
 interface FixedAssetsProps {
     assets: FixedAsset[];
     setAssets: (assets: FixedAsset[]) => void;
+    onSaveAssets?: (assets: FixedAsset[]) => Promise<void>;
 }
 
-export const FixedAssets: React.FC<FixedAssetsProps> = ({ assets, setAssets }) => {
+export const FixedAssets: React.FC<FixedAssetsProps> = ({ assets, setAssets, onSaveAssets }) => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isRevalModalOpen, setIsRevalModalOpen] = useState(false);
     const [selectedAsset, setSelectedAsset] = useState<FixedAsset | null>(null);
@@ -53,14 +54,22 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({ assets, setAssets }) =
             depreciationRate: rate,
         };
 
-        setAssets([...assets, newAsset]);
+        const updatedAssets = [...assets, newAsset];
+        setAssets(updatedAssets);
+        if (onSaveAssets) {
+            onSaveAssets(updatedAssets);
+        }
         setIsModalOpen(false);
         resetForm();
     };
 
     const handleDelete = (id: string) => {
         if (confirm('Вы уверены, что хотите удалить это основное средство?')) {
-            setAssets(assets.filter(a => a.id !== id));
+            const updatedAssets = assets.filter(a => a.id !== id);
+            setAssets(updatedAssets);
+            if (onSaveAssets) {
+                onSaveAssets(updatedAssets);
+            }
         }
     };
 
@@ -93,6 +102,9 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({ assets, setAssets }) =
         });
 
         setAssets(updatedAssets);
+        if (onSaveAssets) {
+            onSaveAssets(updatedAssets);
+        }
         alert('Амортизация успешно начислена!');
     };
 
@@ -118,6 +130,9 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({ assets, setAssets }) =
         });
 
         setAssets(updatedAssets);
+        if (onSaveAssets) {
+            onSaveAssets(updatedAssets);
+        }
         setIsRevalModalOpen(false);
         setSelectedAsset(null);
         setRevalValue('');

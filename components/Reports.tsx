@@ -1,20 +1,22 @@
 
 import React, { useState } from 'react';
-import { Order, Expense } from '../types';
+import { Order, Expense, Product } from '../types';
 import { CashFlow } from './CashFlow';
 import { PnL } from './PnL';
 import { SalesAnalytics } from './SalesAnalytics';
-import { ArrowRightLeft, TrendingUp, FileText, PieChart } from 'lucide-react';
+import { SalesStatistics } from './SalesStatistics';
+import { ArrowRightLeft, TrendingUp, FileText, PieChart, Table } from 'lucide-react';
 
 interface ReportsProps {
   orders: Order[];
   expenses: Expense[];
+  products: Product[];
   onAddExpense: (expense: Expense) => void;
 }
 
-type ReportType = 'pnl' | 'cashflow' | 'sales';
+type ReportType = 'pnl' | 'cashflow' | 'sales' | 'statistics';
 
-export const Reports: React.FC<ReportsProps> = ({ orders, expenses, onAddExpense }) => {
+export const Reports: React.FC<ReportsProps> = ({ orders, expenses, products, onAddExpense }) => {
   const [activeTab, setActiveTab] = useState<ReportType>('pnl');
 
   return (
@@ -59,6 +61,16 @@ export const Reports: React.FC<ReportsProps> = ({ orders, expenses, onAddExpense
           >
             <PieChart size={16} /> Продажи
           </button>
+          <button
+            onClick={() => setActiveTab('statistics')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              activeTab === 'statistics' 
+                ? 'bg-primary-600 text-white shadow-lg' 
+                : 'text-slate-400 hover:text-white hover:bg-slate-700'
+            }`}
+          >
+            <Table size={16} /> Статистика
+          </button>
         </div>
       </div>
 
@@ -67,6 +79,7 @@ export const Reports: React.FC<ReportsProps> = ({ orders, expenses, onAddExpense
         {activeTab === 'pnl' && <PnL orders={orders} expenses={expenses} />}
         {activeTab === 'cashflow' && <CashFlow orders={orders} expenses={expenses} onAddExpense={onAddExpense} />}
         {activeTab === 'sales' && <SalesAnalytics orders={orders} />}
+        {activeTab === 'statistics' && <SalesStatistics orders={orders} products={products} />}
       </div>
     </div>
   );

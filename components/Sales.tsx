@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Product, Order, OrderItem, AppSettings, Expense, Employee, Client, Transaction } from '../types';
-import { ShoppingCart, Plus, Trash2, CheckCircle, RefreshCw, Package, FileText, FileSpreadsheet, User, ArrowUpDown, Wallet, CreditCard, Building2, ArrowDownRight, ArrowUpRight, Phone, Mail, MapPin } from 'lucide-react';
+import { Product, Order, OrderItem, AppSettings, Expense, Employee, Client, Transaction, JournalEvent } from '../types';
+import { ShoppingCart, Plus, Trash2, CheckCircle, RefreshCw, Package, FileText, FileSpreadsheet, User, ArrowUpDown, Wallet, CreditCard, Building2, ArrowDownRight, ArrowUpRight, Phone, Mail, MapPin, Printer, X } from 'lucide-react';
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
 
 
 
@@ -20,6 +22,9 @@ interface SalesProps {
   setTransactions: (t: Transaction[]) => void;
   onSaveOrders?: (orders: Order[]) => Promise<boolean | void>;
   onSaveTransactions?: (transactions: Transaction[]) => Promise<boolean | void>;
+  onSaveProducts?: (products: Product[]) => Promise<void>;
+  onSaveExpenses?: (expenses: Expense[]) => Promise<void>;
+  onAddJournalEvent?: (event: JournalEvent) => Promise<void>;
 }
 
 // ... (FlyingIcon component remains unchanged)
@@ -72,7 +77,7 @@ const FlyingIcon: React.FC<FlyingIconProps> = ({
   );
 };
 
-export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, setOrders, settings, expenses, setExpenses, employees, onNavigateToStaff, clients, onSaveClients, transactions, setTransactions, onSaveOrders, onSaveTransactions }) => {
+export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, setOrders, settings, expenses, setExpenses, employees, onNavigateToStaff, clients, onSaveClients, transactions, setTransactions, onSaveOrders, onSaveTransactions, onSaveProducts, onSaveExpenses, onAddJournalEvent }) => {
   // Mode: 'sale' or 'expense' or 'return'
   const [mode, setMode] = useState<'sale' | 'expense' | 'return'>('sale');
 
@@ -130,6 +135,11 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
   // Animation State
   const [flyingItems, setFlyingItems] = useState<{ id: number, startX: number, startY: number, targetX: number, targetY: number }[]>([]);
 
+  // Receipt Modal State
+  const [lastOrder, setLastOrder] = useState<Order | null>(null);
+  const [showReceiptModal, setShowReceiptModal] = useState(false);
+  const [selectedOrderForReceipt, setSelectedOrderForReceipt] = useState<Order | null>(null);
+
   useEffect(() => {
     setExchangeRate(settings.defaultExchangeRate);
   }, [settings.defaultExchangeRate]);
@@ -144,9 +154,15 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
     const cashInUSD = orders
       .filter(o => o.paymentMethod === 'cash' && (o.paymentCurrency === 'USD' || !o.paymentCurrency))
       .reduce((sum, o) => sum + o.amountPaid, 0);
-    const cashOutUSD = expenses
+    
+    // Cash Out: Expenses + Supplier Payments
+    const cashOutUSDExpenses = expenses
       .filter(e => e.paymentMethod === 'cash' && e.currency === 'USD')
       .reduce((sum, e) => sum + e.amount, 0);
+    const cashOutUSDSuppliers = transactions
+      .filter(t => t.type === 'supplier_payment' && t.method === 'cash' && t.currency === 'USD')
+      .reduce((sum, t) => sum + t.amount, 0);
+    const cashOutUSD = cashOutUSDExpenses + cashOutUSDSuppliers;
     const balanceCashUSD = cashInUSD - cashOutUSD;
 
     // 2. Cash UZS
@@ -157,24 +173,46 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
     const cashInUZS = orders
       .filter(o => o.paymentMethod === 'cash' && o.paymentCurrency === 'UZS')
       .reduce((sum, o) => sum + o.totalAmountUZS, 0); // Using stored UZS total
-    const cashOutUZS = expenses
+    
+    // Cash Out UZS: Expenses + Supplier Payments
+    const cashOutUZSExpenses = expenses
       .filter(e => e.paymentMethod === 'cash' && e.currency === 'UZS')
       .reduce((sum, e) => sum + (e.amount * exchangeRate), 0); // Expense amount is USD, convert to UZS
+    const cashOutUZSSuppliers = transactions
+      .filter(t => t.type === 'supplier_payment' && t.method === 'cash' && t.currency === 'UZS')
+      .reduce((sum, t) => {
+        // Supplier payments in UZS - amount is already in UZS
+        return sum + t.amount;
+      }, 0);
+    const cashOutUZS = cashOutUZSExpenses + cashOutUZSSuppliers;
     const balanceCashUZS = cashInUZS - cashOutUZS;
 
     // 3. Bank UZS
     const bankInUZS = orders
       .filter(o => o.paymentMethod === 'bank')
       .reduce((sum, o) => sum + o.totalAmountUZS, 0);
-    const bankOutUZS = expenses
+    
+    // Bank Out: Expenses + Supplier Payments
+    const bankOutUZSExpenses = expenses
       .filter(e => e.paymentMethod === 'bank')
       .reduce((sum, e) => sum + (e.amount * exchangeRate), 0);
+    const bankOutUZSSuppliers = transactions
+      .filter(t => t.type === 'supplier_payment' && t.method === 'bank')
+      .reduce((sum, t) => {
+        // Supplier payments are in USD, convert to UZS using exchangeRate from transaction or current rate
+        const rate = t.exchangeRate && t.exchangeRate > 0 ? t.exchangeRate : exchangeRate;
+        const amountUZS = t.currency === 'UZS' ? t.amount : (t.amount * rate);
+        return sum + amountUZS;
+      }, 0);
+    const bankOutUZS = bankOutUZSExpenses + bankOutUZSSuppliers;
     const balanceBankUZS = bankInUZS - bankOutUZS;
 
     // 4. Card UZS
     const cardInUZS = orders
       .filter(o => o.paymentMethod === 'card')
       .reduce((sum, o) => sum + o.totalAmountUZS, 0);
+    
+    // Card Out: Only expenses (suppliers usually don't accept card)
     const cardOutUZS = expenses
       .filter(e => e.paymentMethod === 'card')
       .reduce((sum, e) => sum + (e.amount * exchangeRate), 0);
@@ -301,23 +339,45 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
 
     const updatedOrders = [newOrder, ...orders];
     setOrders(updatedOrders);
-    
+
+    // Update products locally and save to sheets
     setProducts(updatedProducts);
-
-    // Update Client Debt & Purchases
-    const clientIndex = clients.findIndex(c => c.name === customerName);
-    if (clientIndex !== -1) {
-      const updatedClients = [...clients];
-      const client = updatedClients[clientIndex];
-
-      updatedClients[clientIndex] = {
-        ...client,
-        totalPurchases: (client.totalPurchases || 0) + totalAmountUSD,
-        totalDebt: isDebt ? (client.totalDebt || 0) + totalAmountUSD : (client.totalDebt || 0)
-      };
-
-      onSaveClients(updatedClients);
+    if (onSaveProducts) {
+      onSaveProducts(updatedProducts);
     }
+
+    // Update Client Debt & Purchases (Auto-create if not exists)
+    let clientIndex = clients.findIndex(c => c.name.toLowerCase() === customerName.toLowerCase());
+    let currentClients = [...clients];
+    let clientId = '';
+
+    if (clientIndex === -1) {
+      // Create new client
+      const newClient: Client = {
+        id: `CLI-${Date.now()}`,
+        name: customerName,
+        phone: '',
+        creditLimit: 0,
+        totalPurchases: 0,
+        totalDebt: 0,
+        notes: 'Автоматически создан при продаже'
+      };
+      currentClients = [...currentClients, newClient];
+      clientIndex = currentClients.length - 1;
+      clientId = newClient.id;
+    } else {
+      clientId = currentClients[clientIndex].id;
+    }
+
+    // Update the client stats
+    const client = currentClients[clientIndex];
+    currentClients[clientIndex] = {
+      ...client,
+      totalPurchases: (client.totalPurchases || 0) + totalAmountUSD,
+      totalDebt: isDebt ? (client.totalDebt || 0) + totalAmountUSD : (client.totalDebt || 0)
+    };
+
+    await onSaveClients(currentClients);
 
     // Create Transaction for Debt History
     let transactionSaved = true;
@@ -330,7 +390,7 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
         currency: 'USD',
         method: 'debt',
         description: `Покупка в долг: Заказ #${newOrder.id}`,
-        relatedId: clientIndex !== -1 ? clients[clientIndex].id : undefined
+        relatedId: clientId
       };
       const updatedTransactions = [...transactions, newTransaction];
       setTransactions(updatedTransactions);
@@ -342,7 +402,15 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
     // Save orders to Google Sheets
     let orderSaved = true;
     if (onSaveOrders) {
-      orderSaved = await onSaveOrders(updatedOrders) ?? true;
+      try {
+        orderSaved = await onSaveOrders(updatedOrders) ?? true;
+        console.log('✅ Заказ сохранен в Google Sheets:', newOrder.id, 'Метод оплаты:', paymentMethod);
+      } catch (err) {
+        console.error('❌ Ошибка при сохранении заказа:', err);
+        orderSaved = false;
+      }
+    } else {
+      console.warn('⚠️ onSaveOrders не передан, заказ сохранен только локально');
     }
 
     // Clear form
@@ -351,16 +419,172 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
     setSellerName('');
     setPaymentMethod('cash');
 
-    // Show success message
+    // Store last order for receipt printing
+    setLastOrder(newOrder);
+    setSelectedOrderForReceipt(newOrder);
+
+    // Show receipt modal immediately after order completion
+    setTimeout(() => {
+      setShowReceiptModal(true);
+    }, 300);
+
+    // Show success message (non-blocking)
     if (orderSaved && transactionSaved) {
-      alert(`✅ Заказ успешно сохранен в Google Sheets!\n\nСумма: ${totalAmountUZS.toLocaleString()} сўм ($${totalAmountUSD.toFixed(2)})\nМетод оплаты: ${paymentMethod === 'debt' ? 'Долг (USD)' : paymentMethod === 'cash' ? `Наличные (${paymentCurrency})` : paymentMethod === 'card' ? 'Карта (UZS)' : 'Перечисление (UZS)'}\nЗаказ #${newOrder.id}`);
+      // Success - modal will show receipt
     } else {
       alert(`⚠️ Заказ оформлен, но произошла ошибка при сохранении в Google Sheets.\n\nСумма: ${totalAmountUZS.toLocaleString()} сўм ($${totalAmountUSD.toFixed(2)})\nМетод оплаты: ${paymentMethod === 'debt' ? 'Долг (USD)' : paymentMethod === 'cash' ? `Наличные (${paymentCurrency})` : paymentMethod === 'card' ? 'Карта (UZS)' : 'Перечисление (UZS)'}\nЗаказ #${newOrder.id}`);
+    }
+
+    // Log to Journal
+    if (onAddJournalEvent) {
+      const journalEvent: JournalEvent = {
+        id: `JE-${Date.now()}`,
+        date: new Date().toISOString(),
+        type: 'employee_action',
+        employeeName: sellerName || 'Администратор',
+        action: 'Создан заказ',
+        description: `Продажа на сумму ${totalAmountUZS.toLocaleString()} сўм ($${totalAmountUSD.toFixed(2)}) клиенту ${customerName}. Товаров: ${cart.length}. Метод оплаты: ${paymentMethod === 'debt' ? 'Долг' : paymentMethod === 'cash' ? 'Наличные' : paymentMethod === 'card' ? 'Карта' : 'Перечисление'}.`,
+        module: 'sales',
+        relatedType: 'order',
+        relatedId: newOrder.id,
+        receiptDetails: {
+          orderId: newOrder.id,
+          customerName: customerName,
+          totalAmount: totalAmountUSD,
+          itemsCount: cart.length,
+          paymentMethod: paymentMethod,
+          operation: 'created'
+        }
+      };
+      onAddJournalEvent(journalEvent);
+    }
+  };
+
+  // --- Receipt Printing ---
+  const handlePrintReceipt = async (order: Order) => {
+    // Create receipt HTML
+    const receiptHTML = `
+      <div id="receipt-content" style="width: 300px; padding: 20px; font-family: Arial, sans-serif; background: white; color: black;">
+        <div style="text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 15px;">
+          <h2 style="margin: 0; font-size: 20px; font-weight: bold;">METAL ERP</h2>
+          <p style="margin: 5px 0; font-size: 12px;">Чек продажи</p>
+        </div>
+        
+        <div style="margin-bottom: 15px; font-size: 12px;">
+          <p style="margin: 3px 0;"><strong>Заказ:</strong> ${order.id}</p>
+          <p style="margin: 3px 0;"><strong>Дата:</strong> ${new Date(order.date).toLocaleString('ru-RU')}</p>
+          <p style="margin: 3px 0;"><strong>Клиент:</strong> ${order.customerName}</p>
+          <p style="margin: 3px 0;"><strong>Продавец:</strong> ${order.sellerName}</p>
+        </div>
+        
+        <div style="border-top: 1px solid #ccc; border-bottom: 1px solid #ccc; padding: 10px 0; margin: 15px 0;">
+          ${order.items.map(item => {
+            const itemTotalUZS = item.total * order.exchangeRate;
+            const itemPriceUZS = item.priceAtSale * order.exchangeRate;
+            return `
+            <div style="margin-bottom: 8px;">
+              <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
+                <span style="font-weight: bold;">${item.productName}</span>
+                <span>${itemTotalUZS.toLocaleString()} сўм</span>
+              </div>
+              <div style="font-size: 11px; color: #666; margin-left: 10px;">
+                ${item.quantity} ${item.unit} × ${itemPriceUZS.toLocaleString()} сўм
+              </div>
+            </div>
+          `;
+          }).join('')}
+        </div>
+        
+        <div style="margin-bottom: 10px; font-size: 12px;">
+          <div style="display: flex; justify-content: space-between; margin: 5px 0;">
+            <span>Подытог:</span>
+            <span>${(order.subtotalAmount * order.exchangeRate).toLocaleString()} сўм</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; margin: 5px 0;">
+            <span>НДС (${order.vatRateSnapshot}%):</span>
+            <span>${(order.vatAmount * order.exchangeRate).toLocaleString()} сўм</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; margin: 5px 0; font-weight: bold; border-top: 1px solid #000; padding-top: 5px; font-size: 14px;">
+            <span>ИТОГО:</span>
+            <span>${order.totalAmountUZS.toLocaleString()} сўм</span>
+          </div>
+        </div>
+        
+        <div style="border-top: 1px solid #ccc; padding-top: 10px; margin-top: 15px; font-size: 11px;">
+          <p style="margin: 3px 0;"><strong>Способ оплаты:</strong> ${order.paymentMethod === 'cash' ? `Наличные (${order.paymentCurrency || 'UZS'})` :
+        order.paymentMethod === 'card' ? 'Карта (UZS)' :
+          order.paymentMethod === 'bank' ? 'Перечисление (UZS)' :
+            'Долг (USD)'
+      }</p>
+          <p style="margin: 3px 0;"><strong>Статус:</strong> ${order.paymentStatus === 'paid' ? 'Оплачено' : order.paymentStatus === 'unpaid' ? 'Не оплачено' : 'Частично оплачено'}</p>
+        </div>
+        
+        <div style="text-align: center; margin-top: 20px; padding-top: 10px; border-top: 1px dashed #ccc; font-size: 10px; color: #666;">
+          <p style="margin: 3px 0;">Спасибо за покупку!</p>
+          <p style="margin: 3px 0;">${new Date().toLocaleString('ru-RU')}</p>
+        </div>
+      </div>
+    `;
+
+    // Create temporary element
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = receiptHTML;
+    tempDiv.style.position = 'absolute';
+    tempDiv.style.left = '-9999px';
+    document.body.appendChild(tempDiv);
+
+    try {
+      const element = document.getElementById('receipt-content') || tempDiv.querySelector('#receipt-content') || tempDiv;
+      const canvas = await html2canvas(element as HTMLElement, {
+        scale: 2,
+        backgroundColor: '#ffffff',
+        useCORS: true,
+        logging: false
+      });
+
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', [80, 200]); // Small receipt size
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const imgWidth = canvas.width;
+      const imgHeight = canvas.height;
+      const ratio = pdfWidth / imgWidth;
+      const pdfHeight = imgHeight * ratio;
+
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      pdf.save(`Чек_${order.id}_${new Date().toISOString().split('T')[0]}.pdf`);
+
+      // Also open print dialog
+      const printWindow = window.open('', '_blank');
+      if (printWindow) {
+        printWindow.document.write(`
+          <html>
+            <head>
+              <title>Чек ${order.id}</title>
+              <style>
+                body { margin: 0; padding: 20px; font-family: Arial, sans-serif; }
+                @media print {
+                  @page { size: 80mm auto; margin: 0; }
+                }
+              </style>
+            </head>
+            <body>${receiptHTML}</body>
+          </html>
+        `);
+        printWindow.document.close();
+        setTimeout(() => {
+          printWindow.print();
+        }, 250);
+      }
+    } catch (err) {
+      console.error('Ошибка при печати чека:', err);
+      alert('Ошибка при создании чека. Попробуйте снова.');
+    } finally {
+      document.body.removeChild(tempDiv);
     }
   };
 
   // --- Expense Logic ---
-  const handleAddExpense = () => {
+  const handleAddExpense = async () => {
     if (!expenseDesc || !expenseAmount) return;
 
     const amountVal = parseFloat(expenseAmount);
@@ -377,7 +601,19 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
       currency: expenseCurrency
     };
 
-    setExpenses([newExpense, ...expenses]);
+    const updatedExpenses = [newExpense, ...expenses];
+    setExpenses(updatedExpenses);
+    
+    // Save to Google Sheets
+    if (onSaveExpenses) {
+      try {
+        await onSaveExpenses(updatedExpenses);
+      } catch (err) {
+        console.error('Ошибка при сохранении расхода:', err);
+        alert('Расход добавлен локально, но не удалось сохранить в Google Sheets');
+      }
+    }
+    
     setExpenseDesc('');
     setExpenseAmount('');
     alert('Расход добавлен!');
@@ -402,6 +638,11 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
       return;
     }
 
+    if (returnMethod === 'debt' && !client) {
+      alert('Клиент не найден! Невозможно списать с долга.');
+      return;
+    }
+
     // 1. Update Stock
     const updatedProducts = products.map(p => {
       if (p.id === product.id) {
@@ -410,6 +651,9 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
       return p;
     });
     setProducts(updatedProducts);
+    if (onSaveProducts) {
+      onSaveProducts(updatedProducts);
+    }
 
     // 2. Financial Impact
     const returnAmountUSD = qty * product.pricePerUnit; // Using current price for simplicity
@@ -425,25 +669,12 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
         });
         onSaveClients(updatedClients);
       }
-    } else {
-      // Cash Refund
-      const newTransaction = {
-        id: `TRX-${Date.now()}`,
-        date: new Date().toISOString(),
-        type: 'client_return',
-        amount: returnAmountUSD,
-        currency: 'USD', // Returns calculated in USD
-        method: 'cash',
-        description: `Возврат товара: ${product.name} (${qty} ${product.unit})`,
-        relatedId: client ? client.id : undefined
-      };
-      setTransactions([...transactions, newTransaction]);
     }
 
     // Always create a transaction record for the return (even if debt) for history?
     // If debt, we already updated client debt. But a history record is good.
     if (returnMethod === 'debt') {
-      const newTransaction = {
+      const newTransaction: Transaction = {
         id: `TRX-${Date.now()}`,
         date: new Date().toISOString(),
         type: 'client_return',
@@ -453,7 +684,28 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
         description: `Возврат на долг: ${product.name} (${qty} ${product.unit})`,
         relatedId: client ? client.id : undefined
       };
-      setTransactions([...transactions, newTransaction]);
+      const updatedTransactions = [...transactions, newTransaction];
+      setTransactions(updatedTransactions);
+      if (onSaveTransactions) {
+        onSaveTransactions(updatedTransactions);
+      }
+    } else {
+      // Save cash return transaction
+      const newTransaction: Transaction = {
+        id: `TRX-${Date.now()}`,
+        date: new Date().toISOString(),
+        type: 'client_return',
+        amount: returnAmountUSD,
+        currency: 'USD',
+        method: 'cash',
+        description: `Возврат товара: ${product.name} (${qty} ${product.unit})`,
+        relatedId: client ? client.id : undefined
+      };
+      const updatedTransactions = [...transactions, newTransaction];
+      setTransactions(updatedTransactions);
+      if (onSaveTransactions) {
+        onSaveTransactions(updatedTransactions);
+      }
     }
 
     alert(`Возврат оформлен!\nТовар: ${product.name} (+${qty})\nСумма: $${returnAmountUSD.toFixed(2)}`);
@@ -509,6 +761,34 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
           </div>
         </div>
       </div>
+
+      {/* Recent Orders Section - Quick Access to Receipts */}
+      {orders.length > 0 && mode === 'sale' && (
+        <div className="bg-slate-800 border-b border-slate-700 px-6 py-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <FileText size={18} className="text-slate-400" />
+              <span className="text-sm text-slate-400">Последние заказы:</span>
+            </div>
+            <div className="flex gap-2 overflow-x-auto">
+              {orders.slice(0, 5).map(order => (
+                <button
+                  key={order.id}
+                  onClick={() => {
+                    setSelectedOrderForReceipt(order);
+                    setShowReceiptModal(true);
+                  }}
+                  className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white text-xs rounded-lg font-medium whitespace-nowrap transition-colors flex items-center gap-1.5"
+                  title={`Чек ${order.id} - ${order.customerName}`}
+                >
+                  <FileText size={12} />
+                  {order.id}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Main Content */}
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 p-6 relative overflow-hidden">
@@ -886,6 +1166,29 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
                 <CheckCircle size={20} />
                 {paymentMethod === 'debt' ? 'Оформить в долг' : 'Оформить и оплатить'}
               </button>
+
+              {/* Receipt Buttons */}
+              {lastOrder && (
+                <div className="flex gap-2 mt-2">
+                  <button
+                    onClick={() => {
+                      setSelectedOrderForReceipt(lastOrder);
+                      setShowReceiptModal(true);
+                    }}
+                    className="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-2 rounded-xl font-medium text-sm flex items-center justify-center gap-2 transition-all shadow-lg shadow-blue-600/20"
+                  >
+                    <FileText size={16} />
+                    Просмотр чека
+                  </button>
+                  <button
+                    onClick={() => handlePrintReceipt(lastOrder)}
+                    className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white py-2 rounded-xl font-medium text-sm flex items-center justify-center gap-2 transition-all shadow-lg shadow-indigo-600/20"
+                  >
+                    <Printer size={16} />
+                    PDF
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -981,6 +1284,195 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
           </div>
         )
       }
+
+      {/* Receipt Modal */}
+      {showReceiptModal && selectedOrderForReceipt && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowReceiptModal(false);
+              setSelectedOrderForReceipt(null);
+            }
+          }}
+        >
+          <div className="bg-white rounded-2xl w-full max-w-md border border-gray-200 shadow-2xl overflow-hidden animate-fade-in">
+            <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50 flex justify-between items-center">
+              <div>
+                <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                  <FileText className="text-blue-600" /> Чек продажи
+                </h3>
+                <p className="text-sm text-gray-600 mt-1">Заказ #{selectedOrderForReceipt.id}</p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowReceiptModal(false);
+                  setSelectedOrderForReceipt(null);
+                }}
+                className="text-gray-400 hover:text-gray-600 p-2 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+              {/* Receipt Content */}
+              <div id="receipt-preview" className="bg-white text-black space-y-4">
+                <div className="text-center border-b-2 border-gray-300 pb-4">
+                  <h2 className="text-2xl font-bold text-gray-900">METAL ERP</h2>
+                  <p className="text-sm text-gray-600 mt-1">Чек продажи</p>
+                </div>
+
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Заказ:</span>
+                    <span className="font-semibold">{selectedOrderForReceipt.id}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Дата:</span>
+                    <span>{new Date(selectedOrderForReceipt.date).toLocaleString('ru-RU')}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Клиент:</span>
+                    <span className="font-medium">{selectedOrderForReceipt.customerName}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Продавец:</span>
+                    <span>{selectedOrderForReceipt.sellerName}</span>
+                  </div>
+                </div>
+
+                <div className="border-t border-b border-gray-300 py-4 space-y-3">
+                  {selectedOrderForReceipt.items.map((item, idx) => {
+                    const itemTotalUZS = item.total * selectedOrderForReceipt.exchangeRate;
+                    const itemPriceUZS = item.priceAtSale * selectedOrderForReceipt.exchangeRate;
+                    return (
+                      <div key={idx} className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <div className="font-semibold text-gray-900">{item.productName}</div>
+                          <div className="text-xs text-gray-600 mt-1">
+                            {item.quantity} {item.unit} × {itemPriceUZS.toLocaleString()} сўм
+                          </div>
+                        </div>
+                        <div className="font-mono font-semibold text-gray-900">{itemTotalUZS.toLocaleString()} сўм</div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Подытог:</span>
+                    <span className="font-mono">{(selectedOrderForReceipt.subtotalAmount * selectedOrderForReceipt.exchangeRate).toLocaleString()} сўм</span>
+                  </div>
+                  <div className="flex justify-between text-amber-600">
+                    <span>НДС ({selectedOrderForReceipt.vatRateSnapshot}%):</span>
+                    <span className="font-mono">+{(selectedOrderForReceipt.vatAmount * selectedOrderForReceipt.exchangeRate).toLocaleString()} сўм</span>
+                  </div>
+                  <div className="flex justify-between pt-2 border-t-2 border-gray-300 font-bold text-lg text-emerald-600">
+                    <span>ИТОГО:</span>
+                    <span className="font-mono">{selectedOrderForReceipt.totalAmountUZS.toLocaleString()} сўм</span>
+                  </div>
+                </div>
+
+                <div className="border-t border-gray-300 pt-4 space-y-2 text-xs text-gray-600">
+                  <div className="flex justify-between">
+                    <span>Способ оплаты:</span>
+                    <span className="font-medium">
+                      {selectedOrderForReceipt.paymentMethod === 'cash'
+                        ? `Наличные (${selectedOrderForReceipt.paymentCurrency || 'UZS'})`
+                        : selectedOrderForReceipt.paymentMethod === 'card'
+                          ? 'Карта (UZS)'
+                          : selectedOrderForReceipt.paymentMethod === 'bank'
+                            ? 'Перечисление (UZS)'
+                            : 'Долг (USD)'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Статус:</span>
+                    <span className={`font-medium ${selectedOrderForReceipt.paymentStatus === 'paid' ? 'text-emerald-600' :
+                      selectedOrderForReceipt.paymentStatus === 'unpaid' ? 'text-red-600' :
+                        'text-amber-600'
+                      }`}>
+                      {selectedOrderForReceipt.paymentStatus === 'paid' ? 'Оплачено' :
+                        selectedOrderForReceipt.paymentStatus === 'unpaid' ? 'Не оплачено' :
+                          'Частично оплачено'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="text-center pt-4 border-t border-dashed border-gray-300 text-xs text-gray-500">
+                  <p>Спасибо за покупку!</p>
+                  <p className="mt-1">{new Date().toLocaleString('ru-RU')}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6 border-t border-gray-200 bg-gradient-to-r from-gray-50 to-blue-50 flex flex-col sm:flex-row gap-3">
+              <button
+                onClick={() => handlePrintReceipt(selectedOrderForReceipt)}
+                className="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-blue-600/30 hover:shadow-xl hover:scale-105"
+                title="Скачать чек в формате PDF"
+              >
+                <FileText size={18} />
+                Скачать PDF
+              </button>
+              <button
+                onClick={() => {
+                  const printContent = document.getElementById('receipt-preview');
+                  if (printContent) {
+                    const printWindow = window.open('', '_blank');
+                    if (printWindow) {
+                      printWindow.document.write(`
+                        <html>
+                          <head>
+                            <title>Чек ${selectedOrderForReceipt.id}</title>
+                            <style>
+                              body { 
+                                margin: 0; 
+                                padding: 20px; 
+                                font-family: Arial, sans-serif; 
+                                background: white;
+                                color: black;
+                              }
+                              @media print {
+                                @page { 
+                                  size: 80mm auto; 
+                                  margin: 0; 
+                                }
+                                body { padding: 10px; }
+                              }
+                            </style>
+                          </head>
+                          <body>${printContent.innerHTML}</body>
+                        </html>
+                      `);
+                      printWindow.document.close();
+                      setTimeout(() => {
+                        printWindow.print();
+                      }, 250);
+                    }
+                  }
+                }}
+                className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-600/30 hover:shadow-xl hover:scale-105"
+                title="Распечатать чек"
+              >
+                <Printer size={18} />
+                Печать
+              </button>
+              <button
+                onClick={() => {
+                  setShowReceiptModal(false);
+                  setSelectedOrderForReceipt(null);
+                }}
+                className="px-6 bg-gray-200 hover:bg-gray-300 text-gray-700 py-3 rounded-xl font-semibold transition-all hover:scale-105"
+              >
+                Закрыть
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div >
   );
 };

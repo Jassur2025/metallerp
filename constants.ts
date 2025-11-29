@@ -5,7 +5,6 @@ export const DEFAULT_EXCHANGE_RATE = 12650; // 1 USD = 12650 UZS
 
 export const SUPER_ADMIN_EMAILS = [
   'jasurmc@gmail.com', // Replace with your actual email
-  'jassurgme@gmail.com',
   'admin@example.com'
 ];
 
@@ -111,6 +110,6 @@ export const INITIAL_EXPENSES: Expense[] = [
   }
 ];
 
-export const IS_DEV_MODE = false;
+export const IS_DEV_MODE = true;
 
 export const INITIAL_PURCHASES: Purchase[] = [];

@@ -1,4 +1,4 @@
-import { Product, Order, Expense, Purchase, FixedAsset, Client, Employee, UserRole, Transaction } from '../types';
+import { Product, Order, Expense, Purchase, FixedAsset, Client, Employee, UserRole, Transaction, JournalEvent } from '../types';
 
 const SPREADSHEET_ID_KEY = 'metal_erp_spreadsheet_id';
 
@@ -161,6 +161,32 @@ const mapEmployeeToRow = (e: Employee) => [
     e.permissions ? JSON.stringify(e.permissions) : ''
 ];
 
+// Map JournalEvent <-> Row
+const mapRowToJournalEvent = (row: any[]): JournalEvent => ({
+    id: row[0],
+    date: row[1],
+    type: row[2] as any,
+    employeeId: row[3],
+    employeeName: row[4],
+    employeeEmail: row[5],
+    action: row[6],
+    description: row[7],
+    module: row[8],
+    relatedType: row[9] as any,
+    relatedId: row[10],
+    receiptDetails: row[11] ? JSON.parse(row[11]) : undefined,
+    metadata: row[12] ? JSON.parse(row[12]) : undefined
+});
+
+const mapJournalEventToRow = (e: JournalEvent) => [
+    e.id, e.date, e.type, e.employeeId || '', e.employeeName || '', e.employeeEmail || '',
+    e.action, e.description, e.module || '', e.relatedType || '', e.relatedId || '',
+    e.receiptDetails ? JSON.stringify(e.receiptDetails) : '',
+    e.metadata ? JSON.stringify(e.metadata) : ''
+];
+
+
+
 // --- Service Methods ---
 
 export const sheetsService = {
@@ -257,6 +283,14 @@ export const sheetsService = {
                 values: [['ID', 'Date', 'Type', 'Amount', 'Currency', 'Exchange Rate', 'Method', 'Description', 'Related ID']]
             });
         } catch (e) { console.error("Error init Transactions", e); }
+
+        // 10. Check and create headers for Journal
+        await createSheetIfNotExists('Journal');
+        try {
+            await fetchSheets(accessToken, 'Journal!A1:M1', 'PUT', {
+                values: [['ID', 'Date', 'Type', 'Employee ID', 'Employee Name', 'Employee Email', 'Action', 'Description', 'Module', 'Related Type', 'Related ID', 'Receipt Details', 'Metadata']]
+            });
+        } catch (e) { console.error("Error init Journal", e); }
     },
 
     // --- Purchases (Import) ---
@@ -285,24 +319,47 @@ export const sheetsService = {
     },
 
     saveAllPurchases: async (accessToken: string, purchases: Purchase[]) => {
-        const rows = purchases.map(p => [
-            p.id, p.date, p.supplierName, p.status, JSON.stringify(p.items), JSON.stringify(p.overheads),
-            p.totalInvoiceAmount, p.totalLandedAmount, p.paymentMethod, p.paymentStatus, p.amountPaid
-        ]);
-        const spreadsheetId = getSpreadsheetId();
+        try {
+            const rows = purchases.map(p => [
+                p.id, p.date, p.supplierName, p.status, JSON.stringify(p.items), JSON.stringify(p.overheads),
+                p.totalInvoiceAmount, p.totalLandedAmount, p.paymentMethod, p.paymentStatus, p.amountPaid
+            ]);
+            const spreadsheetId = getSpreadsheetId();
+            
+            if (!spreadsheetId) {
+                throw new Error('Spreadsheet ID not set');
+            }
 
-        // Clear
-        await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Purchases!A2:K:clear`, {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${accessToken}` }
-        });
+            console.log(`💾 Saving ${purchases.length} purchases to Google Sheets`);
 
-        // Write
-        await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Purchases!A2:K?valueInputOption=USER_ENTERED`, {
-            method: 'PUT',
-            headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ values: rows })
-        });
+            // Clear
+            const clearResponse = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Purchases!A2:K:clear`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${accessToken}` }
+            });
+
+            if (!clearResponse.ok) {
+                const errorData = await clearResponse.json();
+                throw new Error(`Failed to clear Purchases sheet: ${errorData.error?.message || 'Unknown error'}`);
+            }
+
+            // Write
+            const writeResponse = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Purchases!A2:K?valueInputOption=USER_ENTERED`, {
+                method: 'PUT',
+                headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ values: rows })
+            });
+
+            if (!writeResponse.ok) {
+                const errorData = await writeResponse.json();
+                throw new Error(`Failed to write Purchases: ${errorData.error?.message || 'Unknown error'}`);
+            }
+
+            console.log('✅ Purchases saved successfully!');
+        } catch (e) {
+            console.error('❌ Error in saveAllPurchases:', e);
+            throw e;
+        }
     },
 
     // --- Products ---
@@ -319,21 +376,44 @@ export const sheetsService = {
     },
 
     saveAllProducts: async (accessToken: string, products: Product[]) => {
-        const rows = products.map(mapProductToRow);
-        const spreadsheetId = getSpreadsheetId();
+        try {
+            const rows = products.map(mapProductToRow);
+            const spreadsheetId = getSpreadsheetId();
+            
+            if (!spreadsheetId) {
+                throw new Error('Spreadsheet ID not set');
+            }
 
-        // Clear existing
-        await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Products!A2:K:clear`, {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${accessToken}` }
-        });
+            console.log(`💾 Saving ${products.length} products to Google Sheets`);
 
-        // Write new
-        await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Products!A2:K?valueInputOption=USER_ENTERED`, {
-            method: 'PUT',
-            headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ values: rows })
-        });
+            // Clear existing
+            const clearResponse = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Products!A2:K:clear`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${accessToken}` }
+            });
+
+            if (!clearResponse.ok) {
+                const errorData = await clearResponse.json();
+                throw new Error(`Failed to clear Products sheet: ${errorData.error?.message || 'Unknown error'}`);
+            }
+
+            // Write new
+            const writeResponse = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Products!A2:K?valueInputOption=USER_ENTERED`, {
+                method: 'PUT',
+                headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ values: rows })
+            });
+
+            if (!writeResponse.ok) {
+                const errorData = await writeResponse.json();
+                throw new Error(`Failed to write Products: ${errorData.error?.message || 'Unknown error'}`);
+            }
+
+            console.log('✅ Products saved successfully!');
+        } catch (e) {
+            console.error('❌ Error in saveAllProducts:', e);
+            throw e;
+        }
     },
 
     // --- Orders ---
@@ -350,21 +430,44 @@ export const sheetsService = {
     },
 
     saveAllOrders: async (accessToken: string, orders: Order[]) => {
-        const rows = orders.map(mapOrderToRow);
-        const spreadsheetId = getSpreadsheetId();
+        try {
+            const rows = orders.map(mapOrderToRow);
+            const spreadsheetId = getSpreadsheetId();
+            
+            if (!spreadsheetId) {
+                throw new Error('Spreadsheet ID not set');
+            }
 
-        // Clear
-        await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Orders!A2:P:clear`, {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${accessToken}` }
-        });
+            console.log(`💾 Saving ${orders.length} orders to Google Sheets (ID: ${spreadsheetId})`);
 
-        // Write
-        await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Orders!A2:P?valueInputOption=USER_ENTERED`, {
-            method: 'PUT',
-            headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ values: rows })
-        });
+            // Clear
+            const clearResponse = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Orders!A2:P:clear`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${accessToken}` }
+            });
+            
+            if (!clearResponse.ok) {
+                const errorData = await clearResponse.json();
+                throw new Error(`Failed to clear Orders sheet: ${errorData.error?.message || 'Unknown error'}`);
+            }
+
+            // Write
+            const writeResponse = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Orders!A2:P?valueInputOption=USER_ENTERED`, {
+                method: 'PUT',
+                headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ values: rows })
+            });
+            
+            if (!writeResponse.ok) {
+                const errorData = await writeResponse.json();
+                throw new Error(`Failed to write Orders: ${errorData.error?.message || 'Unknown error'}`);
+            }
+            
+            console.log('✅ Orders saved successfully!');
+        } catch (e) {
+            console.error('❌ Error in saveAllOrders:', e);
+            throw e;
+        }
     },
 
     // --- Expenses ---
@@ -381,21 +484,44 @@ export const sheetsService = {
     },
 
     saveAllExpenses: async (accessToken: string, expenses: Expense[]) => {
-        const rows = expenses.map(mapExpenseToRow);
-        const spreadsheetId = getSpreadsheetId();
+        try {
+            const rows = expenses.map(mapExpenseToRow);
+            const spreadsheetId = getSpreadsheetId();
+            
+            if (!spreadsheetId) {
+                throw new Error('Spreadsheet ID not set');
+            }
 
-        // Clear
-        await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Expenses!A2:G:clear`, {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${accessToken}` }
-        });
+            console.log(`💾 Saving ${expenses.length} expenses to Google Sheets`);
 
-        // Write
-        await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Expenses!A2:G?valueInputOption=USER_ENTERED`, {
-            method: 'PUT',
-            headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ values: rows })
-        });
+            // Clear
+            const clearResponse = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Expenses!A2:G:clear`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${accessToken}` }
+            });
+
+            if (!clearResponse.ok) {
+                const errorData = await clearResponse.json();
+                throw new Error(`Failed to clear Expenses sheet: ${errorData.error?.message || 'Unknown error'}`);
+            }
+
+            // Write
+            const writeResponse = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Expenses!A2:G?valueInputOption=USER_ENTERED`, {
+                method: 'PUT',
+                headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ values: rows })
+            });
+
+            if (!writeResponse.ok) {
+                const errorData = await writeResponse.json();
+                throw new Error(`Failed to write Expenses: ${errorData.error?.message || 'Unknown error'}`);
+            }
+
+            console.log('✅ Expenses saved successfully!');
+        } catch (e) {
+            console.error('❌ Error in saveAllExpenses:', e);
+            throw e;
+        }
     },
 
     // --- Fixed Assets ---
@@ -412,21 +538,44 @@ export const sheetsService = {
     },
 
     saveAllFixedAssets: async (accessToken: string, assets: FixedAsset[]) => {
-        const rows = assets.map(mapFixedAssetToRow);
-        const spreadsheetId = getSpreadsheetId();
+        try {
+            const rows = assets.map(mapFixedAssetToRow);
+            const spreadsheetId = getSpreadsheetId();
+            
+            if (!spreadsheetId) {
+                throw new Error('Spreadsheet ID not set');
+            }
 
-        // Clear
-        await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/FixedAssets!A2:I:clear`, {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${accessToken}` }
-        });
+            console.log(`💾 Saving ${assets.length} fixed assets to Google Sheets`);
 
-        // Write
-        await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/FixedAssets!A2:I?valueInputOption=USER_ENTERED`, {
-            method: 'PUT',
-            headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ values: rows })
-        });
+            // Clear
+            const clearResponse = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/FixedAssets!A2:I:clear`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${accessToken}` }
+            });
+
+            if (!clearResponse.ok) {
+                const errorData = await clearResponse.json();
+                throw new Error(`Failed to clear FixedAssets sheet: ${errorData.error?.message || 'Unknown error'}`);
+            }
+
+            // Write
+            const writeResponse = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/FixedAssets!A2:I?valueInputOption=USER_ENTERED`, {
+                method: 'PUT',
+                headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ values: rows })
+            });
+
+            if (!writeResponse.ok) {
+                const errorData = await writeResponse.json();
+                throw new Error(`Failed to write FixedAssets: ${errorData.error?.message || 'Unknown error'}`);
+            }
+
+            console.log('✅ Fixed assets saved successfully!');
+        } catch (e) {
+            console.error('❌ Error in saveAllFixedAssets:', e);
+            throw e;
+        }
     },
 
     // --- Clients ---
@@ -443,21 +592,44 @@ export const sheetsService = {
     },
 
     saveAllClients: async (accessToken: string, clients: Client[]) => {
-        const rows = clients.map(mapClientToRow);
-        const spreadsheetId = getSpreadsheetId();
+        try {
+            const rows = clients.map(mapClientToRow);
+            const spreadsheetId = getSpreadsheetId();
+            
+            if (!spreadsheetId) {
+                throw new Error('Spreadsheet ID not set');
+            }
 
-        // Clear
-        await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Clients!A2:I:clear`, {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${accessToken}` }
-        });
+            console.log(`💾 Saving ${clients.length} clients to Google Sheets`);
 
-        // Write
-        await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Clients!A2:I?valueInputOption=USER_ENTERED`, {
-            method: 'PUT',
-            headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ values: rows })
-        });
+            // Clear
+            const clearResponse = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Clients!A2:I:clear`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${accessToken}` }
+            });
+
+            if (!clearResponse.ok) {
+                const errorData = await clearResponse.json();
+                throw new Error(`Failed to clear Clients sheet: ${errorData.error?.message || 'Unknown error'}`);
+            }
+
+            // Write
+            const writeResponse = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Clients!A2:I?valueInputOption=USER_ENTERED`, {
+                method: 'PUT',
+                headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ values: rows })
+            });
+
+            if (!writeResponse.ok) {
+                const errorData = await writeResponse.json();
+                throw new Error(`Failed to write Clients: ${errorData.error?.message || 'Unknown error'}`);
+            }
+
+            console.log('✅ Clients saved successfully!');
+        } catch (e) {
+            console.error('❌ Error in saveAllClients:', e);
+            throw e;
+        }
     },
 
     // --- Employees (Staff) ---
@@ -474,21 +646,44 @@ export const sheetsService = {
     },
 
     saveAllEmployees: async (accessToken: string, employees: Employee[]) => {
-        const rows = employees.map(mapEmployeeToRow);
-        const spreadsheetId = getSpreadsheetId();
+        try {
+            const rows = employees.map(mapEmployeeToRow);
+            const spreadsheetId = getSpreadsheetId();
+            
+            if (!spreadsheetId) {
+                throw new Error('Spreadsheet ID not set');
+            }
 
-        // Clear
-        await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Staff!A2:K:clear`, {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${accessToken}` }
-        });
+            console.log(`💾 Saving ${employees.length} employees to Google Sheets`);
 
-        // Write
-        await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Staff!A2:K?valueInputOption=USER_ENTERED`, {
-            method: 'PUT',
-            headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ values: rows })
-        });
+            // Clear
+            const clearResponse = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Staff!A2:K:clear`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${accessToken}` }
+            });
+
+            if (!clearResponse.ok) {
+                const errorData = await clearResponse.json();
+                throw new Error(`Failed to clear Staff sheet: ${errorData.error?.message || 'Unknown error'}`);
+            }
+
+            // Write
+            const writeResponse = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Staff!A2:K?valueInputOption=USER_ENTERED`, {
+                method: 'PUT',
+                headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ values: rows })
+            });
+
+            if (!writeResponse.ok) {
+                const errorData = await writeResponse.json();
+                throw new Error(`Failed to write Staff: ${errorData.error?.message || 'Unknown error'}`);
+            }
+
+            console.log('✅ Employees saved successfully!');
+        } catch (e) {
+            console.error('❌ Error in saveAllEmployees:', e);
+            throw e;
+        }
     },
 
     testConnection: async (accessToken: string, providedId?: string) => {
@@ -534,30 +729,89 @@ export const sheetsService = {
     },
 
     saveAllTransactions: async (accessToken: string, transactions: Transaction[]) => {
-        const rows = transactions.map(t => [
-            t.id, 
-            t.date, 
-            t.type, 
-            t.amount, 
-            t.currency || 'USD',
-            t.exchangeRate || '',
-            t.method, 
-            t.description, 
-            t.relatedId || ''
-        ]);
-        const spreadsheetId = getSpreadsheetId();
+        try {
+            const rows = transactions.map(t => [
+                t.id,
+                t.date,
+                t.type,
+                t.amount,
+                t.currency || 'USD',
+                t.exchangeRate || '',
+                t.method,
+                t.description,
+                t.relatedId || ''
+            ]);
+            const spreadsheetId = getSpreadsheetId();
+            
+            if (!spreadsheetId) {
+                throw new Error('Spreadsheet ID not set');
+            }
 
-        // Clear
-        await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Transactions!A2:I:clear`, {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${accessToken}` }
-        });
+            console.log(`💾 Saving ${transactions.length} transactions to Google Sheets`);
 
-        // Write
-        await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Transactions!A2:I?valueInputOption=USER_ENTERED`, {
-            method: 'PUT',
-            headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ values: rows })
-        });
+            // Clear
+            const clearResponse = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Transactions!A2:I:clear`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${accessToken}` }
+            });
+
+            if (!clearResponse.ok) {
+                const errorData = await clearResponse.json();
+                throw new Error(`Failed to clear Transactions sheet: ${errorData.error?.message || 'Unknown error'}`);
+            }
+
+            // Write
+            const writeResponse = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Transactions!A2:I?valueInputOption=USER_ENTERED`, {
+                method: 'PUT',
+                headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ values: rows })
+            });
+
+            if (!writeResponse.ok) {
+                const errorData = await writeResponse.json();
+                throw new Error(`Failed to write Transactions: ${errorData.error?.message || 'Unknown error'}`);
+            }
+
+            console.log('✅ Transactions saved successfully!');
+        } catch (e) {
+            console.error('❌ Error in saveAllTransactions:', e);
+            throw e;
+        }
+    },
+
+
+
+
+    // --- Journal ---
+    getJournalEvents: async (accessToken: string): Promise<JournalEvent[]> => {
+        try {
+            const data = await fetchSheets(accessToken, 'Journal!A2:M');
+            return (data.values || [])
+                .filter(row => row[0] && row[0] !== 'ID')
+                .map(mapRowToJournalEvent);
+        } catch (e) {
+            console.error("Failed to fetch journal events", e);
+            return [];
+        }
+    },
+
+    addJournalEvent: async (accessToken: string, event: JournalEvent) => {
+        try {
+            const row = mapJournalEventToRow(event);
+            const spreadsheetId = getSpreadsheetId();
+            
+            if (!spreadsheetId) {
+                console.warn('⚠️ Spreadsheet ID not set, journal event not saved');
+                return;
+            }
+
+            await fetchSheets(accessToken, 'Journal!A:M', 'POST', {
+                values: [row]
+            });
+            console.log('✅ Journal event saved:', event.id);
+        } catch (e) {
+            console.error("❌ Failed to add journal event", e);
+            // Don't throw - journal events are not critical
+        }
     }
 };

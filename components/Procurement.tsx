@@ -10,9 +10,11 @@ interface ProcurementProps {
     onSavePurchases: (purchases: Purchase[]) => void;
     transactions: Transaction[];
     setTransactions: (t: Transaction[]) => void;
+    onSaveProducts?: (products: Product[]) => Promise<void>;
+    onSaveTransactions?: (transactions: Transaction[]) => Promise<boolean | void>;
 }
 
-export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts, settings, purchases, onSavePurchases, transactions, setTransactions }) => {
+export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts, settings, purchases, onSavePurchases, transactions, setTransactions, onSaveProducts, onSaveTransactions }) => {
     const [activeTab, setActiveTab] = useState<'new' | 'history'>('new');
     const [procurementType, setProcurementType] = useState<'local' | 'import'>('local'); // Main switch
     const [supplierName, setSupplierName] = useState('');
@@ -20,6 +22,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
 
     // Payment Logic
     const [paymentMethod, setPaymentMethod] = useState<'cash' | 'bank' | 'debt'>('cash');
+    const [paymentCurrency, setPaymentCurrency] = useState<'USD' | 'UZS'>('USD'); // Currency for cash/bank payments
     const [amountPaid, setAmountPaid] = useState<number>(0);
 
     // Cart logic
@@ -128,7 +131,6 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
         }
     }, [totals.totalInvoiceValue, paymentMethod]);
 
-
     const handleComplete = () => {
         if (!supplierName || cart.length === 0) return;
 
@@ -151,17 +153,28 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
 
         // 2. If paid immediately, record Transaction (Expense)
         if (paymentMethod !== 'debt') {
+            // Calculate amount in the payment currency
+            // If paying in UZS, convert USD amount to UZS
+            const transactionAmount = paymentCurrency === 'UZS' 
+                ? totals.totalInvoiceValue * settings.defaultExchangeRate
+                : totals.totalInvoiceValue;
+            
             const newTransaction: Transaction = {
                 id: `TRX-${Date.now()}`,
                 date: new Date().toISOString(),
                 type: 'supplier_payment',
-                amount: totals.totalInvoiceValue,
-                currency: 'USD',
+                amount: transactionAmount,
+                currency: paymentCurrency,
+                exchangeRate: paymentCurrency === 'UZS' ? settings.defaultExchangeRate : undefined,
                 method: paymentMethod as 'cash' | 'bank',
                 description: `Оплата поставщику (${procurementType === 'local' ? 'Местный' : 'Импорт'}): ${supplierName} (Закупка #${purchase.id})`,
                 relatedId: purchase.id
             };
-            setTransactions([...transactions, newTransaction]);
+            const updatedTransactions = [...transactions, newTransaction];
+            setTransactions(updatedTransactions);
+            if (onSaveTransactions) {
+                onSaveTransactions(updatedTransactions);
+            }
         }
 
         // 3. Update Product Stock & Cost
@@ -183,14 +196,20 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
             return p;
         });
         setProducts(updatedProducts);
+        if (onSaveProducts) {
+            onSaveProducts(updatedProducts);
+        }
 
         // Reset
         setCart([]);
         setSupplierName('');
         setOverheads({ logistics: 0, customsDuty: 0, importVat: 0, other: 0 });
         setPaymentMethod('cash');
+        setPaymentCurrency('USD');
         alert('Закупка успешно проведена! Остатки и себестоимость обновлены.');
     };
+
+    // ...
 
     const handleOpenRepayModal = (purchase: Purchase) => {
         setSelectedPurchaseForRepayment(purchase);
@@ -208,11 +227,16 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
             type: 'supplier_payment',
             amount: repaymentAmount,
             currency: 'USD',
+            exchangeRate: settings.defaultExchangeRate, // Store exchange rate for proper conversion
             method: 'cash', // Default
             description: `Погашение долга поставщику: ${selectedPurchaseForRepayment.supplierName} (Закупка #${selectedPurchaseForRepayment.id})`,
             relatedId: selectedPurchaseForRepayment.id
         };
-        setTransactions([...transactions, newTransaction]);
+        const updatedTransactions = [...transactions, newTransaction];
+        setTransactions(updatedTransactions);
+        if (onSaveTransactions) {
+            onSaveTransactions(updatedTransactions);
+        }
 
         // 2. Update Purchase
         const updatedPurchases = purchases.map(p => {
@@ -304,13 +328,19 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                                 <label className="text-xs font-medium text-slate-400">Оплата</label>
                                 <div className="grid grid-cols-3 gap-2">
                                     <button
-                                        onClick={() => setPaymentMethod('cash')}
+                                        onClick={() => {
+                                            setPaymentMethod('cash');
+                                            // Keep current currency for cash
+                                        }}
                                         className={`px-2 py-2 rounded-lg text-xs font-bold border transition-all ${paymentMethod === 'cash' ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : 'bg-slate-900 border-slate-600 text-slate-400'}`}
                                     >
                                         Наличные
                                     </button>
                                     <button
-                                        onClick={() => setPaymentMethod('bank')}
+                                        onClick={() => {
+                                            setPaymentMethod('bank');
+                                            setPaymentCurrency('UZS'); // Bank transfers are always in UZS
+                                        }}
                                         className={`px-2 py-2 rounded-lg text-xs font-bold border transition-all ${paymentMethod === 'bank' ? 'bg-blue-500/20 border-blue-500 text-blue-400' : 'bg-slate-900 border-slate-600 text-slate-400'}`}
                                     >
                                         Перечисление
@@ -322,6 +352,32 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                                         В долг
                                     </button>
                                 </div>
+                                {/* Currency Selection - Only for cash, not for bank (always UZS) or debt */}
+                                {paymentMethod === 'cash' && (
+                                    <div className="mt-2">
+                                        <label className="text-xs font-medium text-slate-400 mb-1 block">Валюта оплаты</label>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <button
+                                                onClick={() => setPaymentCurrency('USD')}
+                                                className={`px-3 py-2 rounded-lg text-xs font-bold border transition-all ${paymentCurrency === 'USD' ? 'bg-indigo-500/20 border-indigo-500 text-indigo-400' : 'bg-slate-900 border-slate-600 text-slate-400'}`}
+                                            >
+                                                💵 USD
+                                            </button>
+                                            <button
+                                                onClick={() => setPaymentCurrency('UZS')}
+                                                className={`px-3 py-2 rounded-lg text-xs font-bold border transition-all ${paymentCurrency === 'UZS' ? 'bg-amber-500/20 border-amber-500 text-amber-400' : 'bg-slate-900 border-slate-600 text-slate-400'}`}
+                                            >
+                                                💰 UZS
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                                {/* Show currency info for bank (always UZS) */}
+                                {paymentMethod === 'bank' && (
+                                    <div className="mt-2 p-2 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+                                        <p className="text-xs text-blue-400">💰 Перечисление всегда в UZS</p>
+                                    </div>
+                                )}
                             </div>
                         </div>
 
@@ -507,6 +563,29 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                                     </p>
                                 </div>
                             </div>
+                            
+                            {/* Payment Info */}
+                            {paymentMethod !== 'debt' && (
+                                <div className="mb-4 p-3 bg-slate-800/50 border border-slate-700 rounded-lg">
+                                    <p className="text-xs text-slate-400 mb-1">Оплата будет списана:</p>
+                                    <p className="text-sm font-mono text-white">
+                                        {paymentMethod === 'cash' ? '💵 Касса' : '🏦 Расчетный счет'} - {
+                                            paymentCurrency === 'USD' 
+                                                ? `$${totals.totalInvoiceValue.toFixed(2)}`
+                                                : `${(totals.totalInvoiceValue * settings.defaultExchangeRate).toLocaleString()} сўм`
+                                        }
+                                    </p>
+                                </div>
+                            )}
+                            
+                            {paymentMethod === 'debt' && (
+                                <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
+                                    <p className="text-xs text-red-400 mb-1">⚠️ Закупка будет оформлена в долг</p>
+                                    <p className="text-sm font-mono text-red-300">
+                                        Долг: ${totals.totalInvoiceValue.toFixed(2)} USD
+                                    </p>
+                                </div>
+                            )}
 
                             <div className="flex items-center gap-4 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg mb-4">
                                 <AlertTriangle className="text-amber-500 shrink-0" size={20} />

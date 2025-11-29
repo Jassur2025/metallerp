@@ -15,7 +15,8 @@ import {
   Users,
   FileText,
   UserCircle2,
-  Shield
+  Shield,
+  BookOpen
 } from 'lucide-react';
 import { Dashboard } from './components/Dashboard';
 import { Inventory } from './components/Inventory';
@@ -28,8 +29,9 @@ import { CRM } from './components/CRM';
 import { Login } from './components/Login';
 import { Reports } from './components/Reports';
 import { Staff } from './components/Staff';
+import { JournalEventsView } from './components/JournalEventsView';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-import { Product, Order, AppSettings, Expense, FixedAsset, Client, Employee, Transaction, Purchase } from './types';
+import { Product, Order, AppSettings, Expense, FixedAsset, Client, Employee, Transaction, Purchase, JournalEvent } from './types';
 import { sheetsService } from './services/sheetsService';
 import { Settings as SettingsComponent } from './components/Settings';
 import { FixedAssets } from './components/FixedAssets';
@@ -48,7 +50,8 @@ const defaultSettings: AppSettings = {
     balance: true,
     fixedAssets: true,
     crm: true,
-    staff: true
+    staff: true,
+    journal: true
   }
 };
 
@@ -68,6 +71,7 @@ const AppContent: React.FC = () => {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
+  const [journalEvents, setJournalEvents] = useState<JournalEvent[]>([]);
   const [settings, setSettings] = useState<AppSettings>(() => {
     try {
       const saved = localStorage.getItem('metal_erp_settings');
@@ -90,13 +94,58 @@ const AppContent: React.FC = () => {
     localStorage.setItem('metal_erp_settings', JSON.stringify(settings));
   }, [settings]);
 
+  // Recalculate client debt based on transactions
+  const recalculateClientDebts = (clients: Client[], transactions: Transaction[]): Client[] => {
+    return clients.map(client => {
+      let calculatedDebt = 0;
+      
+      // Sum all debt_obligation transactions for this client
+      const debtTransactions = transactions.filter(t => 
+        t.type === 'debt_obligation' && t.relatedId === client.id
+      );
+      debtTransactions.forEach(t => {
+        calculatedDebt += t.amount; // debt_obligation always in USD
+      });
+      
+      // Subtract all client_payment transactions for this client
+      const paymentTransactions = transactions.filter(t => 
+        t.type === 'client_payment' && t.relatedId === client.id
+      );
+      paymentTransactions.forEach(t => {
+        // Convert to USD if needed
+        let amountUSD = t.amount;
+        if (t.currency === 'UZS' && t.exchangeRate && t.exchangeRate > 0) {
+          amountUSD = t.amount / t.exchangeRate;
+        }
+        calculatedDebt -= amountUSD;
+      });
+      
+      // Also check for client returns that reduce debt
+      const returnTransactions = transactions.filter(t => 
+        t.type === 'client_return' && t.method === 'debt' && t.relatedId === client.id
+      );
+      returnTransactions.forEach(t => {
+        let amountUSD = t.amount;
+        if (t.currency === 'UZS' && t.exchangeRate && t.exchangeRate > 0) {
+          amountUSD = t.amount / t.exchangeRate;
+        }
+        calculatedDebt -= amountUSD;
+      });
+      
+      return {
+        ...client,
+        totalDebt: Math.max(0, calculatedDebt) // Ensure debt is never negative
+      };
+    });
+  };
+
   const loadData = async () => {
     if (!accessToken) return;
     setIsLoading(true);
     setError(null);
     try {
       await sheetsService.initialize(accessToken);
-      const [loadedProducts, loadedOrders, loadedExpenses, loadedAssets, loadedClients, loadedEmployees, loadedTransactions, loadedPurchases] = await Promise.all([
+      const [loadedProducts, loadedOrders, loadedExpenses, loadedAssets, loadedClients, loadedEmployees, loadedTransactions, loadedPurchases, loadedJournalEvents] = await Promise.all([
         sheetsService.getProducts(accessToken),
         sheetsService.getOrders(accessToken),
         sheetsService.getExpenses(accessToken),
@@ -104,16 +153,31 @@ const AppContent: React.FC = () => {
         sheetsService.getClients(accessToken),
         sheetsService.getEmployees(accessToken),
         sheetsService.getTransactions(accessToken),
-        sheetsService.getPurchases(accessToken)
+        sheetsService.getPurchases(accessToken),
+        sheetsService.getJournalEvents(accessToken)
       ]);
+      
+      // Recalculate client debts based on transactions to ensure accuracy
+      const clientsWithRecalculatedDebts = recalculateClientDebts(loadedClients, loadedTransactions);
+      
       setProducts(loadedProducts);
       setOrders(loadedOrders);
       setExpenses(loadedExpenses);
       setFixedAssets(loadedAssets);
-      setClients(loadedClients);
+      setClients(clientsWithRecalculatedDebts);
       setEmployees(loadedEmployees);
       setTransactions(loadedTransactions);
       setPurchases(loadedPurchases);
+      setJournalEvents(loadedJournalEvents);
+      
+      // If debts were recalculated and differ from saved values, save updated clients
+      const debtsChanged = clientsWithRecalculatedDebts.some((client, index) => 
+        Math.abs((client.totalDebt || 0) - (loadedClients[index]?.totalDebt || 0)) > 0.01
+      );
+      if (debtsChanged) {
+        console.log('🔄 Долги клиентов пересчитаны на основе транзакций, сохраняем обновленные данные...');
+        await sheetsService.saveAllClients(accessToken, clientsWithRecalculatedDebts);
+      }
     } catch (err: any) {
       console.error(err);
       setError('Не удалось загрузить данные. Проверьте ID таблицы в настройках.');
@@ -145,8 +209,18 @@ const AppContent: React.FC = () => {
     }
   };
 
-  const handleAddExpense = (newExpense: Expense) => {
-    setExpenses(prev => [...prev, newExpense]);
+  const handleAddExpense = async (newExpense: Expense) => {
+    const updatedExpenses = [...expenses, newExpense];
+    setExpenses(updatedExpenses);
+    // Save to Google Sheets
+    if (accessToken) {
+      try {
+        await sheetsService.saveAllExpenses(accessToken, updatedExpenses);
+      } catch (err) {
+        console.error('Ошибка при сохранении расхода:', err);
+        alert('Расход добавлен локально, но не удалось сохранить в Google Sheets');
+      }
+    }
   };
 
   const handleSaveEmployees = async (newEmployees: Employee[]) => {
@@ -178,32 +252,85 @@ const AppContent: React.FC = () => {
   };
 
   const handleSaveClients = async (newClients: Client[]) => {
+    console.log('💾 Saving clients to Google Sheets:', newClients.map(c => ({ name: c.name, totalDebt: c.totalDebt })));
     setClients(newClients);
     if (!accessToken) return;
     setIsLoading(true);
     try {
       await sheetsService.saveAllClients(accessToken, newClients);
+      console.log('✅ Clients saved successfully!');
     } catch (err) {
-      console.error(err);
+      console.error('❌ Error saving clients:', err);
       alert('Ошибка при сохранении клиентов!');
     } finally {
       setIsLoading(false);
     }
   };
 
+  const handleSaveExpenses = async (newExpenses: Expense[]) => {
+    setExpenses(newExpenses);
+    if (!accessToken) return;
+    setIsLoading(true);
+    try {
+      await sheetsService.saveAllExpenses(accessToken, newExpenses);
+    } catch (err) {
+      console.error(err);
+      alert('Ошибка при сохранении расходов!');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSaveFixedAssets = async (newAssets: FixedAsset[]) => {
+    setFixedAssets(newAssets);
+    if (!accessToken) return;
+    setIsLoading(true);
+    try {
+      await sheetsService.saveAllFixedAssets(accessToken, newAssets);
+    } catch (err) {
+      console.error(err);
+      alert('Ошибка при сохранении основных средств!');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSaveProducts = async (newProducts: Product[]) => {
+    setProducts(newProducts);
+    if (!accessToken) return;
+    setIsLoading(true);
+    try {
+      await sheetsService.saveAllProducts(accessToken, newProducts);
+    } catch (err) {
+      console.error(err);
+      alert('Ошибка при сохранении товаров!');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleSaveOrders = async (newOrders: Order[]) => {
+    console.log('💾 Saving orders to Google Sheets:', newOrders.length, 'orders');
+    console.log('📋 Orders details:', newOrders.map(o => ({ 
+      id: o.id, 
+      customer: o.customerName, 
+      total: o.totalAmount, 
+      paymentMethod: o.paymentMethod,
+      paymentStatus: o.paymentStatus 
+    })));
     setOrders(newOrders);
     if (!accessToken) {
-      console.warn('Access token not available, order saved locally only');
+      console.warn('⚠️ Access token not available, order saved locally only');
       return false; // Saved locally but not in Sheets
     }
     setIsLoading(true);
     try {
       await sheetsService.saveAllOrders(accessToken, newOrders);
+      console.log('✅ Orders saved successfully to Google Sheets!');
       return true; // Success
     } catch (err) {
-      console.error(err);
-      alert('Ошибка при сохранении заказов!');
+      console.error('❌ Error saving orders:', err);
+      alert('Ошибка при сохранении заказов! Проверьте консоль для деталей.');
       return false; // Error
     } finally {
       setIsLoading(false);
@@ -229,6 +356,16 @@ const AppContent: React.FC = () => {
     }
   };
 
+  const handleAddJournalEvent = async (event: JournalEvent) => {
+    setJournalEvents(prev => [event, ...prev]);
+    if (!accessToken) return;
+    try {
+      await sheetsService.addJournalEvent(accessToken, event);
+    } catch (err) {
+      console.error("Failed to save journal event", err);
+    }
+  };
+
   if (!user) {
     return <Login />;
   }
@@ -250,9 +387,9 @@ const AppContent: React.FC = () => {
 
     switch (activeTab) {
       case 'dashboard':
-        return <Dashboard products={products} orders={orders} settings={settings} />;
+        return <Dashboard products={products} orders={orders} clients={clients} transactions={transactions} settings={settings} />;
       case 'inventory':
-        return <Inventory products={products} setProducts={setProducts} />;
+        return <Inventory products={products} setProducts={setProducts} onSaveProducts={handleSaveProducts} />;
       case 'import':
         return <Procurement
           products={products}
@@ -262,7 +399,11 @@ const AppContent: React.FC = () => {
           onSavePurchases={handleSavePurchases}
           transactions={transactions}
           setTransactions={setTransactions}
+          onSaveProducts={handleSaveProducts}
+          onSaveTransactions={handleSaveTransactions}
         />;
+      case 'journal':
+        return <JournalEventsView events={journalEvents} />;
       case 'sales':
         return <Sales
           products={products}
@@ -280,13 +421,23 @@ const AppContent: React.FC = () => {
           setTransactions={setTransactions}
           onSaveOrders={handleSaveOrders}
           onSaveTransactions={handleSaveTransactions}
+          onSaveProducts={handleSaveProducts}
+          onSaveExpenses={handleSaveExpenses}
+          onAddJournalEvent={handleAddJournalEvent}
         />;
       case 'reports':
-        return <Reports orders={orders} expenses={expenses} onAddExpense={handleAddExpense} />;
+        return <Reports orders={orders} expenses={expenses} products={products} onAddExpense={handleAddExpense} />;
       case 'fixedAssets':
-        return <FixedAssets assets={fixedAssets} setAssets={setFixedAssets} />;
+        return <FixedAssets assets={fixedAssets} setAssets={setFixedAssets} onSaveAssets={handleSaveFixedAssets} />;
       case 'crm':
-        return <CRM clients={clients} onSave={handleSaveClients} orders={orders} transactions={transactions} setTransactions={setTransactions} />;
+        return <CRM
+          clients={clients}
+          onSave={handleSaveClients}
+          orders={orders}
+          transactions={transactions}
+          setTransactions={setTransactions}
+          onSaveTransactions={handleSaveTransactions}
+        />;
       case 'staff':
         return <Staff employees={employees} onSave={handleSaveEmployees} />;
       case 'balance':
@@ -306,20 +457,16 @@ const AppContent: React.FC = () => {
   };
 
   // Current Employee Permissions
-  const normalizedUserEmail = user?.email?.toLowerCase() || null;
-  const currentEmployee = employees.find(e => e.email.toLowerCase() === normalizedUserEmail);
-  const superAdminEmails = (typeof SUPER_ADMIN_EMAILS !== 'undefined'
-    ? SUPER_ADMIN_EMAILS.map(email => email.toLowerCase())
-    : []);
+  const currentEmployee = employees.find(e => e.email.toLowerCase() === user?.email?.toLowerCase());
 
   const checkPermission = (module: keyof typeof settings.modules) => {
     // 0. Dev Mode Bypass
     if (IS_DEV_MODE) return true;
 
     // 1. Super Admin Bypass
-    if (normalizedUserEmail && (
+    if (user?.email && (
       // Check against hardcoded super admins
-      superAdminEmails.includes(normalizedUserEmail) ||
+      (typeof SUPER_ADMIN_EMAILS !== 'undefined' && SUPER_ADMIN_EMAILS.includes(user.email)) ||
       // Or check if the user is marked as 'admin' role in the staff list (optional, but good practice)
       currentEmployee?.role === 'admin'
     )) {
@@ -341,10 +488,19 @@ const AppContent: React.FC = () => {
 
   return (
     <div className="flex h-screen bg-slate-900 text-slate-100 font-sans overflow-hidden">
+      {/* Mobile Overlay */}
+      {isSidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-30 lg:hidden"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+      
       {/* Sidebar */}
       <aside
-        className={`${isSidebarOpen ? 'w-64' : 'w-20'
-          } bg-slate-800 border-r border-slate-700 transition-all duration-300 flex flex-col z-20 relative`}
+        className={`${
+          isSidebarOpen ? 'w-64 translate-x-0' : '-translate-x-full lg:translate-x-0 w-20'
+        } fixed lg:relative h-full bg-slate-800 border-r border-slate-700 transition-all duration-300 flex flex-col z-40 lg:z-20`}
       >
         {/* Header */}
         <div className="p-4 flex items-center justify-between border-b border-slate-700 h-16">
@@ -365,6 +521,7 @@ const AppContent: React.FC = () => {
               active={activeTab === 'dashboard'}
               onClick={() => setActiveTab('dashboard')}
               isOpen={isSidebarOpen}
+              onMobileClose={() => setIsSidebarOpen(false)}
             />
           )}
           {checkPermission('inventory') && (
@@ -374,6 +531,7 @@ const AppContent: React.FC = () => {
               active={activeTab === 'inventory'}
               onClick={() => setActiveTab('inventory')}
               isOpen={isSidebarOpen}
+              onMobileClose={() => setIsSidebarOpen(false)}
             />
           )}
           {checkPermission('import') && (
@@ -383,6 +541,7 @@ const AppContent: React.FC = () => {
               active={activeTab === 'import'}
               onClick={() => setActiveTab('import')}
               isOpen={isSidebarOpen}
+              onMobileClose={() => setIsSidebarOpen(false)}
             />
           )}
           {checkPermission('sales') && (
@@ -392,6 +551,7 @@ const AppContent: React.FC = () => {
               active={activeTab === 'sales'}
               onClick={() => setActiveTab('sales')}
               isOpen={isSidebarOpen}
+              onMobileClose={() => setIsSidebarOpen(false)}
             />
           )}
           {checkPermission('reports') && (
@@ -401,6 +561,7 @@ const AppContent: React.FC = () => {
               active={activeTab === 'reports'}
               onClick={() => setActiveTab('reports')}
               isOpen={isSidebarOpen}
+              onMobileClose={() => setIsSidebarOpen(false)}
             />
           )}
           {checkPermission('crm') && (
@@ -410,6 +571,7 @@ const AppContent: React.FC = () => {
               active={activeTab === 'crm'}
               onClick={() => setActiveTab('crm')}
               isOpen={isSidebarOpen}
+              onMobileClose={() => setIsSidebarOpen(false)}
             />
           )}
           {checkPermission('staff') && (
@@ -419,6 +581,7 @@ const AppContent: React.FC = () => {
               active={activeTab === 'staff'}
               onClick={() => setActiveTab('staff')}
               isOpen={isSidebarOpen}
+              onMobileClose={() => setIsSidebarOpen(false)}
             />
           )}
           {checkPermission('fixedAssets') && (
@@ -428,6 +591,7 @@ const AppContent: React.FC = () => {
               active={activeTab === 'fixedAssets'}
               onClick={() => setActiveTab('fixedAssets')}
               isOpen={isSidebarOpen}
+              onMobileClose={() => setIsSidebarOpen(false)}
             />
           )}
           {checkPermission('balance') && (
@@ -437,6 +601,17 @@ const AppContent: React.FC = () => {
               active={activeTab === 'balance'}
               onClick={() => setActiveTab('balance')}
               isOpen={isSidebarOpen}
+              onMobileClose={() => setIsSidebarOpen(false)}
+            />
+          )}
+          {checkPermission('journal') && (
+            <SidebarItem
+              icon={<BookOpen size={20} />}
+              label="Журнал"
+              active={activeTab === 'journal'}
+              onClick={() => setActiveTab('journal')}
+              isOpen={isSidebarOpen}
+              onMobileClose={() => setIsSidebarOpen(false)}
             />
           )}
           <div className="my-4 border-t border-slate-700 mx-4"></div>
@@ -446,6 +621,7 @@ const AppContent: React.FC = () => {
             active={activeTab === 'settings'}
             onClick={() => setActiveTab('settings')}
             isOpen={isSidebarOpen}
+            onMobileClose={() => setIsSidebarOpen(false)}
           />
         </nav>
 
@@ -474,10 +650,17 @@ const AppContent: React.FC = () => {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col overflow-hidden relative">
+      <main className="flex-1 flex flex-col overflow-hidden relative w-full lg:w-auto">
         {/* Header */}
-        <header className="h-16 bg-slate-800 border-b border-slate-700 flex items-center justify-between px-6 z-10">
-          <h1 className="text-xl font-bold text-white">
+        <header className="h-16 bg-slate-800 border-b border-slate-700 flex items-center justify-between px-4 lg:px-6 z-10">
+          {/* Mobile Menu Button */}
+          <button
+            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+            className="lg:hidden p-2 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-white transition-colors mr-2"
+          >
+            <Menu size={24} />
+          </button>
+          <h1 className="text-lg lg:text-xl font-bold text-white truncate">
             {activeTab === 'dashboard' && 'Обзор показателей'}
             {activeTab === 'inventory' && 'Управление складом'}
             {activeTab === 'import' && 'Закуп и Импорт'}
@@ -490,9 +673,9 @@ const AppContent: React.FC = () => {
             {activeTab === 'settings' && 'Настройки системы'}
           </h1>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 lg:gap-4">
             {error && (
-              <div className="text-red-400 text-sm bg-red-500/10 px-3 py-1 rounded-full border border-red-500/20 animate-pulse">
+              <div className="text-red-400 text-xs lg:text-sm bg-red-500/10 px-2 lg:px-3 py-1 rounded-full border border-red-500/20 animate-pulse hidden sm:block">
                 {error}
               </div>
             )}
@@ -501,13 +684,15 @@ const AppContent: React.FC = () => {
               <button
                 onClick={handleSaveAll}
                 disabled={isLoading}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${isLoading
+                className={`flex items-center gap-1 lg:gap-2 px-2 lg:px-4 py-2 rounded-lg font-medium transition-all text-sm lg:text-base ${isLoading
                   ? 'bg-slate-700 text-slate-400 cursor-wait'
                   : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/20'
                   }`}
+                title="Сохранить в Google Sheets"
               >
-                <RefreshCw size={18} className={isLoading ? 'animate-spin' : ''} />
-                {isLoading ? 'Сохранение...' : 'Сохранить в Google Sheets'}
+                <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
+                <span className="hidden sm:inline">{isLoading ? 'Сохранение...' : 'Сохранить в Google Sheets'}</span>
+                <span className="sm:hidden">{isLoading ? '...' : '💾'}</span>
               </button>
             )}
           </div>

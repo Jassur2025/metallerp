@@ -2,7 +2,10 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>MetalMaster ERP</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -38,6 +41,23 @@
         }
         ::-webkit-scrollbar-thumb:hover {
             background: #64748b; 
+        }
+
+        /* Touch-friendly elements */
+        @media (max-width: 1024px) {
+            button, a, input, select, textarea {
+                min-height: 44px; /* iOS touch target size */
+            }
+            
+            /* Prevent text size adjustment on iOS */
+            input, select, textarea {
+                font-size: 16px !important;
+            }
+        }
+
+        /* Smooth scrolling for mobile */
+        * {
+            -webkit-overflow-scrolling: touch;
         }
 
         /* Print Styles */
