@@ -144,5 +144,20 @@
 <body class="bg-slate-900 text-slate-100 font-sans antialiased selection:bg-primary-500 selection:text-white">
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
+    <script>
+      // SPA routing для GitHub Pages
+      (function() {
+        var pathSegmentsToKeep = 0;
+        var l = window.location;
+        if (l.search[1] === '/' ) {
+          var decoded = l.search.slice(1).split('&').map(function(s) { 
+            return s.replace(/~and~/g, '&')
+          }).join('?');
+          window.history.replaceState(null, null,
+              l.pathname.slice(0, -1) + decoded + l.hash
+          );
+        }
+      })();
+    </script>
 </body>
 </html>
