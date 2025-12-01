@@ -39,6 +39,7 @@ import { Product, Order, AppSettings, Expense, FixedAsset, Client, Employee, Tra
 import { sheetsService } from './services/sheetsService';
 import { SUPER_ADMIN_EMAILS, IS_DEV_MODE } from './constants';
 import { getErrorMessage } from './utils/errorHandler';
+import { validateAccessToken, isTokenExpiredError, logTokenStatus } from './utils/tokenHelper';
 
 // Default Settings
 const defaultSettings: AppSettings = {
@@ -272,24 +273,73 @@ const AppContent: React.FC = () => {
   };
 
   const handleSaveAll = async () => {
-    if (!accessToken) return;
+    // Проверяем токен перед сохранением
+    logTokenStatus(accessToken, 'before saveAll');
+    
+    if (!validateAccessToken(accessToken)) {
+      toast.error('Токен доступа отсутствует. Пожалуйста, войдите заново.');
+      return;
+    }
+    
     setIsLoading(true);
+    const results: { success: boolean; name: string; error?: string }[] = [];
+    
     try {
-      await Promise.all([
-        sheetsService.saveAllProducts(accessToken, products),
-        sheetsService.saveAllOrders(accessToken, orders),
-        sheetsService.saveAllExpenses(accessToken, expenses),
-        sheetsService.saveAllFixedAssets(accessToken, fixedAssets),
-        sheetsService.saveAllClients(accessToken, clients),
-        sheetsService.saveAllEmployees(accessToken, employees),
-        sheetsService.saveAllTransactions(accessToken, transactions),
-        sheetsService.saveAllPurchases(accessToken, purchases)
+      // Используем Promise.allSettled чтобы сохранить все возможные данные даже при ошибках
+      const saveResults = await Promise.allSettled([
+        sheetsService.saveAllProducts(accessToken!, products).then(() => ({ name: 'Товары', success: true })),
+        sheetsService.saveAllOrders(accessToken!, orders).then(() => ({ name: 'Заказы', success: true })),
+        sheetsService.saveAllExpenses(accessToken!, expenses).then(() => ({ name: 'Расходы', success: true })),
+        sheetsService.saveAllFixedAssets(accessToken!, fixedAssets).then(() => ({ name: 'Основные средства', success: true })),
+        sheetsService.saveAllClients(accessToken!, clients).then(() => ({ name: 'Клиенты', success: true })),
+        sheetsService.saveAllEmployees(accessToken!, employees).then(() => ({ name: 'Сотрудники', success: true })),
+        sheetsService.saveAllTransactions(accessToken!, transactions).then(() => ({ name: 'Транзакции', success: true })),
+        sheetsService.saveAllPurchases(accessToken!, purchases).then(() => ({ name: 'Закупки', success: true }))
       ]);
-      toast.success('Все данные успешно сохранены в Google Sheets!');
+      
+      // Обрабатываем результаты
+      saveResults.forEach((result, index) => {
+        const names = ['Товары', 'Заказы', 'Расходы', 'Основные средства', 'Клиенты', 'Сотрудники', 'Транзакции', 'Закупки'];
+        if (result.status === 'fulfilled') {
+          results.push({ success: true, name: names[index] });
+        } else {
+          const errorMsg = getErrorMessage(result.reason);
+          results.push({ success: false, name: names[index], error: errorMsg });
+          console.error(`❌ Ошибка сохранения ${names[index]}:`, result.reason);
+          
+          // Если ошибка связана с токеном, предлагаем перелогиниться
+          if (isTokenExpiredError(result.reason)) {
+            console.warn(`⚠️ Токен истек при сохранении ${names[index]}`);
+          }
+        }
+      });
+      
+      const successCount = results.filter(r => r.success).length;
+      const failCount = results.filter(r => !r.success).length;
+      
+      // Проверяем, есть ли ошибки связанные с токеном
+      const hasTokenErrors = results.some(r => !r.success && r.error && isTokenExpiredError(new Error(r.error)));
+      
+      if (hasTokenErrors) {
+        toast.error('Сессия истекла. Пожалуйста, войдите заново и попробуйте сохранить снова.');
+      } else if (failCount === 0) {
+        toast.success(`Все данные успешно сохранены в Google Sheets! (${successCount} модулей)`);
+      } else if (successCount > 0) {
+        const failedNames = results.filter(r => !r.success).map(r => r.name).join(', ');
+        toast.warning(`Сохранено ${successCount} из ${results.length} модулей. Ошибки: ${failedNames}`);
+      } else {
+        const errorMessages = results.filter(r => !r.success).map(r => `${r.name}: ${r.error}`).join('; ');
+        toast.error(`Не удалось сохранить данные: ${errorMessages}`);
+      }
     } catch (err) {
-      console.error(err);
+      console.error('❌ Критическая ошибка при сохранении:', err);
       const errorMessage = getErrorMessage(err);
-      toast.error(`Ошибка при сохранении данных: ${errorMessage}`);
+      
+      if (isTokenExpiredError(err)) {
+        toast.error('Сессия истекла. Пожалуйста, войдите заново.');
+      } else {
+        toast.error(`Ошибка при сохранении данных: ${errorMessage}`);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -411,20 +461,42 @@ const AppContent: React.FC = () => {
       paymentMethod: o.paymentMethod,
       paymentStatus: o.paymentStatus 
     })));
+    
+    logTokenStatus(accessToken, 'before saveOrders');
+    
     setOrders(newOrders);
-    if (!accessToken) {
+    
+    // Проверяем токен
+    if (!validateAccessToken(accessToken)) {
       console.warn('⚠️ Access token not available, order saved locally only');
+      toast.warning('Заказ сохранен локально. Войдите заново для сохранения в Google Sheets.');
       return false; // Saved locally but not in Sheets
     }
+    
+    // Дополнительная проверка: если токен есть, но он может быть невалидным
+    const currentToken = localStorage.getItem('google_access_token');
+    if (!currentToken || currentToken !== accessToken) {
+      console.warn('⚠️ Токен в localStorage не совпадает с токеном в состоянии');
+      toast.warning('Проблема с токеном доступа. Войдите заново.');
+      return false;
+    }
+    
     setIsLoading(true);
     try {
-      await sheetsService.saveAllOrders(accessToken, newOrders);
+      await sheetsService.saveAllOrders(accessToken!, newOrders);
       console.log('✅ Orders saved successfully to Google Sheets!');
       return true; // Success
     } catch (err) {
       console.error('❌ Error saving orders:', err);
       const errorMessage = getErrorMessage(err);
-      toast.error(`Ошибка при сохранении заказов: ${errorMessage}`);
+      
+      if (isTokenExpiredError(err)) {
+        // Очищаем невалидный токен
+        localStorage.removeItem('google_access_token');
+        toast.error('Сессия истекла. Заказ сохранен локально. Пожалуйста, войдите заново для сохранения в Google Sheets.');
+      } else {
+        toast.error(`Ошибка при сохранении заказов: ${errorMessage}`);
+      }
       return false; // Error
     } finally {
       setIsLoading(false);

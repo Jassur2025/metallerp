@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { User, signInWithPopup, signOut, onAuthStateChanged, GoogleAuthProvider } from 'firebase/auth';
+import { User, signInWithPopup, signOut, onAuthStateChanged, GoogleAuthProvider, signInWithRedirect, getRedirectResult } from 'firebase/auth';
 import { auth, googleProvider } from '../lib/firebase';
 
 interface AuthContextType {
@@ -8,6 +8,7 @@ interface AuthContextType {
     accessToken: string | null;
     signInWithGoogle: () => Promise<void>;
     logout: () => Promise<void>;
+    refreshAccessToken: () => Promise<string | null>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -25,18 +26,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 if (credential?.accessToken) {
                     setAccessToken(credential.accessToken);
                     localStorage.setItem('google_access_token', credential.accessToken);
-                    console.log('✅ Успешный вход через redirect');
+                    console.log('✅ Успешный вход через redirect, токен сохранен');
+                } else {
+                    console.warn('⚠️ Redirect result получен, но OAuth токен отсутствует');
+                    // Пытаемся получить токен через пользователя
+                    if (result.user) {
+                        // Для получения OAuth токена нужно использовать signInWithCredential
+                        // Но это сложно, поэтому просто предупреждаем
+                        console.warn('⚠️ Требуется повторный вход для получения OAuth токена');
+                    }
                 }
             }
         }).catch((error) => {
             console.error("Error getting redirect result", error);
         });
 
-        const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+        const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
             setUser(currentUser);
-            // Note: onAuthStateChanged doesn't provide the access token for API calls directly on refresh.
-            // In a production app, we might need to handle token persistence or silent refresh differently.
-            // For this MVP, we'll rely on the initial sign-in or re-auth.
+            
+            // Если пользователь авторизован, но токена нет - пытаемся получить его
+            if (currentUser) {
+                // Проверяем localStorage
+                const savedToken = localStorage.getItem('google_access_token');
+                if (savedToken && savedToken.length > 0) {
+                    setAccessToken(savedToken);
+                    console.log('✅ Токен восстановлен из localStorage');
+                } else {
+                    // Токена нет - нужно перелогиниться для получения OAuth токена
+                    console.warn('⚠️ Пользователь авторизован, но OAuth токен отсутствует. Требуется повторный вход.');
+                    // Не устанавливаем токен, чтобы пользователь понял, что нужно войти заново
+                }
+            } else {
+                // Пользователь не авторизован - очищаем токен
+                setAccessToken(null);
+                localStorage.removeItem('google_access_token');
+            }
+            
             setLoading(false);
         });
         return () => unsubscribe();
@@ -80,6 +105,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
     };
 
+    const refreshAccessToken = async (): Promise<string | null> => {
+        if (!user) {
+            console.warn('⚠️ Cannot refresh token: user not logged in');
+            return null;
+        }
+
+        try {
+            console.log('🔄 Attempting to refresh access token...');
+            // Попытка получить новый токен через повторный вход с popup
+            // Но это требует взаимодействия пользователя, поэтому просто возвращаем null
+            // и предлагаем пользователю войти заново
+            console.warn('⚠️ Token refresh requires user interaction. Please sign in again.');
+            return null;
+        } catch (error) {
+            console.error('❌ Error refreshing access token:', error);
+            return null;
+        }
+    };
+
     const logout = async () => {
         try {
             await signOut(auth);
@@ -106,7 +150,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     return (
-        <AuthContext.Provider value={{ user, loading, accessToken, signInWithGoogle, logout }}>
+        <AuthContext.Provider value={{ user, loading, accessToken, signInWithGoogle, logout, refreshAccessToken }}>
             {children}
         </AuthContext.Provider>
     );
