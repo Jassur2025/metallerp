@@ -348,7 +348,7 @@ export const sheetsService = {
                     paymentStatus: (row[9] as any) || 'paid',
                     amountPaid: Number(row[10]) || Number(row[7]) // Default to full amount if missing
                 }));
-        }, useCache).catch(() => []);
+        }, useCache);
     },
 
     saveAllPurchases: async (accessToken: string, purchases: Purchase[]) => {
@@ -423,11 +423,12 @@ export const sheetsService = {
             console.error("Failed to fetch products", e);
             // Try to return stale cache if available
             const staleCache = cacheService.get<Product[]>(cacheKey);
-            if (staleCache) {
+            if (staleCache && staleCache.length > 0) {
                 console.log('⚠️ Using stale cache due to fetch error');
                 return staleCache;
             }
-            return [];
+            // Пробрасываем ошибку вместо возврата пустого массива
+            throw e;
         }
     },
 
@@ -501,11 +502,12 @@ export const sheetsService = {
             console.error("Failed to fetch orders", e);
             // Try to return stale cache if available
             const staleCache = cacheService.get<Order[]>(cacheKey);
-            if (staleCache) {
+            if (staleCache && staleCache.length > 0) {
                 console.log('⚠️ Using stale cache due to fetch error');
                 return staleCache;
             }
-            return [];
+            // Пробрасываем ошибку вместо возврата пустого массива
+            throw e;
         }
     },
 
@@ -559,7 +561,7 @@ export const sheetsService = {
             return (data.values || [])
                 .filter(row => row[0] && row[0] !== 'ID')
                 .map(mapRowToExpense);
-        }, useCache).catch(() => []);
+        }, useCache);
     },
 
     saveAllExpenses: async (accessToken: string, expenses: Expense[]) => {
@@ -611,7 +613,7 @@ export const sheetsService = {
             return (data.values || [])
                 .filter(row => row[0] && row[0] !== 'ID')
                 .map(mapRowToFixedAsset);
-        }, useCache).catch(() => []);
+        }, useCache);
     },
 
     saveAllFixedAssets: async (accessToken: string, assets: FixedAsset[]) => {
@@ -663,7 +665,7 @@ export const sheetsService = {
             return (data.values || [])
                 .filter(row => row[0] && row[0] !== 'ID')
                 .map(mapRowToClient);
-        }, useCache).catch(() => []);
+        }, useCache);
     },
 
     saveAllClients: async (accessToken: string, clients: Client[]) => {
@@ -715,7 +717,7 @@ export const sheetsService = {
             return (data.values || [])
                 .filter(row => row[0] && row[0] !== 'ID')
                 .map(mapRowToEmployee);
-        }, useCache).catch(() => []);
+        }, useCache);
     },
 
     saveAllEmployees: async (accessToken: string, employees: Employee[]) => {
@@ -796,7 +798,7 @@ export const sheetsService = {
                     description: row[7] || '',
                     relatedId: row[8] || undefined
                 }));
-        }, useCache).catch(() => []);
+        }, useCache);
     },
 
     saveAllTransactions: async (accessToken: string, transactions: Transaction[]) => {
@@ -861,7 +863,7 @@ export const sheetsService = {
             return (data.values || [])
                 .filter(row => row[0] && row[0] !== 'ID')
                 .map(mapRowToJournalEvent);
-        }, useCache).catch(() => []);
+        }, useCache);
     },
 
     addJournalEvent: async (accessToken: string, event: JournalEvent) => {

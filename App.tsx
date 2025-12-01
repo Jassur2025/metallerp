@@ -147,46 +147,125 @@ const AppContent: React.FC = () => {
     if (!accessToken) return;
     setIsLoading(true);
     setError(null);
+    
+    // Сохраняем текущие данные на случай ошибки
+    const currentData = {
+      products,
+      orders,
+      expenses,
+      fixedAssets,
+      clients,
+      employees,
+      transactions,
+      purchases,
+      journalEvents
+    };
+    
     try {
       await sheetsService.initialize(accessToken);
-      const [loadedProducts, loadedOrders, loadedExpenses, loadedAssets, loadedClients, loadedEmployees, loadedTransactions, loadedPurchases, loadedJournalEvents] = await Promise.all([
-        sheetsService.getProducts(accessToken),
-        sheetsService.getOrders(accessToken),
-        sheetsService.getExpenses(accessToken),
-        sheetsService.getFixedAssets(accessToken),
-        sheetsService.getClients(accessToken),
-        sheetsService.getEmployees(accessToken),
-        sheetsService.getTransactions(accessToken),
-        sheetsService.getPurchases(accessToken),
-        sheetsService.getJournalEvents(accessToken)
+      
+      // Загружаем данные с обработкой ошибок для каждого типа отдельно
+      const loadWithFallback = async <T,>(
+        loader: () => Promise<T[]>,
+        current: T[],
+        name: string
+      ): Promise<T[]> => {
+        try {
+          const loaded = await loader();
+          // Обновляем только если данные загружены успешно ИЛИ текущие данные пустые
+          if (loaded.length > 0 || current.length === 0) {
+            return loaded;
+          }
+          // Если загрузка вернула пустой массив, но есть текущие данные - сохраняем текущие
+          console.warn(`⚠️ ${name}: загрузка вернула пустой массив, сохраняем текущие данные`);
+          return current;
+        } catch (error) {
+          console.error(`❌ Ошибка загрузки ${name}:`, error);
+          // При ошибке возвращаем текущие данные, если они есть
+          if (current.length > 0) {
+            console.log(`📦 ${name}: используем текущие данные из-за ошибки загрузки`);
+            return current;
+          }
+          // Если текущих данных нет, пробрасываем ошибку
+          throw error;
+        }
+      };
+      
+      const [loadedProducts, loadedOrders, loadedExpenses, loadedAssets, loadedClients, loadedEmployees, loadedTransactions, loadedPurchases, loadedJournalEvents] = await Promise.allSettled([
+        loadWithFallback(() => sheetsService.getProducts(accessToken), currentData.products, 'Products'),
+        loadWithFallback(() => sheetsService.getOrders(accessToken), currentData.orders, 'Orders'),
+        loadWithFallback(() => sheetsService.getExpenses(accessToken), currentData.expenses, 'Expenses'),
+        loadWithFallback(() => sheetsService.getFixedAssets(accessToken), currentData.fixedAssets, 'FixedAssets'),
+        loadWithFallback(() => sheetsService.getClients(accessToken), currentData.clients, 'Clients'),
+        loadWithFallback(() => sheetsService.getEmployees(accessToken), currentData.employees, 'Employees'),
+        loadWithFallback(() => sheetsService.getTransactions(accessToken), currentData.transactions, 'Transactions'),
+        loadWithFallback(() => sheetsService.getPurchases(accessToken), currentData.purchases, 'Purchases'),
+        loadWithFallback(() => sheetsService.getJournalEvents(accessToken), currentData.journalEvents, 'JournalEvents')
       ]);
       
-      // Recalculate client debts based on transactions to ensure accuracy
-      const clientsWithRecalculatedDebts = recalculateClientDebts(loadedClients, loadedTransactions);
+      // Обрабатываем результаты Promise.allSettled
+      const getResult = <T,>(result: PromiseSettledResult<T[]>, current: T[]): T[] => {
+        if (result.status === 'fulfilled') {
+          return result.value;
+        }
+        console.error('Ошибка загрузки данных:', result.reason);
+        return current; // Возвращаем текущие данные при ошибке
+      };
       
-      setProducts(loadedProducts);
-      setOrders(loadedOrders);
-      setExpenses(loadedExpenses);
-      setFixedAssets(loadedAssets);
+      const finalProducts = getResult(loadedProducts, currentData.products);
+      const finalOrders = getResult(loadedOrders, currentData.orders);
+      const finalExpenses = getResult(loadedExpenses, currentData.expenses);
+      const finalAssets = getResult(loadedAssets, currentData.fixedAssets);
+      const finalClients = getResult(loadedClients, currentData.clients);
+      const finalEmployees = getResult(loadedEmployees, currentData.employees);
+      const finalTransactions = getResult(loadedTransactions, currentData.transactions);
+      const finalPurchases = getResult(loadedPurchases, currentData.purchases);
+      const finalJournalEvents = getResult(loadedJournalEvents, currentData.journalEvents);
+      
+      // Recalculate client debts based on transactions to ensure accuracy
+      const clientsWithRecalculatedDebts = recalculateClientDebts(finalClients, finalTransactions);
+      
+      // Обновляем состояние только если есть изменения
+      setProducts(finalProducts);
+      setOrders(finalOrders);
+      setExpenses(finalExpenses);
+      setFixedAssets(finalAssets);
       setClients(clientsWithRecalculatedDebts);
-      setEmployees(loadedEmployees);
-      setTransactions(loadedTransactions);
-      setPurchases(loadedPurchases);
-      setJournalEvents(loadedJournalEvents);
+      setEmployees(finalEmployees);
+      setTransactions(finalTransactions);
+      setPurchases(finalPurchases);
+      setJournalEvents(finalJournalEvents);
+      
+      // Проверяем, были ли ошибки при загрузке
+      const hasErrors = [
+        loadedProducts, loadedOrders, loadedExpenses, loadedAssets,
+        loadedClients, loadedEmployees, loadedTransactions, loadedPurchases, loadedJournalEvents
+      ].some(result => result.status === 'rejected');
+      
+      if (hasErrors) {
+        toast.warning('Некоторые данные не удалось загрузить. Используются локальные данные.');
+      }
       
       // If debts were recalculated and differ from saved values, save updated clients
       const debtsChanged = clientsWithRecalculatedDebts.some((client, index) => 
-        Math.abs((client.totalDebt || 0) - (loadedClients[index]?.totalDebt || 0)) > 0.01
+        Math.abs((client.totalDebt || 0) - (finalClients[index]?.totalDebt || 0)) > 0.01
       );
       if (debtsChanged) {
         console.log('🔄 Долги клиентов пересчитаны на основе транзакций, сохраняем обновленные данные...');
         await sheetsService.saveAllClients(accessToken, clientsWithRecalculatedDebts);
       }
     } catch (err: any) {
-      console.error(err);
+      console.error('❌ Критическая ошибка при загрузке данных:', err);
       const errorMessage = getErrorMessage(err);
       setError(errorMessage);
-      toast.error(errorMessage);
+      
+      // Проверяем, есть ли текущие данные
+      const hasCurrentData = currentData.products.length > 0 || currentData.orders.length > 0 || currentData.clients.length > 0;
+      if (hasCurrentData) {
+        toast.warning(`Не удалось обновить данные: ${errorMessage}. Используются локальные данные.`);
+      } else {
+        toast.error(`Ошибка при загрузке данных: ${errorMessage}`);
+      }
     } finally {
       setIsLoading(false);
     }

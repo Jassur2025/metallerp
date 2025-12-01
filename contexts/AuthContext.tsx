@@ -18,6 +18,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [accessToken, setAccessToken] = useState<string | null>(null);
 
     useEffect(() => {
+        // Обрабатываем redirect результат при возврате после signInWithRedirect
+        getRedirectResult(auth).then((result) => {
+            if (result) {
+                const credential = GoogleAuthProvider.credentialFromResult(result);
+                if (credential?.accessToken) {
+                    setAccessToken(credential.accessToken);
+                    localStorage.setItem('google_access_token', credential.accessToken);
+                    console.log('✅ Успешный вход через redirect');
+                }
+            }
+        }).catch((error) => {
+            console.error("Error getting redirect result", error);
+        });
+
         const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
             setUser(currentUser);
             // Note: onAuthStateChanged doesn't provide the access token for API calls directly on refresh.
@@ -30,16 +44,39 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const signInWithGoogle = async () => {
         try {
-            const result = await signInWithPopup(auth, googleProvider);
-            const credential = GoogleAuthProvider.credentialFromResult(result);
-            if (credential?.accessToken) {
-                setAccessToken(credential.accessToken);
-                // Save to local storage temporarily to persist across reloads for this simple implementation
-                localStorage.setItem('google_access_token', credential.accessToken);
+            // Проверяем, мобильное ли устройство
+            const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+            const isSmallScreen = window.innerWidth < 768;
+            
+            if (isMobile || isSmallScreen) {
+                // На мобильных используем redirect вместо popup
+                console.log('📱 Мобильное устройство обнаружено, используем redirect для входа');
+                await signInWithRedirect(auth, googleProvider);
+                // Redirect произойдет, функция вернет управление после redirect
+                return;
+            } else {
+                // На десктопе используем popup
+                const result = await signInWithPopup(auth, googleProvider);
+                const credential = GoogleAuthProvider.credentialFromResult(result);
+                if (credential?.accessToken) {
+                    setAccessToken(credential.accessToken);
+                    localStorage.setItem('google_access_token', credential.accessToken);
+                }
             }
-        } catch (error) {
+        } catch (error: any) {
             console.error("Error signing in with Google", error);
-            throw error;
+            // Если popup заблокирован, пробуем redirect
+            if (error.code === 'auth/popup-blocked' || error.code === 'auth/popup-closed-by-user') {
+                console.log('⚠️ Popup заблокирован, используем redirect');
+                try {
+                    await signInWithRedirect(auth, googleProvider);
+                } catch (redirectError) {
+                    console.error("Error with redirect", redirectError);
+                    throw redirectError;
+                }
+            } else {
+                throw error;
+            }
         }
     };
 
