@@ -1,7 +1,11 @@
 import React, { useState, useMemo } from 'react';
 import { Client, Order, Transaction } from '../types';
-import { Plus, Search, Phone, Mail, MapPin, Edit, Trash2, DollarSign, Wallet, History, ArrowDownLeft, BarChart3, TrendingUp, Calendar } from 'lucide-react';
+import { User } from 'firebase/auth';
+import { useToast } from '../contexts/ToastContext';
+import { Plus, Search, Phone, Mail, MapPin, Edit, Trash2, DollarSign, Wallet, History, ArrowDownLeft, BarChart3, TrendingUp, Calendar, CheckCircle, XCircle, AlertCircle, Smartphone } from 'lucide-react';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid, PieChart, Pie, Cell } from 'recharts';
+import { checkAllPhones, formatPhoneForTablet, validateUzbekistanPhone } from '../utils/phoneFormatter';
+import { SUPER_ADMIN_EMAILS } from '../constants';
 
 interface CRMProps {
     clients: Client[];
@@ -10,18 +14,35 @@ interface CRMProps {
     transactions: Transaction[];
     setTransactions: (t: Transaction[]) => void;
     onSaveTransactions?: (transactions: Transaction[]) => Promise<boolean | void>;
+    currentUser?: User | null;
 }
 
 type CRMView = 'clients' | 'repaymentStats';
 
-export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions, setTransactions, onSaveTransactions }) => {
+export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions, setTransactions, onSaveTransactions, currentUser }) => {
+    const toast = useToast();
     const [activeView, setActiveView] = useState<CRMView>('clients');
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isRepayModalOpen, setIsRepayModalOpen] = useState(false);
+    const [isPhoneCheckModalOpen, setIsPhoneCheckModalOpen] = useState(false);
+    const [phoneCheckResults, setPhoneCheckResults] = useState<ReturnType<typeof checkAllPhones> | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [editingClient, setEditingClient] = useState<Client | null>(null);
     const [selectedClientForRepayment, setSelectedClientForRepayment] = useState<Client | null>(null);
     const [statsTimeRange, setStatsTimeRange] = useState<'week' | 'month' | 'year' | 'all'>('month');
+    
+    // Check if current user is admin
+    const isAdmin = currentUser?.email && (
+        SUPER_ADMIN_EMAILS.includes(currentUser.email.toLowerCase()) ||
+        currentUser.email.toLowerCase() === 'jassurgme@gmail.com'
+    );
+    
+    const handleCheckPhones = () => {
+        const results = checkAllPhones(clients);
+        setPhoneCheckResults(results);
+        setIsPhoneCheckModalOpen(true);
+        toast.info(`Проверено: ${results.valid.length} валидных, ${results.invalid.length} невалидных, ${results.missing.length} без телефона`);
+    };
 
     // Repayment State
     const [repaymentAmount, setRepaymentAmount] = useState<number>(0);
@@ -67,7 +88,7 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
 
     const handleSave = () => {
         if (!formData.name || !formData.phone) {
-            alert('Имя и Телефон обязательны!');
+            toast.warning('Имя и Телефон обязательны!');
             return;
         }
 
@@ -131,7 +152,7 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
 
         onSave(updatedClients);
         setIsRepayModalOpen(false);
-        alert('Долг успешно погашен!');
+        toast.success('Долг успешно погашен!');
     };
 
     const filteredClients = useMemo(() => {
@@ -464,16 +485,28 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
             {/* Clients View */}
             {activeView === 'clients' && (
                 <>
-                    {/* Search */}
-                    <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-                        <input
-                            type="text"
-                            placeholder="Поиск по имени или телефону..."
-                            className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-white focus:ring-2 focus:ring-primary-500 outline-none"
-                            value={searchTerm}
-                            onChange={e => setSearchTerm(e.target.value)}
-                        />
+                    {/* Search and Admin Tools */}
+                    <div className="flex flex-col sm:flex-row gap-3">
+                        <div className="relative flex-1">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+                            <input
+                                type="text"
+                                placeholder="Поиск по имени или телефону..."
+                                className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-white focus:ring-2 focus:ring-primary-500 outline-none"
+                                value={searchTerm}
+                                onChange={e => setSearchTerm(e.target.value)}
+                            />
+                        </div>
+                        {isAdmin && (
+                            <button
+                                onClick={handleCheckPhones}
+                                className="flex items-center gap-2 px-4 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-medium transition-colors whitespace-nowrap"
+                            >
+                                <Smartphone size={18} />
+                                <span className="hidden sm:inline">Проверить формат телефонов</span>
+                                <span className="sm:hidden">Телефоны</span>
+                            </button>
+                        )}
                     </div>
 
                     {/* Clients Grid */}
@@ -750,6 +783,145 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
                                 className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 disabled:text-slate-500 text-white py-3 rounded-xl font-bold transition-colors shadow-lg shadow-emerald-600/20"
                             >
                                 Подтвердить оплату
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            
+            {/* Phone Check Modal - Only for Admin */}
+            {isPhoneCheckModalOpen && phoneCheckResults && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-slate-800 rounded-xl border border-slate-700 max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+                        <div className="p-6 border-b border-slate-700 flex items-center justify-between">
+                            <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                                <Smartphone size={24} className="text-indigo-400" />
+                                Проверка формата телефонов
+                            </h2>
+                            <button
+                                onClick={() => setIsPhoneCheckModalOpen(false)}
+                                className="p-2 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-white transition-colors"
+                            >
+                                <XCircle size={20} />
+                            </button>
+                        </div>
+                        
+                        <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
+                            {/* Summary */}
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-4">
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <CheckCircle className="text-emerald-400" size={20} />
+                                        <span className="text-emerald-400 font-bold text-lg">{phoneCheckResults.valid.length}</span>
+                                    </div>
+                                    <p className="text-slate-400 text-sm">Валидные телефоны</p>
+                                </div>
+                                <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4">
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <XCircle className="text-red-400" size={20} />
+                                        <span className="text-red-400 font-bold text-lg">{phoneCheckResults.invalid.length}</span>
+                                    </div>
+                                    <p className="text-slate-400 text-sm">Невалидные телефоны</p>
+                                </div>
+                                <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-4">
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <AlertCircle className="text-yellow-400" size={20} />
+                                        <span className="text-yellow-400 font-bold text-lg">{phoneCheckResults.missing.length}</span>
+                                    </div>
+                                    <p className="text-slate-400 text-sm">Без телефона</p>
+                                </div>
+                            </div>
+                            
+                            {/* Valid Phones */}
+                            {phoneCheckResults.valid.length > 0 && (
+                                <div>
+                                    <h3 className="text-lg font-bold text-white mb-3 flex items-center gap-2">
+                                        <CheckCircle className="text-emerald-400" size={18} />
+                                        Валидные телефоны ({phoneCheckResults.valid.length})
+                                    </h3>
+                                    <div className="bg-slate-900/50 rounded-lg border border-slate-700 overflow-hidden">
+                                        <div className="max-h-60 overflow-y-auto custom-scrollbar">
+                                            <table className="w-full text-sm">
+                                                <thead className="bg-slate-800/50 sticky top-0">
+                                                    <tr>
+                                                        <th className="px-4 py-2 text-left text-slate-400 font-medium">Клиент</th>
+                                                        <th className="px-4 py-2 text-left text-slate-400 font-medium">Исходный</th>
+                                                        <th className="px-4 py-2 text-left text-slate-400 font-medium">Формат для планшета</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-700">
+                                                    {phoneCheckResults.valid.map(client => (
+                                                        <tr key={client.id} className="hover:bg-slate-700/30">
+                                                            <td className="px-4 py-2 text-white">{client.name}</td>
+                                                            <td className="px-4 py-2 text-slate-400 font-mono">{client.phone}</td>
+                                                            <td className="px-4 py-2 text-emerald-400 font-mono">{client.formatted}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                            
+                            {/* Invalid Phones */}
+                            {phoneCheckResults.invalid.length > 0 && (
+                                <div>
+                                    <h3 className="text-lg font-bold text-white mb-3 flex items-center gap-2">
+                                        <XCircle className="text-red-400" size={18} />
+                                        Невалидные телефоны ({phoneCheckResults.invalid.length})
+                                    </h3>
+                                    <div className="bg-slate-900/50 rounded-lg border border-slate-700 overflow-hidden">
+                                        <div className="max-h-60 overflow-y-auto custom-scrollbar">
+                                            <table className="w-full text-sm">
+                                                <thead className="bg-slate-800/50 sticky top-0">
+                                                    <tr>
+                                                        <th className="px-4 py-2 text-left text-slate-400 font-medium">Клиент</th>
+                                                        <th className="px-4 py-2 text-left text-slate-400 font-medium">Телефон</th>
+                                                        <th className="px-4 py-2 text-left text-slate-400 font-medium">Ошибка</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-700">
+                                                    {phoneCheckResults.invalid.map(client => (
+                                                        <tr key={client.id} className="hover:bg-slate-700/30">
+                                                            <td className="px-4 py-2 text-white">{client.name}</td>
+                                                            <td className="px-4 py-2 text-slate-400 font-mono">{client.phone}</td>
+                                                            <td className="px-4 py-2 text-red-400 text-xs">{client.error}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                            
+                            {/* Missing Phones */}
+                            {phoneCheckResults.missing.length > 0 && (
+                                <div>
+                                    <h3 className="text-lg font-bold text-white mb-3 flex items-center gap-2">
+                                        <AlertCircle className="text-yellow-400" size={18} />
+                                        Без телефона ({phoneCheckResults.missing.length})
+                                    </h3>
+                                    <div className="bg-slate-900/50 rounded-lg border border-slate-700 p-4">
+                                        <div className="flex flex-wrap gap-2">
+                                            {phoneCheckResults.missing.map(client => (
+                                                <span key={client.id} className="px-3 py-1 bg-yellow-500/10 text-yellow-400 rounded-lg text-sm border border-yellow-500/20">
+                                                    {client.name}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                        
+                        <div className="p-6 border-t border-slate-700 flex justify-end gap-3">
+                            <button
+                                onClick={() => setIsPhoneCheckModalOpen(false)}
+                                className="px-6 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-medium transition-colors"
+                            >
+                                Закрыть
                             </button>
                         </div>
                     </div>

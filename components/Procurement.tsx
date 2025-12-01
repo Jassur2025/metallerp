@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Product, Purchase, PurchaseItem, PurchaseOverheads, Transaction, AppSettings } from '../types';
 import { Plus, Trash2, Save, Calculator, Container, DollarSign, AlertTriangle, Truck, Scale, FileText, History, Wallet, CheckCircle, Globe, MapPin } from 'lucide-react';
+import { useToast } from '../contexts/ToastContext';
 
 interface ProcurementProps {
     products: Product[];
@@ -15,6 +16,7 @@ interface ProcurementProps {
 }
 
 export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts, settings, purchases, onSavePurchases, transactions, setTransactions, onSaveProducts, onSaveTransactions }) => {
+    const toast = useToast();
     const [activeTab, setActiveTab] = useState<'new' | 'history'>('new');
     const [procurementType, setProcurementType] = useState<'local' | 'import'>('local'); // Main switch
     const [supplierName, setSupplierName] = useState('');
@@ -53,7 +55,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
         if (!product) return;
 
         if (cart.some(i => i.productId === product.id)) {
-            alert('Этот товар уже добавлен в список. Удалите его, чтобы добавить заново с новыми параметрами.');
+            toast.warning('Этот товар уже добавлен в список. Удалите его, чтобы добавить заново с новыми параметрами.');
             return;
         }
 
@@ -206,7 +208,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
         setOverheads({ logistics: 0, customsDuty: 0, importVat: 0, other: 0 });
         setPaymentMethod('cash');
         setPaymentCurrency('USD');
-        alert('Закупка успешно проведена! Остатки и себестоимость обновлены.');
+        toast.success('Закупка успешно проведена! Остатки и себестоимость обновлены.');
     };
 
     // ...
@@ -253,7 +255,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
         onSavePurchases(updatedPurchases);
 
         setIsRepayModalOpen(false);
-        alert('Оплата поставщику проведена успешно!');
+        toast.success('Оплата поставщику проведена успешно!');
     };
 
     return (

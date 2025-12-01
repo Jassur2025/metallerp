@@ -1,6 +1,8 @@
 import { Product, Order, Expense, Purchase, FixedAsset, Client, Employee, UserRole, Transaction, JournalEvent } from '../types';
+import { cacheService } from './cacheService';
 
 const SPREADSHEET_ID_KEY = 'metal_erp_spreadsheet_id';
+const CACHE_TTL = 2 * 60 * 1000; // 2 minutes cache TTL
 
 // Helper to get/set Spreadsheet ID
 export const getSpreadsheetId = (): string => {
@@ -187,6 +189,40 @@ const mapJournalEventToRow = (e: JournalEvent) => [
 
 
 
+// --- Cache Helper ---
+const cachedFetch = async <T>(
+    cacheKey: string,
+    accessToken: string,
+    fetchFn: () => Promise<T>,
+    useCache: boolean = true
+): Promise<T> => {
+    // Try cache first
+    if (useCache) {
+        const cached = cacheService.get<T>(cacheKey);
+        if (cached) {
+            console.log(`📦 ${cacheKey} loaded from cache`);
+            return cached;
+        }
+    }
+
+    try {
+        const data = await fetchFn();
+        // Cache the result
+        cacheService.set(cacheKey, data, CACHE_TTL);
+        console.log(`📥 ${cacheKey} loaded from Google Sheets`);
+        return data;
+    } catch (e) {
+        console.error(`Failed to fetch ${cacheKey}`, e);
+        // Try to return stale cache if available
+        const staleCache = cacheService.get<T>(cacheKey);
+        if (staleCache) {
+            console.log(`⚠️ Using stale cache for ${cacheKey} due to fetch error`);
+            return staleCache;
+        }
+        throw e;
+    }
+};
+
 // --- Service Methods ---
 
 export const sheetsService = {
@@ -294,8 +330,8 @@ export const sheetsService = {
     },
 
     // --- Purchases (Import) ---
-    getPurchases: async (accessToken: string): Promise<Purchase[]> => {
-        try {
+    getPurchases: async (accessToken: string, useCache: boolean = true): Promise<Purchase[]> => {
+        return cachedFetch('purchases', accessToken, async () => {
             const data = await fetchSheets(accessToken, 'Purchases!A2:K');
             return (data.values || [])
                 .filter(row => row[0] && row[0] !== 'ID')
@@ -312,10 +348,7 @@ export const sheetsService = {
                     paymentStatus: (row[9] as any) || 'paid',
                     amountPaid: Number(row[10]) || Number(row[7]) // Default to full amount if missing
                 }));
-        } catch (e) {
-            console.error("Failed to fetch purchases", e);
-            return [];
-        }
+        }, useCache).catch(() => []);
     },
 
     saveAllPurchases: async (accessToken: string, purchases: Purchase[]) => {
@@ -356,6 +389,7 @@ export const sheetsService = {
             }
 
             console.log('✅ Purchases saved successfully!');
+            cacheService.invalidate('purchases');
         } catch (e) {
             console.error('❌ Error in saveAllPurchases:', e);
             throw e;
@@ -363,14 +397,36 @@ export const sheetsService = {
     },
 
     // --- Products ---
-    getProducts: async (accessToken: string): Promise<Product[]> => {
+    getProducts: async (accessToken: string, useCache: boolean = true): Promise<Product[]> => {
+        const cacheKey = 'products';
+        
+        // Try cache first
+        if (useCache) {
+            const cached = cacheService.get<Product[]>(cacheKey);
+            if (cached) {
+                console.log('📦 Products loaded from cache');
+                return cached;
+            }
+        }
+
         try {
             const data = await fetchSheets(accessToken, 'Products!A2:K');
-            return (data.values || [])
+            const products = (data.values || [])
                 .filter(row => row[0] && row[0] !== 'ID' && row[1] !== 'Name')
                 .map(mapRowToProduct);
+            
+            // Cache the result
+            cacheService.set(cacheKey, products, CACHE_TTL);
+            console.log('📥 Products loaded from Google Sheets');
+            return products;
         } catch (e) {
             console.error("Failed to fetch products", e);
+            // Try to return stale cache if available
+            const staleCache = cacheService.get<Product[]>(cacheKey);
+            if (staleCache) {
+                console.log('⚠️ Using stale cache due to fetch error');
+                return staleCache;
+            }
             return [];
         }
     },
@@ -410,6 +466,8 @@ export const sheetsService = {
             }
 
             console.log('✅ Products saved successfully!');
+            // Invalidate cache after save
+            cacheService.invalidate('products');
         } catch (e) {
             console.error('❌ Error in saveAllProducts:', e);
             throw e;
@@ -417,14 +475,36 @@ export const sheetsService = {
     },
 
     // --- Orders ---
-    getOrders: async (accessToken: string): Promise<Order[]> => {
+    getOrders: async (accessToken: string, useCache: boolean = true): Promise<Order[]> => {
+        const cacheKey = 'orders';
+        
+        // Try cache first
+        if (useCache) {
+            const cached = cacheService.get<Order[]>(cacheKey);
+            if (cached) {
+                console.log('📦 Orders loaded from cache');
+                return cached;
+            }
+        }
+
         try {
             const data = await fetchSheets(accessToken, 'Orders!A2:P');
-            return (data.values || [])
+            const orders = (data.values || [])
                 .filter(row => row[0] && row[0] !== 'ID')
                 .map(mapRowToOrder);
+            
+            // Cache the result
+            cacheService.set(cacheKey, orders, CACHE_TTL);
+            console.log('📥 Orders loaded from Google Sheets');
+            return orders;
         } catch (e) {
             console.error("Failed to fetch orders", e);
+            // Try to return stale cache if available
+            const staleCache = cacheService.get<Order[]>(cacheKey);
+            if (staleCache) {
+                console.log('⚠️ Using stale cache due to fetch error');
+                return staleCache;
+            }
             return [];
         }
     },
@@ -464,6 +544,8 @@ export const sheetsService = {
             }
             
             console.log('✅ Orders saved successfully!');
+            // Invalidate cache after save
+            cacheService.invalidate('orders');
         } catch (e) {
             console.error('❌ Error in saveAllOrders:', e);
             throw e;
@@ -471,16 +553,13 @@ export const sheetsService = {
     },
 
     // --- Expenses ---
-    getExpenses: async (accessToken: string): Promise<Expense[]> => {
-        try {
+    getExpenses: async (accessToken: string, useCache: boolean = true): Promise<Expense[]> => {
+        return cachedFetch('expenses', accessToken, async () => {
             const data = await fetchSheets(accessToken, 'Expenses!A2:G');
             return (data.values || [])
                 .filter(row => row[0] && row[0] !== 'ID')
                 .map(mapRowToExpense);
-        } catch (e) {
-            console.error("Failed to fetch expenses", e);
-            return [];
-        }
+        }, useCache).catch(() => []);
     },
 
     saveAllExpenses: async (accessToken: string, expenses: Expense[]) => {
@@ -518,6 +597,7 @@ export const sheetsService = {
             }
 
             console.log('✅ Expenses saved successfully!');
+            cacheService.invalidate('expenses');
         } catch (e) {
             console.error('❌ Error in saveAllExpenses:', e);
             throw e;
@@ -525,16 +605,13 @@ export const sheetsService = {
     },
 
     // --- Fixed Assets ---
-    getFixedAssets: async (accessToken: string): Promise<FixedAsset[]> => {
-        try {
+    getFixedAssets: async (accessToken: string, useCache: boolean = true): Promise<FixedAsset[]> => {
+        return cachedFetch('fixedAssets', accessToken, async () => {
             const data = await fetchSheets(accessToken, 'FixedAssets!A2:I');
             return (data.values || [])
                 .filter(row => row[0] && row[0] !== 'ID')
                 .map(mapRowToFixedAsset);
-        } catch (e) {
-            console.error("Failed to fetch fixed assets", e);
-            return [];
-        }
+        }, useCache).catch(() => []);
     },
 
     saveAllFixedAssets: async (accessToken: string, assets: FixedAsset[]) => {
@@ -572,6 +649,7 @@ export const sheetsService = {
             }
 
             console.log('✅ Fixed assets saved successfully!');
+            cacheService.invalidate('fixedAssets');
         } catch (e) {
             console.error('❌ Error in saveAllFixedAssets:', e);
             throw e;
@@ -579,16 +657,13 @@ export const sheetsService = {
     },
 
     // --- Clients ---
-    getClients: async (accessToken: string): Promise<Client[]> => {
-        try {
+    getClients: async (accessToken: string, useCache: boolean = true): Promise<Client[]> => {
+        return cachedFetch('clients', accessToken, async () => {
             const data = await fetchSheets(accessToken, 'Clients!A2:I');
             return (data.values || [])
                 .filter(row => row[0] && row[0] !== 'ID')
                 .map(mapRowToClient);
-        } catch (e) {
-            console.error("Failed to fetch clients", e);
-            return [];
-        }
+        }, useCache).catch(() => []);
     },
 
     saveAllClients: async (accessToken: string, clients: Client[]) => {
@@ -626,6 +701,7 @@ export const sheetsService = {
             }
 
             console.log('✅ Clients saved successfully!');
+            cacheService.invalidate('clients');
         } catch (e) {
             console.error('❌ Error in saveAllClients:', e);
             throw e;
@@ -633,16 +709,13 @@ export const sheetsService = {
     },
 
     // --- Employees (Staff) ---
-    getEmployees: async (accessToken: string): Promise<Employee[]> => {
-        try {
+    getEmployees: async (accessToken: string, useCache: boolean = true): Promise<Employee[]> => {
+        return cachedFetch('employees', accessToken, async () => {
             const data = await fetchSheets(accessToken, 'Staff!A2:K');
             return (data.values || [])
                 .filter(row => row[0] && row[0] !== 'ID')
                 .map(mapRowToEmployee);
-        } catch (e) {
-            console.error("Failed to fetch employees", e);
-            return [];
-        }
+        }, useCache).catch(() => []);
     },
 
     saveAllEmployees: async (accessToken: string, employees: Employee[]) => {
@@ -680,6 +753,7 @@ export const sheetsService = {
             }
 
             console.log('✅ Employees saved successfully!');
+            cacheService.invalidate('employees');
         } catch (e) {
             console.error('❌ Error in saveAllEmployees:', e);
             throw e;
@@ -706,8 +780,8 @@ export const sheetsService = {
     },
 
     // --- Transactions ---
-    getTransactions: async (accessToken: string): Promise<Transaction[]> => {
-        try {
+    getTransactions: async (accessToken: string, useCache: boolean = true): Promise<Transaction[]> => {
+        return cachedFetch('transactions', accessToken, async () => {
             const data = await fetchSheets(accessToken, 'Transactions!A2:I');
             return (data.values || [])
                 .filter(row => row[0] && row[0] !== 'ID')
@@ -722,10 +796,7 @@ export const sheetsService = {
                     description: row[7] || '',
                     relatedId: row[8] || undefined
                 }));
-        } catch (e) {
-            console.error("Failed to fetch transactions", e);
-            return [];
-        }
+        }, useCache).catch(() => []);
     },
 
     saveAllTransactions: async (accessToken: string, transactions: Transaction[]) => {
@@ -773,6 +844,7 @@ export const sheetsService = {
             }
 
             console.log('✅ Transactions saved successfully!');
+            cacheService.invalidate('transactions');
         } catch (e) {
             console.error('❌ Error in saveAllTransactions:', e);
             throw e;
@@ -783,16 +855,13 @@ export const sheetsService = {
 
 
     // --- Journal ---
-    getJournalEvents: async (accessToken: string): Promise<JournalEvent[]> => {
-        try {
+    getJournalEvents: async (accessToken: string, useCache: boolean = true): Promise<JournalEvent[]> => {
+        return cachedFetch('journalEvents', accessToken, async () => {
             const data = await fetchSheets(accessToken, 'Journal!A2:M');
             return (data.values || [])
                 .filter(row => row[0] && row[0] !== 'ID')
                 .map(mapRowToJournalEvent);
-        } catch (e) {
-            console.error("Failed to fetch journal events", e);
-            return [];
-        }
+        }, useCache).catch(() => []);
     },
 
     addJournalEvent: async (accessToken: string, event: JournalEvent) => {

@@ -4,6 +4,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLin
 import { TrendingUp, DollarSign, Printer, FileSpreadsheet, Download } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
+import { useToast } from '../contexts/ToastContext';
 
 interface PnLProps {
   orders: Order[];
@@ -11,6 +12,7 @@ interface PnLProps {
 }
 
 export const PnL: React.FC<PnLProps> = ({ orders, expenses }) => {
+  const toast = useToast();
   const [timeRange, setTimeRange] = useState<'all' | 'currentMonth' | 'lastMonth'>('currentMonth');
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
@@ -191,7 +193,7 @@ export const PnL: React.FC<PnLProps> = ({ orders, expenses }) => {
             pdf.save(`PnL_Report_${new Date().toISOString().split('T')[0]}.pdf`);
         } catch (err) {
             console.error("PDF Generation failed", err);
-            alert("Ошибка при создании PDF. Пожалуйста, воспользуйтесь функцией печати (Ctrl+P).");
+            toast.error("Ошибка при создании PDF. Пожалуйста, воспользуйтесь функцией печати (Ctrl+P).");
         } finally {
             setIsGeneratingPdf(false);
         }

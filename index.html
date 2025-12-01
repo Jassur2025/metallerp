@@ -53,6 +53,32 @@
             input, select, textarea {
                 font-size: 16px !important;
             }
+            
+            /* Better spacing for mobile */
+            .space-y-1 > * + * {
+                margin-top: 0.5rem;
+            }
+        }
+        
+        /* Tablet optimizations */
+        @media (min-width: 640px) and (max-width: 1024px) {
+            /* Optimize grid layouts for tablets */
+            .grid {
+                gap: 1rem;
+            }
+        }
+        
+        /* Mobile-specific optimizations */
+        @media (max-width: 640px) {
+            /* Reduce padding on mobile */
+            .p-6 {
+                padding: 1rem;
+            }
+            
+            /* Stack elements vertically on mobile */
+            .flex-row {
+                flex-direction: column;
+            }
         }
 
         /* Smooth scrolling for mobile */

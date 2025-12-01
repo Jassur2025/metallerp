@@ -90,6 +90,36 @@ export interface Order {
   amountPaid: number; // Amount actually paid (USD)
 }
 
+// Workflow Order - Pre-order created by sales department
+export interface WorkflowOrder {
+  id: string;
+  date: string;
+  customerName: string;
+  customerPhone?: string;
+  createdBy: string; // Employee name/email who created the order
+  items: OrderItem[];
+
+  // Financials
+  subtotalAmount: number; // USD
+  vatRateSnapshot: number; // VAT % at time of order creation
+  vatAmount: number; // USD
+  totalAmount: number; // USD
+
+  exchangeRate: number; // Rate at time of order creation
+  totalAmountUZS: number; // Sales currency (UZS)
+
+  // Status workflow
+  status: 'draft' | 'confirmed' | 'sent_to_cash' | 'completed' | 'cancelled';
+  
+  // Notes and comments
+  notes?: string;
+  deliveryDate?: string; // Optional delivery date
+  
+  // Link to actual Order (when converted to sale)
+  convertedToOrderId?: string;
+  convertedAt?: string;
+}
+
 export interface Expense {
   id: string;
   date: string;

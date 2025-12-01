@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { FixedAsset, FixedAssetCategory } from '../types';
 import { Plus, Trash2, RefreshCw, Landmark, Calendar, DollarSign, TrendingDown, Edit2 } from 'lucide-react';
+import { useToast } from '../contexts/ToastContext';
 
 interface FixedAssetsProps {
     assets: FixedAsset[];
@@ -9,6 +10,7 @@ interface FixedAssetsProps {
 }
 
 export const FixedAssets: React.FC<FixedAssetsProps> = ({ assets, setAssets, onSaveAssets }) => {
+    const toast = useToast();
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isRevalModalOpen, setIsRevalModalOpen] = useState(false);
     const [selectedAsset, setSelectedAsset] = useState<FixedAsset | null>(null);
@@ -105,7 +107,7 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({ assets, setAssets, onS
         if (onSaveAssets) {
             onSaveAssets(updatedAssets);
         }
-        alert('Амортизация успешно начислена!');
+        toast.success('Амортизация успешно начислена!');
     };
 
     const openRevaluation = (asset: FixedAsset) => {

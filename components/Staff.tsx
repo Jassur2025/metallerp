@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Employee, UserRole } from '../types';
+import { useToast } from '../contexts/ToastContext';
 import { Plus, Search, Edit2, Phone, Mail, Briefcase, Calendar, DollarSign, User, Shield, CheckCircle, XCircle } from 'lucide-react';
 
 interface StaffProps {
@@ -24,6 +25,7 @@ const ROLE_LABELS: Record<UserRole, string> = {
 };
 
 export const Staff: React.FC<StaffProps> = ({ employees, onSave }) => {
+    const toast = useToast();
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [filterRole, setFilterRole] = useState<UserRole | 'all'>('all');
@@ -66,14 +68,14 @@ export const Staff: React.FC<StaffProps> = ({ employees, onSave }) => {
 
     const handleSave = async () => {
         if (!formData.name || !formData.email || !formData.position) {
-            alert('Имя, Email и Должность обязательны!');
+            toast.warning('Имя, Email и Должность обязательны!');
             return;
         }
 
         // Validate email
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!emailRegex.test(formData.email!)) {
-            alert('Введите корректный email адрес!');
+            toast.warning('Введите корректный email адрес!');
             return;
         }
 
@@ -120,23 +122,24 @@ export const Staff: React.FC<StaffProps> = ({ employees, onSave }) => {
     }, [employees]);
 
     return (
-        <div className="p-6 space-y-6 animate-fade-in pb-20">
-            <div className="flex justify-between items-center">
+        <div className="h-full overflow-y-auto overflow-x-hidden p-4 sm:p-6 space-y-4 sm:space-y-6 animate-fade-in pb-24 custom-scrollbar" style={{ WebkitOverflowScrolling: 'touch' }}>
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-0">
                 <div>
-                    <h2 className="text-2xl font-bold text-white">Управление Сотрудниками</h2>
-                    <p className="text-slate-400">Персонал и распределение ролей</p>
+                    <h2 className="text-xl sm:text-2xl font-bold text-white">Управление Сотрудниками</h2>
+                    <p className="text-xs sm:text-sm text-slate-400">Персонал и распределение ролей</p>
                 </div>
                 <button
                     onClick={() => handleOpenModal()}
-                    className="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-lg shadow-purple-600/20"
+                    className="bg-purple-600 hover:bg-purple-500 text-white px-3 sm:px-4 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-lg shadow-purple-600/20 text-sm sm:text-base whitespace-nowrap"
                 >
-                    <Plus size={20} />
-                    Добавить сотрудника
+                    <Plus size={18} />
+                    <span className="hidden sm:inline">Добавить сотрудника</span>
+                    <span className="sm:hidden">Добавить</span>
                 </button>
             </div>
 
             {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
                 <div className="bg-slate-800 p-4 rounded-xl border border-slate-700">
                     <p className="text-slate-400 text-sm">Всего сотрудников</p>
                     <p className="text-2xl font-bold text-white mt-1">{stats.total}</p>
@@ -191,7 +194,7 @@ export const Staff: React.FC<StaffProps> = ({ employees, onSave }) => {
             </div>
 
             {/* Employees Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 pb-4">
                 {filteredEmployees.map(employee => (
                     <div key={employee.id} className="bg-slate-800 rounded-xl border border-slate-700 p-5 hover:border-slate-600 transition-all shadow-lg">
                         <div className="flex justify-between items-start mb-4">

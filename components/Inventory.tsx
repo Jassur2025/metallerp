@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { Product, ProductType, Unit } from '../types';
 import { geminiService } from '../services/geminiService';
+import { useToast } from '../contexts/ToastContext';
 import { Plus, Search, Loader2, BrainCircuit, Trash2, DollarSign, Pencil, TrendingUp } from 'lucide-react';
 
 interface InventoryProps {
@@ -11,6 +12,7 @@ interface InventoryProps {
 }
 
 export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onSaveProducts }) => {
+  const toast = useToast();
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [isAiLoading, setIsAiLoading] = useState(false);
@@ -123,7 +125,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
         });
       }
     } catch (e) {
-      alert('Ошибка распознавания текста');
+      toast.error('Ошибка распознавания текста. Проверьте подключение к интернету и API ключ Gemini.');
     } finally {
       setIsAiLoading(false);
     }

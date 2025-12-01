@@ -4,6 +4,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLin
 import { ArrowUpRight, ArrowDownRight, Wallet, Plus, Calendar, DollarSign, Tag, Printer, FileSpreadsheet, Download } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
+import { useToast } from '../contexts/ToastContext';
 
 interface CashFlowProps {
   orders: Order[];
@@ -22,6 +23,7 @@ interface Transaction {
 }
 
 export const CashFlow: React.FC<CashFlowProps> = ({ orders, expenses, onAddExpense }) => {
+  const toast = useToast();
   const [showModal, setShowModal] = useState(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [newExpense, setNewExpense] = useState<Partial<Expense>>({
@@ -188,7 +190,7 @@ export const CashFlow: React.FC<CashFlowProps> = ({ orders, expenses, onAddExpen
             pdf.save(`CashFlow_Report_${new Date().toISOString().split('T')[0]}.pdf`);
         } catch (err) {
             console.error("PDF Generation failed", err);
-            alert("Ошибка при создании PDF. Пожалуйста, воспользуйтесь функцией печати (Ctrl+P).");
+            toast.error("Ошибка при создании PDF. Пожалуйста, воспользуйтесь функцией печати (Ctrl+P).");
         } finally {
             setIsGeneratingPdf(false);
         }

@@ -3,6 +3,7 @@ import { Product, Order, OrderItem, AppSettings, Expense, Employee, Client, Tran
 import { ShoppingCart, Plus, Trash2, CheckCircle, RefreshCw, Package, FileText, FileSpreadsheet, User, ArrowUpDown, Wallet, CreditCard, Building2, ArrowDownRight, ArrowUpRight, Phone, Mail, MapPin, Printer, X } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
+import { useToast } from '../contexts/ToastContext';
 
 
 
@@ -78,6 +79,7 @@ const FlyingIcon: React.FC<FlyingIconProps> = ({
 };
 
 export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, setOrders, settings, expenses, setExpenses, employees, onNavigateToStaff, clients, onSaveClients, transactions, setTransactions, onSaveOrders, onSaveTransactions, onSaveProducts, onSaveExpenses, onAddJournalEvent }) => {
+  const toast = useToast();
   // Mode: 'sale' or 'expense' or 'return'
   const [mode, setMode] = useState<'sale' | 'expense' | 'return'>('sale');
 
@@ -94,7 +96,7 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
 
   const handleSaveClient = () => {
     if (!newClientData.name || !newClientData.phone) {
-      alert('Имя и Телефон обязательны!');
+      toast.warning('Имя и Телефон обязательны!');
       return;
     }
 
@@ -139,6 +141,9 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
   const [lastOrder, setLastOrder] = useState<Order | null>(null);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [selectedOrderForReceipt, setSelectedOrderForReceipt] = useState<Order | null>(null);
+  
+  // Mobile Cart Modal State
+  const [isCartModalOpen, setIsCartModalOpen] = useState(false);
 
   useEffect(() => {
     setExchangeRate(settings.defaultExchangeRate);
@@ -243,16 +248,33 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
   const handleAddToCart = (e: React.MouseEvent<HTMLButtonElement>, product: Product) => {
     addToCart(product);
     const btnRect = e.currentTarget.getBoundingClientRect();
-    const cartTarget = document.getElementById('cart-target');
-    if (cartTarget) {
-      const cartRect = cartTarget.getBoundingClientRect();
+    
+    // Check if mobile (screen width < 1024px)
+    const isMobile = window.innerWidth < 1024;
+    
+    if (isMobile) {
+      // On mobile, open cart modal and animate to floating button position
+      setIsCartModalOpen(true);
       setFlyingItems(prev => [...prev, {
         id: Date.now(),
         startX: btnRect.left + btnRect.width / 2,
         startY: btnRect.top + btnRect.height / 2,
-        targetX: cartRect.left + cartRect.width / 2,
-        targetY: cartRect.top + cartRect.height / 2
+        targetX: window.innerWidth - 24 - 16, // Right side where floating button is (right-6 = 24px, button size ~16px)
+        targetY: window.innerHeight - 24 - 16  // Bottom where floating button is (bottom-6 = 24px)
       }]);
+    } else {
+      // On desktop, animate to cart sidebar
+      const cartTarget = document.getElementById('cart-target');
+      if (cartTarget) {
+        const cartRect = cartTarget.getBoundingClientRect();
+        setFlyingItems(prev => [...prev, {
+          id: Date.now(),
+          startX: btnRect.left + btnRect.width / 2,
+          startY: btnRect.top + btnRect.height / 2,
+          targetX: cartRect.left + cartRect.width / 2,
+          targetY: cartRect.top + cartRect.height / 2
+        }]);
+      }
     }
   };
 
@@ -296,7 +318,7 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
     });
 
     if (insufficientStock.length > 0) {
-      alert(`❌ Недостаточно товара на складе:\n\n${insufficientStock.join('\n')}\n\nПожалуйста, обновите количество в корзине.`);
+      toast.error(`Недостаточно товара на складе:\n${insufficientStock.join('\n')}\n\nПожалуйста, обновите количество в корзине.`);
       return;
     }
 
@@ -432,7 +454,7 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
     if (orderSaved && transactionSaved) {
       // Success - modal will show receipt
     } else {
-      alert(`⚠️ Заказ оформлен, но произошла ошибка при сохранении в Google Sheets.\n\nСумма: ${totalAmountUZS.toLocaleString()} сўм ($${totalAmountUSD.toFixed(2)})\nМетод оплаты: ${paymentMethod === 'debt' ? 'Долг (USD)' : paymentMethod === 'cash' ? `Наличные (${paymentCurrency})` : paymentMethod === 'card' ? 'Карта (UZS)' : 'Перечисление (UZS)'}\nЗаказ #${newOrder.id}`);
+      toast.warning(`⚠️ Заказ оформлен, но произошла ошибка при сохранении в Google Sheets.\n\nСумма: ${totalAmountUZS.toLocaleString()} сўм ($${totalAmountUSD.toFixed(2)})\nМетод оплаты: ${paymentMethod === 'debt' ? 'Долг (USD)' : paymentMethod === 'cash' ? `Наличные (${paymentCurrency})` : paymentMethod === 'card' ? 'Карта (UZS)' : 'Перечисление (UZS)'}\nЗаказ #${newOrder.id}`);
     }
 
     // Log to Journal
@@ -577,7 +599,7 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
       }
     } catch (err) {
       console.error('Ошибка при печати чека:', err);
-      alert('Ошибка при создании чека. Попробуйте снова.');
+      toast.error('Ошибка при создании чека. Попробуйте снова.');
     } finally {
       document.body.removeChild(tempDiv);
     }
@@ -610,18 +632,18 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
         await onSaveExpenses(updatedExpenses);
       } catch (err) {
         console.error('Ошибка при сохранении расхода:', err);
-        alert('Расход добавлен локально, но не удалось сохранить в Google Sheets');
+        toast.warning('Расход добавлен локально, но не удалось сохранить в Google Sheets');
       }
     }
     
     setExpenseDesc('');
     setExpenseAmount('');
-    alert('Расход добавлен!');
+    toast.success('Расход добавлен!');
   };
 
   const handleReturnSubmit = () => {
     if (!returnClientName || !returnProductName || !returnQuantity) {
-      alert('Заполните все поля!');
+      toast.warning('Заполните все поля!');
       return;
     }
 
@@ -630,16 +652,16 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
     const qty = Number(returnQuantity);
 
     if (!product) {
-      alert('Товар не найден!');
+      toast.error('Товар не найден!');
       return;
     }
     if (qty <= 0) {
-      alert('Некорректное количество!');
+      toast.error('Некорректное количество!');
       return;
     }
 
     if (returnMethod === 'debt' && !client) {
-      alert('Клиент не найден! Невозможно списать с долга.');
+      toast.error('Клиент не найден! Невозможно списать с долга.');
       return;
     }
 
@@ -708,7 +730,7 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
       }
     }
 
-    alert(`Возврат оформлен!\nТовар: ${product.name} (+${qty})\nСумма: $${returnAmountUSD.toFixed(2)}`);
+    toast.success(`Возврат оформлен!\nТовар: ${product.name} (+${qty})\nСумма: $${returnAmountUSD.toFixed(2)}`);
     setMode('sale');
     setReturnClientName('');
     setReturnProductName('');
@@ -763,8 +785,9 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
       </div>
 
       {/* Recent Orders Section - Quick Access to Receipts */}
+      {/* Desktop: Top position */}
       {orders.length > 0 && mode === 'sale' && (
-        <div className="bg-slate-800 border-b border-slate-700 px-6 py-3">
+        <div className="hidden lg:block bg-slate-800 border-b border-slate-700 px-6 py-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <FileText size={18} className="text-slate-400" />
@@ -985,11 +1008,37 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
           )}
         </div>
 
-        {/* Right Column: Cart (Only visible in Sale mode, or maybe always visible but disabled?) */}
-        {/* Let's keep it visible but maybe dim it if in expense mode? Or just hide it. */}
+        {/* Mobile Recent Orders - Bottom position, Compact */}
+        {orders.length > 0 && mode === 'sale' && (
+          <div className="lg:hidden bg-slate-800 border-t border-slate-700 px-3 py-2 col-span-full">
+            <div className="flex items-center gap-2 mb-1">
+              <FileText size={14} className="text-slate-400" />
+              <span className="text-xs text-slate-400">Последние чеки:</span>
+            </div>
+            <div className="flex gap-1.5 overflow-x-auto pb-1 custom-scrollbar">
+              {orders.slice(0, 5).map(order => (
+                <button
+                  key={order.id}
+                  onClick={() => {
+                    setSelectedOrderForReceipt(order);
+                    setShowReceiptModal(true);
+                  }}
+                  className="px-2 py-1 bg-slate-700 hover:bg-slate-600 text-white text-[10px] rounded-md font-medium whitespace-nowrap transition-colors flex items-center gap-1 flex-shrink-0"
+                  title={`Чек ${order.id} - ${order.customerName}`}
+                >
+                  <FileText size={10} />
+                  <span className="hidden sm:inline">{order.id}</span>
+                  <span className="sm:hidden">{order.id.split('-')[1]?.slice(-6) || order.id.slice(-6)}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Right Column: Cart (Desktop - Always visible in Sale mode) */}
         {/* User wants "Cash Register" to handle sales. So Cart is essential. */}
         {mode === 'sale' && (
-          <div className="bg-slate-800 border border-slate-700 rounded-2xl flex flex-col shadow-2xl shadow-black/20 overflow-hidden h-full">
+          <div className="hidden lg:flex bg-slate-800 border border-slate-700 rounded-2xl flex flex-col shadow-2xl shadow-black/20 overflow-hidden h-full">
             <div id="cart-target" className="p-6 border-b border-slate-700 bg-slate-900/50 relative transition-colors duration-300 flex justify-between items-center">
               <h3 className="text-xl font-bold text-white flex items-center gap-2 z-10">
                 <ShoppingCart className={`text-primary-500 transition-transform duration-300 ${flyingItems.length > 0 ? 'scale-110' : 'scale-100'}`} /> Корзина
@@ -1468,6 +1517,220 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
                 className="px-6 bg-gray-200 hover:bg-gray-300 text-gray-700 py-3 rounded-xl font-semibold transition-all hover:scale-105"
               >
                 Закрыть
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Mobile Cart Floating Button */}
+      {mode === 'sale' && (
+        <button
+          onClick={() => setIsCartModalOpen(true)}
+          className="lg:hidden fixed bottom-6 right-6 bg-emerald-600 hover:bg-emerald-500 text-white rounded-full p-4 shadow-2xl shadow-emerald-600/50 z-40 flex items-center justify-center transition-all hover:scale-110 active:scale-95"
+          aria-label="Открыть корзину"
+        >
+          <ShoppingCart size={24} />
+          {cart.length > 0 && (
+            <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center animate-pulse">
+              {cart.length}
+            </span>
+          )}
+        </button>
+      )}
+      
+      {/* Mobile Cart Modal */}
+      {mode === 'sale' && isCartModalOpen && (
+        <div className="lg:hidden fixed inset-0 bg-black/50 z-50 flex items-end" onClick={() => setIsCartModalOpen(false)}>
+          <div className="bg-slate-800 w-full max-h-[90vh] rounded-t-2xl flex flex-col shadow-2xl border-t border-slate-700 animate-slide-up" onClick={(e) => e.stopPropagation()}>
+            {/* Modal Header */}
+            <div id="cart-target-mobile" className="p-4 border-b border-slate-700 bg-slate-900/50 flex justify-between items-center sticky top-0 z-10">
+              <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                <ShoppingCart className={`text-primary-500 transition-transform duration-300 ${flyingItems.length > 0 ? 'scale-110' : 'scale-100'}`} /> 
+                Корзина {cart.length > 0 && <span className="text-sm bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full">({cart.length})</span>}
+              </h3>
+              <button
+                onClick={() => setIsCartModalOpen(false)}
+                className="p-2 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-white transition-colors"
+                aria-label="Закрыть"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Cart Items */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
+              {cart.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-slate-500 gap-2 opacity-50 py-12">
+                  <ShoppingCart size={48} />
+                  <p>Корзина пуста</p>
+                </div>
+              ) : (
+                cart.map(item => (
+                  <div key={item.productId} className="bg-slate-700/30 border border-slate-700 rounded-xl p-3 flex flex-col gap-2 animate-fade-in">
+                    <div className="flex justify-between">
+                      <span className="font-medium text-slate-200 text-sm">{item.productName}</span>
+                      <button onClick={() => removeFromCart(item.productId)} className="text-slate-500 hover:text-red-400">
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                    <div className="flex justify-between items-end">
+                      <div className="flex items-center gap-2 bg-slate-900 rounded-lg p-1">
+                        <input
+                          type="number"
+                          className="w-16 bg-transparent text-center text-sm text-white outline-none"
+                          value={item.quantity}
+                          onChange={e => updateQuantity(item.productId, Number(e.target.value))}
+                        />
+                        <span className="text-xs text-slate-500 pr-2">{item.unit}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="font-mono font-bold text-slate-300 block">
+                          {toUZS(item.total).toLocaleString()} сўм
+                        </span>
+                        <span className="text-xs text-slate-500">${item.total.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Cart Footer - Same as desktop */}
+            <div className="p-4 bg-slate-900 border-t border-slate-700 space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <label className="text-xs font-medium text-slate-400 uppercase flex items-center gap-1"><User size={12} /> Клиент</label>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <input
+                        type="text"
+                        placeholder="Поиск или выбор клиента..."
+                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-primary-500 outline-none"
+                        value={customerName}
+                        onChange={e => setCustomerName(e.target.value)}
+                        list="clients-list-mobile"
+                      />
+                      <datalist id="clients-list-mobile">
+                        {clients.map(c => (
+                          <option key={c.id} value={c.name} />
+                        ))}
+                      </datalist>
+                    </div>
+                    <button
+                      onClick={() => setIsClientModalOpen(true)}
+                      className="bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg px-3 text-slate-400 hover:text-white transition-colors"
+                      title="Новый клиент"
+                    >
+                      <Plus size={16} />
+                    </button>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-medium text-slate-400 uppercase flex items-center gap-1"><User size={12} /> Продавец</label>
+                  <div className="flex gap-2">
+                    <select
+                      className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-primary-500 outline-none appearance-none"
+                      value={sellerName}
+                      onChange={e => setSellerName(e.target.value)}
+                    >
+                      <option value="">Выберите продавца</option>
+                      {employees
+                        .filter(e => ['sales', 'manager', 'admin'].includes(e.role) && e.status === 'active')
+                        .map(e => (
+                          <option key={e.id} value={e.name}>{e.name}</option>
+                        ))
+                      }
+                    </select>
+                    <button
+                      onClick={onNavigateToStaff}
+                      className="bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg px-3 text-slate-400 hover:text-white transition-colors"
+                      title="Добавить сотрудника"
+                    >
+                      <Plus size={16} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Payment Method Selector */}
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-slate-400 uppercase">Способ оплаты</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => setPaymentMethod('cash')}
+                    className={`px-2 py-2 rounded-lg text-xs font-medium border transition-all ${paymentMethod === 'cash' ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : 'bg-slate-800 border-slate-600 text-slate-400 hover:bg-slate-700'}`}
+                  >
+                    Наличные
+                  </button>
+                  <button
+                    onClick={() => setPaymentMethod('card')}
+                    className={`px-2 py-2 rounded-lg text-xs font-medium border transition-all ${paymentMethod === 'card' ? 'bg-blue-500/20 border-blue-500 text-blue-400' : 'bg-slate-800 border-slate-600 text-slate-400 hover:bg-slate-700'}`}
+                  >
+                    Карта (UZS)
+                  </button>
+                  <button
+                    onClick={() => setPaymentMethod('bank')}
+                    className={`px-2 py-2 rounded-lg text-xs font-medium border transition-all ${paymentMethod === 'bank' ? 'bg-purple-500/20 border-purple-500 text-purple-400' : 'bg-slate-800 border-slate-600 text-slate-400 hover:bg-slate-700'}`}
+                  >
+                    Перечисление (UZS)
+                  </button>
+                  <button
+                    onClick={() => setPaymentMethod('debt')}
+                    className={`px-2 py-2 rounded-lg text-xs font-medium border transition-all ${paymentMethod === 'debt' ? 'bg-red-500/20 border-red-500 text-red-400' : 'bg-slate-800 border-slate-600 text-slate-400 hover:bg-slate-700'}`}
+                  >
+                    Долг (USD)
+                  </button>
+                </div>
+
+                {/* Currency Selector for Cash */}
+                {paymentMethod === 'cash' && (
+                  <div className="flex gap-2 mt-2 animate-fade-in">
+                    <button
+                      onClick={() => setPaymentCurrency('UZS')}
+                      className={`flex-1 py-1 rounded text-xs border ${paymentCurrency === 'UZS' ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : 'bg-slate-800 border-slate-600 text-slate-400'}`}
+                    >
+                      В Сумах (UZS)
+                    </button>
+                    <button
+                      onClick={() => setPaymentCurrency('USD')}
+                      className={`flex-1 py-1 rounded text-xs border ${paymentCurrency === 'USD' ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : 'bg-slate-800 border-slate-600 text-slate-400'}`}
+                    >
+                      В Долларах (USD)
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-col gap-2 pt-2 border-t border-slate-800 text-sm">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-400">Подытог (без НДС):</span>
+                  <span className="font-mono text-slate-300">${subtotalUSD.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between items-center text-amber-400">
+                  <span className="">НДС ({settings.vatRate}%):</span>
+                  <span className="font-mono">+${vatAmountUSD.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between items-center pt-2 border-t border-slate-800">
+                  <span className="text-slate-200 font-bold">ИТОГО (USD):</span>
+                  <span className="font-mono text-slate-200 font-bold">${totalAmountUSD.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between items-center pt-1">
+                  <span className="text-slate-200 font-bold">К оплате (UZS):</span>
+                  <span className="text-2xl font-bold text-emerald-400 font-mono">{totalAmountUZS.toLocaleString()}</span>
+                </div>
+              </div>
+
+              <button
+                onClick={() => {
+                  completeOrder();
+                  setIsCartModalOpen(false);
+                }}
+                disabled={cart.length === 0 || !customerName}
+                className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-white py-3 rounded-xl font-bold text-lg flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-600/20"
+              >
+                <CheckCircle size={20} />
+                {paymentMethod === 'debt' ? 'Оформить в долг' : 'Оформить и оплатить'}
               </button>
             </div>
           </div>

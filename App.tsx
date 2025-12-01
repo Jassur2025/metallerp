@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import {
   LayoutDashboard,
   Package,
@@ -18,24 +18,27 @@ import {
   Shield,
   BookOpen
 } from 'lucide-react';
-import { Dashboard } from './components/Dashboard';
-import { Inventory } from './components/Inventory';
-import { Sales } from './components/Sales';
-import { Procurement } from './components/Procurement';
 
+// Lazy load components for better performance
+const Dashboard = lazy(() => import('./components/Dashboard').then(m => ({ default: m.Dashboard })));
+const Inventory = lazy(() => import('./components/Inventory').then(m => ({ default: m.Inventory })));
+const Sales = lazy(() => import('./components/Sales').then(m => ({ default: m.Sales })));
+const Procurement = lazy(() => import('./components/Procurement').then(m => ({ default: m.Procurement })));
+const Balance = lazy(() => import('./components/Balance').then(m => ({ default: m.Balance })));
+const CRM = lazy(() => import('./components/CRM').then(m => ({ default: m.CRM })));
+const Reports = lazy(() => import('./components/Reports').then(m => ({ default: m.Reports })));
+const Staff = lazy(() => import('./components/Staff').then(m => ({ default: m.Staff })));
+const JournalEventsView = lazy(() => import('./components/JournalEventsView').then(m => ({ default: m.JournalEventsView })));
+const FixedAssets = lazy(() => import('./components/FixedAssets').then(m => ({ default: m.FixedAssets })));
+const SettingsComponent = lazy(() => import('./components/Settings').then(m => ({ default: m.Settings })));
 
-import { Balance } from './components/Balance';
-import { CRM } from './components/CRM';
 import { Login } from './components/Login';
-import { Reports } from './components/Reports';
-import { Staff } from './components/Staff';
-import { JournalEventsView } from './components/JournalEventsView';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { ToastProvider, useToast } from './contexts/ToastContext';
 import { Product, Order, AppSettings, Expense, FixedAsset, Client, Employee, Transaction, Purchase, JournalEvent } from './types';
 import { sheetsService } from './services/sheetsService';
-import { Settings as SettingsComponent } from './components/Settings';
-import { FixedAssets } from './components/FixedAssets';
 import { SUPER_ADMIN_EMAILS, IS_DEV_MODE } from './constants';
+import { getErrorMessage } from './utils/errorHandler';
 
 // Default Settings
 const defaultSettings: AppSettings = {
@@ -57,6 +60,7 @@ const defaultSettings: AppSettings = {
 
 const AppContent: React.FC = () => {
   const { user, logout, accessToken } = useAuth();
+  const toast = useToast();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
@@ -180,7 +184,9 @@ const AppContent: React.FC = () => {
       }
     } catch (err: any) {
       console.error(err);
-      setError('Не удалось загрузить данные. Проверьте ID таблицы в настройках.');
+      const errorMessage = getErrorMessage(err);
+      setError(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -200,10 +206,11 @@ const AppContent: React.FC = () => {
         sheetsService.saveAllTransactions(accessToken, transactions),
         sheetsService.saveAllPurchases(accessToken, purchases)
       ]);
-      alert('Все данные успешно сохранены в Google Sheets!');
+      toast.success('Все данные успешно сохранены в Google Sheets!');
     } catch (err) {
       console.error(err);
-      alert('Ошибка при сохранении данных!');
+      const errorMessage = getErrorMessage(err);
+      toast.error(`Ошибка при сохранении данных: ${errorMessage}`);
     } finally {
       setIsLoading(false);
     }
@@ -218,7 +225,8 @@ const AppContent: React.FC = () => {
         await sheetsService.saveAllExpenses(accessToken, updatedExpenses);
       } catch (err) {
         console.error('Ошибка при сохранении расхода:', err);
-        alert('Расход добавлен локально, но не удалось сохранить в Google Sheets');
+        const errorMessage = getErrorMessage(err);
+        toast.warning(`Расход добавлен локально, но не удалось сохранить в Google Sheets: ${errorMessage}`);
       }
     }
   };
@@ -231,7 +239,8 @@ const AppContent: React.FC = () => {
       await sheetsService.saveAllEmployees(accessToken, newEmployees);
     } catch (err) {
       console.error(err);
-      alert('Ошибка при сохранении сотрудников!');
+      const errorMessage = getErrorMessage(err);
+      toast.error(`Ошибка при сохранении сотрудников: ${errorMessage}`);
     } finally {
       setIsLoading(false);
     }
@@ -245,7 +254,8 @@ const AppContent: React.FC = () => {
       await sheetsService.saveAllPurchases(accessToken, newPurchases);
     } catch (err) {
       console.error(err);
-      alert('Ошибка при сохранении закупок!');
+      const errorMessage = getErrorMessage(err);
+      toast.error(`Ошибка при сохранении закупок: ${errorMessage}`);
     } finally {
       setIsLoading(false);
     }
@@ -261,7 +271,8 @@ const AppContent: React.FC = () => {
       console.log('✅ Clients saved successfully!');
     } catch (err) {
       console.error('❌ Error saving clients:', err);
-      alert('Ошибка при сохранении клиентов!');
+      const errorMessage = getErrorMessage(err);
+      toast.error(`Ошибка при сохранении клиентов: ${errorMessage}`);
     } finally {
       setIsLoading(false);
     }
@@ -275,7 +286,8 @@ const AppContent: React.FC = () => {
       await sheetsService.saveAllExpenses(accessToken, newExpenses);
     } catch (err) {
       console.error(err);
-      alert('Ошибка при сохранении расходов!');
+      const errorMessage = getErrorMessage(err);
+      toast.error(`Ошибка при сохранении расходов: ${errorMessage}`);
     } finally {
       setIsLoading(false);
     }
@@ -289,7 +301,8 @@ const AppContent: React.FC = () => {
       await sheetsService.saveAllFixedAssets(accessToken, newAssets);
     } catch (err) {
       console.error(err);
-      alert('Ошибка при сохранении основных средств!');
+      const errorMessage = getErrorMessage(err);
+      toast.error(`Ошибка при сохранении основных средств: ${errorMessage}`);
     } finally {
       setIsLoading(false);
     }
@@ -303,7 +316,8 @@ const AppContent: React.FC = () => {
       await sheetsService.saveAllProducts(accessToken, newProducts);
     } catch (err) {
       console.error(err);
-      alert('Ошибка при сохранении товаров!');
+      const errorMessage = getErrorMessage(err);
+      toast.error(`Ошибка при сохранении товаров: ${errorMessage}`);
     } finally {
       setIsLoading(false);
     }
@@ -330,7 +344,8 @@ const AppContent: React.FC = () => {
       return true; // Success
     } catch (err) {
       console.error('❌ Error saving orders:', err);
-      alert('Ошибка при сохранении заказов! Проверьте консоль для деталей.');
+      const errorMessage = getErrorMessage(err);
+      toast.error(`Ошибка при сохранении заказов: ${errorMessage}`);
       return false; // Error
     } finally {
       setIsLoading(false);
@@ -349,7 +364,8 @@ const AppContent: React.FC = () => {
       return true; // Success
     } catch (err) {
       console.error(err);
-      alert('Ошибка при сохранении транзакций!');
+      const errorMessage = getErrorMessage(err);
+      toast.error(`Ошибка при сохранении транзакций: ${errorMessage}`);
       return false; // Error
     } finally {
       setIsLoading(false);
@@ -385,13 +401,23 @@ const AppContent: React.FC = () => {
       );
     }
 
+    const renderLazyComponent = (component: React.ReactNode) => (
+      <Suspense fallback={
+        <div className="flex items-center justify-center h-full">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
+        </div>
+      }>
+        {component}
+      </Suspense>
+    );
+
     switch (activeTab) {
       case 'dashboard':
-        return <Dashboard products={products} orders={orders} clients={clients} transactions={transactions} settings={settings} />;
+        return renderLazyComponent(<Dashboard products={products} orders={orders} clients={clients} transactions={transactions} settings={settings} />);
       case 'inventory':
-        return <Inventory products={products} setProducts={setProducts} onSaveProducts={handleSaveProducts} />;
+        return renderLazyComponent(<Inventory products={products} setProducts={setProducts} onSaveProducts={handleSaveProducts} />);
       case 'import':
-        return <Procurement
+        return renderLazyComponent(<Procurement
           products={products}
           setProducts={setProducts}
           settings={settings}
@@ -401,11 +427,11 @@ const AppContent: React.FC = () => {
           setTransactions={setTransactions}
           onSaveProducts={handleSaveProducts}
           onSaveTransactions={handleSaveTransactions}
-        />;
+        />);
       case 'journal':
-        return <JournalEventsView events={journalEvents} />;
+        return renderLazyComponent(<JournalEventsView events={journalEvents} />);
       case 'sales':
-        return <Sales
+        return renderLazyComponent(<Sales
           products={products}
           setProducts={setProducts}
           orders={orders}
@@ -424,35 +450,36 @@ const AppContent: React.FC = () => {
           onSaveProducts={handleSaveProducts}
           onSaveExpenses={handleSaveExpenses}
           onAddJournalEvent={handleAddJournalEvent}
-        />;
+        />);
       case 'reports':
-        return <Reports orders={orders} expenses={expenses} products={products} onAddExpense={handleAddExpense} />;
+        return renderLazyComponent(<Reports orders={orders} expenses={expenses} products={products} onAddExpense={handleAddExpense} />);
       case 'fixedAssets':
-        return <FixedAssets assets={fixedAssets} setAssets={setFixedAssets} onSaveAssets={handleSaveFixedAssets} />;
+        return renderLazyComponent(<FixedAssets assets={fixedAssets} setAssets={setFixedAssets} onSaveAssets={handleSaveFixedAssets} />);
       case 'crm':
-        return <CRM
+        return renderLazyComponent(<CRM
           clients={clients}
           onSave={handleSaveClients}
           orders={orders}
           transactions={transactions}
           setTransactions={setTransactions}
           onSaveTransactions={handleSaveTransactions}
-        />;
+          currentUser={user}
+        />);
       case 'staff':
-        return <Staff employees={employees} onSave={handleSaveEmployees} />;
+        return renderLazyComponent(<Staff employees={employees} onSave={handleSaveEmployees} />);
       case 'balance':
-        return <Balance
+        return renderLazyComponent(<Balance
           orders={orders}
           products={products}
           expenses={expenses}
           fixedAssets={fixedAssets}
           settings={settings}
           transactions={transactions}
-        />;
+        />);
       case 'settings':
-        return <SettingsComponent settings={settings} setSettings={setSettings} />;
+        return renderLazyComponent(<SettingsComponent settings={settings} setSettings={setSettings} />);
       default:
-        return <Dashboard products={products} orders={orders} settings={settings} />;
+        return renderLazyComponent(<Dashboard products={products} orders={orders} settings={settings} />);
     }
   };
 
@@ -728,7 +755,9 @@ const SidebarItem = ({ icon, label, active, onClick, isOpen }: any) => (
 
 const App = () => (
   <AuthProvider>
-    <AppContent />
+    <ToastProvider>
+      <AppContent />
+    </ToastProvider>
   </AuthProvider>
 );
 

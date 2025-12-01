@@ -20,7 +20,7 @@ export const Reports: React.FC<ReportsProps> = ({ orders, expenses, products, on
   const [activeTab, setActiveTab] = useState<ReportType>('pnl');
 
   return (
-    <div className="flex flex-col h-screen bg-slate-900 text-slate-100">
+    <div className="flex flex-col h-full bg-slate-900 text-slate-100">
       {/* Reports Header / Tab Switcher */}
       <div className="p-6 border-b border-slate-700 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 print:hidden">
         <div>
