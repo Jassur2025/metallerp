@@ -19,47 +19,95 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [accessToken, setAccessToken] = useState<string | null>(null);
 
     useEffect(() => {
+        let isProcessingRedirect = false;
+
         // Обрабатываем redirect результат при возврате после signInWithRedirect
-        getRedirectResult(auth).then((result) => {
-            if (result) {
-                const credential = GoogleAuthProvider.credentialFromResult(result);
-                if (credential?.accessToken) {
-                    setAccessToken(credential.accessToken);
-                    localStorage.setItem('google_access_token', credential.accessToken);
-                    console.log('✅ Успешный вход через redirect, токен сохранен');
-                } else {
-                    console.warn('⚠️ Redirect result получен, но OAuth токен отсутствует');
-                    // Пытаемся получить токен через пользователя
-                    if (result.user) {
-                        // Для получения OAuth токена нужно использовать signInWithCredential
-                        // Но это сложно, поэтому просто предупреждаем
-                        console.warn('⚠️ Требуется повторный вход для получения OAuth токена');
+        const handleRedirectResult = async () => {
+            if (isProcessingRedirect) return;
+            isProcessingRedirect = true;
+
+            try {
+                console.log('🔄 Проверяем redirect результат...');
+                const result = await getRedirectResult(auth);
+                
+                if (result) {
+                    console.log('✅ Redirect результат получен:', result.user.email);
+                    const credential = GoogleAuthProvider.credentialFromResult(result);
+                    
+                    if (credential?.accessToken) {
+                        console.log('✅ OAuth токен получен через redirect');
+                        setAccessToken(credential.accessToken);
+                        localStorage.setItem('google_access_token', credential.accessToken);
+                        localStorage.setItem('google_access_token_time', Date.now().toString());
+                    } else {
+                        console.warn('⚠️ Redirect result получен, но OAuth токен отсутствует');
+                        // Пробуем получить токен через getIdToken
+                        try {
+                            const idToken = await result.user.getIdToken(true);
+                            console.log('✅ Получен ID token как fallback');
+                            setAccessToken(idToken);
+                            localStorage.setItem('google_access_token', idToken);
+                            localStorage.setItem('google_access_token_time', Date.now().toString());
+                        } catch (tokenError) {
+                            console.error('❌ Не удалось получить токен:', tokenError);
+                        }
                     }
+                } else {
+                    console.log('ℹ️ Нет redirect результата (обычный вход)');
                 }
+            } catch (error) {
+                console.error("❌ Error getting redirect result:", error);
+            } finally {
+                isProcessingRedirect = false;
             }
-        }).catch((error) => {
-            console.error("Error getting redirect result", error);
-        });
+        };
+
+        handleRedirectResult();
 
         const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+            console.log('👤 Auth state changed:', currentUser?.email || 'не авторизован');
             setUser(currentUser);
             
-            // Если пользователь авторизован, но токена нет - пытаемся получить его
             if (currentUser) {
                 // Проверяем localStorage
                 const savedToken = localStorage.getItem('google_access_token');
-                if (savedToken && savedToken.length > 0) {
-                    setAccessToken(savedToken);
+                const tokenTime = localStorage.getItem('google_access_token_time');
+                
+                // Токен действителен 1 час
+                const isTokenValid = savedToken && tokenTime && 
+                    (Date.now() - parseInt(tokenTime)) < 3600000;
+
+                if (savedToken && isTokenValid) {
                     console.log('✅ Токен восстановлен из localStorage');
+                    setAccessToken(savedToken);
+                } else if (savedToken && !isTokenValid) {
+                    console.warn('⚠️ Токен истек, получаем новый...');
+                    try {
+                        const newToken = await currentUser.getIdToken(true);
+                        setAccessToken(newToken);
+                        localStorage.setItem('google_access_token', newToken);
+                        localStorage.setItem('google_access_token_time', Date.now().toString());
+                        console.log('✅ Новый токен получен');
+                    } catch (error) {
+                        console.error('❌ Не удалось обновить токен:', error);
+                    }
                 } else {
-                    // Токена нет - нужно перелогиниться для получения OAuth токена
-                    console.warn('⚠️ Пользователь авторизован, но OAuth токен отсутствует. Требуется повторный вход.');
-                    // Не устанавливаем токен, чтобы пользователь понял, что нужно войти заново
+                    console.log('ℹ️ Токен отсутствует, пытаемся получить...');
+                    try {
+                        const newToken = await currentUser.getIdToken(true);
+                        setAccessToken(newToken);
+                        localStorage.setItem('google_access_token', newToken);
+                        localStorage.setItem('google_access_token_time', Date.now().toString());
+                        console.log('✅ Токен успешно получен');
+                    } catch (error) {
+                        console.error('❌ Не удалось получить токен:', error);
+                    }
                 }
             } else {
                 // Пользователь не авторизован - очищаем токен
                 setAccessToken(null);
                 localStorage.removeItem('google_access_token');
+                localStorage.removeItem('google_access_token_time');
             }
             
             setLoading(false);
@@ -76,27 +124,37 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (isMobile || isSmallScreen) {
                 // На мобильных используем redirect вместо popup
                 console.log('📱 Мобильное устройство обнаружено, используем redirect для входа');
+                
+                // Сохраняем флаг, что мы инициировали вход
+                sessionStorage.setItem('auth_redirect_initiated', 'true');
+                
                 await signInWithRedirect(auth, googleProvider);
                 // Redirect произойдет, функция вернет управление после redirect
                 return;
             } else {
                 // На десктопе используем popup
+                console.log('💻 Десктоп обнаружен, используем popup для входа');
                 const result = await signInWithPopup(auth, googleProvider);
                 const credential = GoogleAuthProvider.credentialFromResult(result);
+                
                 if (credential?.accessToken) {
                     setAccessToken(credential.accessToken);
                     localStorage.setItem('google_access_token', credential.accessToken);
+                    localStorage.setItem('google_access_token_time', Date.now().toString());
+                    console.log('✅ Вход через popup успешен');
                 }
             }
         } catch (error: any) {
-            console.error("Error signing in with Google", error);
+            console.error("❌ Error signing in with Google:", error);
+            
             // Если popup заблокирован, пробуем redirect
             if (error.code === 'auth/popup-blocked' || error.code === 'auth/popup-closed-by-user') {
                 console.log('⚠️ Popup заблокирован, используем redirect');
                 try {
+                    sessionStorage.setItem('auth_redirect_initiated', 'true');
                     await signInWithRedirect(auth, googleProvider);
                 } catch (redirectError) {
-                    console.error("Error with redirect", redirectError);
+                    console.error("❌ Error with redirect:", redirectError);
                     throw redirectError;
                 }
             } else {
@@ -112,12 +170,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
 
         try {
-            console.log('🔄 Attempting to refresh access token...');
-            // Попытка получить новый токен через повторный вход с popup
-            // Но это требует взаимодействия пользователя, поэтому просто возвращаем null
-            // и предлагаем пользователю войти заново
-            console.warn('⚠️ Token refresh requires user interaction. Please sign in again.');
-            return null;
+            console.log('🔄 Refreshing access token...');
+            const newToken = await user.getIdToken(true);
+            setAccessToken(newToken);
+            localStorage.setItem('google_access_token', newToken);
+            localStorage.setItem('google_access_token_time', Date.now().toString());
+            console.log('✅ Token refreshed successfully');
+            return newToken;
         } catch (error) {
             console.error('❌ Error refreshing access token:', error);
             return null;
@@ -129,22 +188,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             await signOut(auth);
             setAccessToken(null);
             localStorage.removeItem('google_access_token');
+            localStorage.removeItem('google_access_token_time');
+            sessionStorage.removeItem('auth_redirect_initiated');
+            console.log('✅ Выход выполнен');
         } catch (error) {
-            console.error("Error signing out", error);
+            console.error("❌ Error signing out:", error);
             throw error;
         }
     };
 
-    // Restore token from local storage on load if user is logged in
-    useEffect(() => {
-        const token = localStorage.getItem('google_access_token');
-        if (token) setAccessToken(token);
-    }, []);
-
     if (loading) {
         return (
-            <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+            <div className="min-h-screen bg-slate-900 flex items-center justify-center flex-col gap-4">
                 <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+                <p className="text-white text-sm">Загрузка...</p>
             </div>
         );
     }

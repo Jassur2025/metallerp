@@ -173,22 +173,37 @@ const AppContent: React.FC = () => {
       ): Promise<T[]> => {
         try {
           const loaded = await loader();
-          // Обновляем только если данные загружены успешно ИЛИ текущие данные пустые
-          if (loaded.length > 0 || current.length === 0) {
-            return loaded;
-          }
-          // Если загрузка вернула пустой массив, но есть текущие данные - сохраняем текущие
-          console.warn(`⚠️ ${name}: загрузка вернула пустой массив, сохраняем текущие данные`);
-          return current;
+          // ВАЖНО: Всегда используем загруженные данные, если загрузка прошла успешно
+          // Это гарантирует синхронизацию между устройствами
+          // Если загруженные данные пустые - это нормально (таблица может быть пустой)
+          console.log(`✅ ${name}: загружено ${loaded.length} записей из Google Sheets`);
+          return loaded;
         } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          const isAuthError = errorMessage.includes('UNAUTHENTICATED') || 
+                             errorMessage.includes('401') || 
+                             errorMessage.includes('токен доступа истек');
+          
           console.error(`❌ Ошибка загрузки ${name}:`, error);
-          // При ошибке возвращаем текущие данные, если они есть
-          if (current.length > 0) {
-            console.log(`📦 ${name}: используем текущие данные из-за ошибки загрузки`);
+          
+          // При ошибке аутентификации НЕ заменяем данные на пустой массив
+          // Это критично для защиты от потери данных при истечении токена
+          if (isAuthError && current.length > 0) {
+            console.warn(`🔒 ${name}: ошибка аутентификации, сохраняем текущие данные (${current.length} записей)`);
             return current;
           }
-          // Если текущих данных нет, пробрасываем ошибку
-          throw error;
+          
+          // При других ошибках возвращаем текущие данные, если они есть
+          // Это защищает от потери данных при временных проблемах с сетью
+          if (current.length > 0) {
+            console.log(`📦 ${name}: используем текущие данные (${current.length} записей) из-за ошибки загрузки`);
+            return current;
+          }
+          
+          // Если текущих данных нет и произошла ошибка - возвращаем пустой массив
+          // Это нормально для первого входа, когда данных еще нет
+          console.warn(`⚠️ ${name}: нет данных и ошибка загрузки, возвращаем пустой массив`);
+          return [];
         }
       };
       
@@ -205,23 +220,31 @@ const AppContent: React.FC = () => {
       ]);
       
       // Обрабатываем результаты Promise.allSettled
-      const getResult = <T,>(result: PromiseSettledResult<T[]>, current: T[]): T[] => {
+      const getResult = <T,>(result: PromiseSettledResult<T[]>, current: T[], name: string): T[] => {
         if (result.status === 'fulfilled') {
+          // Всегда используем успешно загруженные данные для синхронизации между устройствами
           return result.value;
         }
-        console.error('Ошибка загрузки данных:', result.reason);
-        return current; // Возвращаем текущие данные при ошибке
+        console.error(`❌ Ошибка загрузки ${name}:`, result.reason);
+        // При ошибке используем текущие данные, если они есть
+        // Это защищает от потери данных при временных проблемах
+        if (current.length > 0) {
+          console.log(`📦 ${name}: используем текущие данные (${current.length} записей) из-за ошибки`);
+          return current;
+        }
+        // Если данных нет - возвращаем пустой массив
+        return [];
       };
       
-      const finalProducts = getResult(loadedProducts, currentData.products);
-      const finalOrders = getResult(loadedOrders, currentData.orders);
-      const finalExpenses = getResult(loadedExpenses, currentData.expenses);
-      const finalAssets = getResult(loadedAssets, currentData.fixedAssets);
-      const finalClients = getResult(loadedClients, currentData.clients);
-      const finalEmployees = getResult(loadedEmployees, currentData.employees);
-      const finalTransactions = getResult(loadedTransactions, currentData.transactions);
-      const finalPurchases = getResult(loadedPurchases, currentData.purchases);
-      const finalJournalEvents = getResult(loadedJournalEvents, currentData.journalEvents);
+      const finalProducts = getResult(loadedProducts, currentData.products, 'Products');
+      const finalOrders = getResult(loadedOrders, currentData.orders, 'Orders');
+      const finalExpenses = getResult(loadedExpenses, currentData.expenses, 'Expenses');
+      const finalAssets = getResult(loadedAssets, currentData.fixedAssets, 'FixedAssets');
+      const finalClients = getResult(loadedClients, currentData.clients, 'Clients');
+      const finalEmployees = getResult(loadedEmployees, currentData.employees, 'Employees');
+      const finalTransactions = getResult(loadedTransactions, currentData.transactions, 'Transactions');
+      const finalPurchases = getResult(loadedPurchases, currentData.purchases, 'Purchases');
+      const finalJournalEvents = getResult(loadedJournalEvents, currentData.journalEvents, 'JournalEvents');
       
       // Recalculate client debts based on transactions to ensure accuracy
       const clientsWithRecalculatedDebts = recalculateClientDebts(finalClients, finalTransactions);

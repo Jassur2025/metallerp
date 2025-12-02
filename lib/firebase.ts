@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getAuth, GoogleAuthProvider } from "firebase/auth";
+import { getAuth, GoogleAuthProvider, browserLocalPersistence, setPersistence } from "firebase/auth";
 
 // Get environment variables - use fallback if not set
 const getEnvVar = (key: string, fallback?: string): string => {
@@ -22,5 +22,16 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
+
+// Устанавливаем persistence для мобильных устройств
+setPersistence(auth, browserLocalPersistence).catch((error) => {
+  console.error("Error setting persistence:", error);
+});
+
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.addScope('https://www.googleapis.com/auth/spreadsheets');
+
+// Дополнительные параметры для мобильных устройств
+googleProvider.setCustomParameters({
+  prompt: 'select_account', // Позволяет выбрать аккаунт
+});
