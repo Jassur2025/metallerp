@@ -20,6 +20,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     useEffect(() => {
         let isProcessingRedirect = false;
+        
+        // Проверяем флаг, что redirect уже был обработан
+        const redirectProcessed = sessionStorage.getItem('auth_redirect_processed');
+        if (redirectProcessed === 'true') {
+            console.log('ℹ️ Redirect уже был обработан, пропускаем');
+            return;
+        }
 
         // Обрабатываем redirect результат при возврате после signInWithRedirect
         const handleRedirectResult = async () => {
@@ -32,6 +39,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 
                 if (result) {
                     console.log('✅ Redirect результат получен:', result.user.email);
+                    
+                    // Помечаем что redirect обработан
+                    sessionStorage.setItem('auth_redirect_processed', 'true');
+                    sessionStorage.removeItem('auth_redirect_initiated');
+                    
                     const credential = GoogleAuthProvider.credentialFromResult(result);
                     
                     if (credential?.accessToken) {
@@ -39,6 +51,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                         setAccessToken(credential.accessToken);
                         localStorage.setItem('google_access_token', credential.accessToken);
                         localStorage.setItem('google_access_token_time', Date.now().toString());
+                        localStorage.setItem('auth_completed', 'true');
                     } else {
                         console.warn('⚠️ Redirect result получен, но OAuth токен отсутствует');
                         // Пробуем получить токен через getIdToken
@@ -48,6 +61,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                             setAccessToken(idToken);
                             localStorage.setItem('google_access_token', idToken);
                             localStorage.setItem('google_access_token_time', Date.now().toString());
+                            localStorage.setItem('auth_completed', 'true');
                         } catch (tokenError) {
                             console.error('❌ Не удалось получить токен:', tokenError);
                         }
@@ -57,6 +71,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 }
             } catch (error) {
                 console.error("❌ Error getting redirect result:", error);
+                // Очищаем флаги при ошибке чтобы можно было попробовать снова
+                sessionStorage.removeItem('auth_redirect_processed');
+                sessionStorage.removeItem('auth_redirect_initiated');
             } finally {
                 isProcessingRedirect = false;
             }
@@ -117,6 +134,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const signInWithGoogle = async () => {
         try {
+            // Проверяем, не идет ли уже процесс аутентификации
+            const redirectInitiated = sessionStorage.getItem('auth_redirect_initiated');
+            const authCompleted = localStorage.getItem('auth_completed');
+            
+            if (redirectInitiated === 'true') {
+                console.log('⚠️ Вход уже инициирован, ожидаем завершения...');
+                return;
+            }
+            
+            if (authCompleted === 'true' && user) {
+                console.log('✅ Пользователь уже авторизован');
+                return;
+            }
+            
             // Проверяем, мобильное ли устройство
             const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
             const isSmallScreen = window.innerWidth < 768;
@@ -127,6 +158,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 
                 // Сохраняем флаг, что мы инициировали вход
                 sessionStorage.setItem('auth_redirect_initiated', 'true');
+                sessionStorage.removeItem('auth_redirect_processed');
                 
                 await signInWithRedirect(auth, googleProvider);
                 // Redirect произойдет, функция вернет управление после redirect
@@ -141,6 +173,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     setAccessToken(credential.accessToken);
                     localStorage.setItem('google_access_token', credential.accessToken);
                     localStorage.setItem('google_access_token_time', Date.now().toString());
+                    localStorage.setItem('auth_completed', 'true');
                     console.log('✅ Вход через popup успешен');
                 }
             }
@@ -189,7 +222,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setAccessToken(null);
             localStorage.removeItem('google_access_token');
             localStorage.removeItem('google_access_token_time');
+            localStorage.removeItem('auth_completed');
             sessionStorage.removeItem('auth_redirect_initiated');
+            sessionStorage.removeItem('auth_redirect_processed');
             console.log('✅ Выход выполнен');
         } catch (error) {
             console.error("❌ Error signing out:", error);

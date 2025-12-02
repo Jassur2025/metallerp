@@ -4,6 +4,20 @@ import { LogIn } from 'lucide-react';
 
 export const Login: React.FC = () => {
     const { signInWithGoogle } = useAuth();
+    const [isLoggingIn, setIsLoggingIn] = React.useState(false);
+
+    const handleLogin = async () => {
+        if (isLoggingIn) return;
+        
+        setIsLoggingIn(true);
+        try {
+            await signInWithGoogle();
+        } catch (error) {
+            console.error('Login error:', error);
+            setIsLoggingIn(false);
+        }
+        // Не сбрасываем isLoggingIn при успехе, чтобы предотвратить повторные клики
+    };
 
     return (
         <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
@@ -18,16 +32,26 @@ export const Login: React.FC = () => {
 
                 <div className="space-y-4">
                     <button
-                        onClick={signInWithGoogle}
-                        className="w-full bg-white hover:bg-slate-100 text-slate-900 font-semibold py-3 px-4 rounded-xl transition-all flex items-center justify-center gap-3 shadow-lg group"
+                        onClick={handleLogin}
+                        disabled={isLoggingIn}
+                        className="w-full bg-white hover:bg-slate-100 text-slate-900 font-semibold py-3 px-4 rounded-xl transition-all flex items-center justify-center gap-3 shadow-lg group disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                        <img
-                            src="https://www.google.com/favicon.ico"
-                            alt="Google"
-                            className="w-5 h-5"
-                        />
-                        <span>Войти через Google</span>
-                        <LogIn className="w-4 h-4 text-slate-400 group-hover:text-slate-600 transition-colors ml-auto" />
+                        {isLoggingIn ? (
+                            <>
+                                <div className="animate-spin rounded-full h-5 w-5 border-2 border-slate-900 border-t-transparent"></div>
+                                <span>Вход...</span>
+                            </>
+                        ) : (
+                            <>
+                                <img
+                                    src="https://www.google.com/favicon.ico"
+                                    alt="Google"
+                                    className="w-5 h-5"
+                                />
+                                <span>Войти через Google</span>
+                                <LogIn className="w-4 h-4 text-slate-400 group-hover:text-slate-600 transition-colors ml-auto" />
+                            </>
+                        )}
                     </button>
                 </div>
 
