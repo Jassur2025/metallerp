@@ -20,6 +20,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     useEffect(() => {
         let isProcessingRedirect = false;
+        
+        // Таймаут для безопасности - если за 10 секунд не загрузилось, останавливаем loading
+        const loadingTimeout = setTimeout(() => {
+            console.warn('⚠️ Loading timeout reached, forcing loading=false');
+            setLoading(false);
+        }, 10000);
 
         // Обрабатываем redirect результат при возврате после signInWithRedirect
         const handleRedirectResult = async () => {
@@ -28,6 +34,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
             try {
                 console.log('🔄 Проверяем redirect результат...');
+                console.log('📍 User agent:', navigator.userAgent);
+                console.log('📍 Window size:', window.innerWidth, 'x', window.innerHeight);
                 const result = await getRedirectResult(auth);
                 
                 if (result) {
@@ -75,12 +83,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
             console.log('👤 Auth state changed:', currentUser?.email || 'не авторизован');
+            console.log('📍 Current time:', new Date().toISOString());
             setUser(currentUser);
             
             if (currentUser) {
                 // Проверяем localStorage
                 const savedToken = localStorage.getItem('google_access_token');
                 const tokenTime = localStorage.getItem('google_access_token_time');
+                
+                console.log('📍 Saved token exists:', !!savedToken);
+                console.log('📍 Token time:', tokenTime);
                 
                 // Токен действителен 1 час
                 const isTokenValid = savedToken && tokenTime && 
@@ -114,14 +126,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 }
             } else {
                 // Пользователь не авторизован - очищаем токен
+                console.log('📍 User not authenticated, clearing tokens');
                 setAccessToken(null);
                 localStorage.removeItem('google_access_token');
                 localStorage.removeItem('google_access_token_time');
             }
             
+            console.log('📍 Setting loading to false');
+            clearTimeout(loadingTimeout);
             setLoading(false);
         });
-        return () => unsubscribe();
+        
+        return () => {
+            clearTimeout(loadingTimeout);
+            unsubscribe();
+        };
     }, []);
 
     const signInWithGoogle = async () => {
@@ -221,6 +240,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             <div className="min-h-screen bg-slate-900 flex items-center justify-center flex-col gap-4">
                 <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
                 <p className="text-white text-sm">Загрузка...</p>
+                <p className="text-slate-400 text-xs mt-2">Проверка аутентификации</p>
             </div>
         );
     }
