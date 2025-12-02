@@ -167,3 +167,5 @@ firebase deploy
 3. **Не загружаются ресурсы**: Проверьте base path в vite.config.ts
 4. **Firebase ошибки**: Убедитесь, что Secrets настроены правильно
 
+
+

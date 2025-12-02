@@ -62,3 +62,5 @@
 **Подробная инструкция:** `docs/mobile-tablet-testing.md`
 
 
+
+
