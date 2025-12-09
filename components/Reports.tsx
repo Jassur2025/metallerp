@@ -1,22 +1,25 @@
 
 import React, { useState } from 'react';
-import { Order, Expense, Product } from '../types';
+import { Order, Expense, Product, Purchase, AppSettings } from '../types';
+import { VatReport } from './VatReport';
 import { CashFlow } from './CashFlow';
 import { PnL } from './PnL';
 import { SalesAnalytics } from './SalesAnalytics';
 import { SalesStatistics } from './SalesStatistics';
-import { ArrowRightLeft, TrendingUp, FileText, PieChart, Table } from 'lucide-react';
+import { ArrowRightLeft, TrendingUp, FileText, PieChart, Table, Scale } from 'lucide-react';
 
 interface ReportsProps {
   orders: Order[];
   expenses: Expense[];
   products: Product[];
+  purchases: Purchase[];
+  settings: AppSettings;
   onAddExpense: (expense: Expense) => void;
 }
 
-type ReportType = 'pnl' | 'cashflow' | 'sales' | 'statistics';
+type ReportType = 'pnl' | 'cashflow' | 'sales' | 'statistics' | 'vat';
 
-export const Reports: React.FC<ReportsProps> = ({ orders, expenses, products, onAddExpense }) => {
+export const Reports: React.FC<ReportsProps> = ({ orders, expenses, products, purchases, settings, onAddExpense }) => {
   const [activeTab, setActiveTab] = useState<ReportType>('pnl');
 
   return (
@@ -33,43 +36,48 @@ export const Reports: React.FC<ReportsProps> = ({ orders, expenses, products, on
         <div className="bg-slate-800 p-1 rounded-xl border border-slate-700 flex flex-wrap gap-1">
           <button
             onClick={() => setActiveTab('pnl')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-              activeTab === 'pnl' 
-                ? 'bg-primary-600 text-white shadow-lg' 
-                : 'text-slate-400 hover:text-white hover:bg-slate-700'
-            }`}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === 'pnl'
+              ? 'bg-primary-600 text-white shadow-lg'
+              : 'text-slate-400 hover:text-white hover:bg-slate-700'
+              }`}
           >
             <TrendingUp size={16} /> P&L (Прибыль)
           </button>
           <button
             onClick={() => setActiveTab('cashflow')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-              activeTab === 'cashflow' 
-                ? 'bg-primary-600 text-white shadow-lg' 
-                : 'text-slate-400 hover:text-white hover:bg-slate-700'
-            }`}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === 'cashflow'
+              ? 'bg-primary-600 text-white shadow-lg'
+              : 'text-slate-400 hover:text-white hover:bg-slate-700'
+              }`}
           >
             <ArrowRightLeft size={16} /> Cash Flow
           </button>
           <button
             onClick={() => setActiveTab('sales')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-              activeTab === 'sales' 
-                ? 'bg-primary-600 text-white shadow-lg' 
-                : 'text-slate-400 hover:text-white hover:bg-slate-700'
-            }`}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === 'sales'
+              ? 'bg-primary-600 text-white shadow-lg'
+              : 'text-slate-400 hover:text-white hover:bg-slate-700'
+              }`}
           >
             <PieChart size={16} /> Продажи
           </button>
           <button
             onClick={() => setActiveTab('statistics')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-              activeTab === 'statistics' 
-                ? 'bg-primary-600 text-white shadow-lg' 
-                : 'text-slate-400 hover:text-white hover:bg-slate-700'
-            }`}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === 'statistics'
+              ? 'bg-primary-600 text-white shadow-lg'
+              : 'text-slate-400 hover:text-white hover:bg-slate-700'
+              }`}
           >
             <Table size={16} /> Статистика
+          </button>
+          <button
+            onClick={() => setActiveTab('vat')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === 'vat'
+              ? 'bg-primary-600 text-white shadow-lg'
+              : 'text-slate-400 hover:text-white hover:bg-slate-700'
+              }`}
+          >
+            <Scale size={16} /> НДС и Таможня
           </button>
         </div>
       </div>
@@ -80,6 +88,7 @@ export const Reports: React.FC<ReportsProps> = ({ orders, expenses, products, on
         {activeTab === 'cashflow' && <CashFlow orders={orders} expenses={expenses} onAddExpense={onAddExpense} />}
         {activeTab === 'sales' && <SalesAnalytics orders={orders} />}
         {activeTab === 'statistics' && <SalesStatistics orders={orders} products={products} />}
+        {activeTab === 'vat' && <VatReport purchases={purchases} orders={orders} expenses={expenses} settings={settings} />}
       </div>
     </div>
   );

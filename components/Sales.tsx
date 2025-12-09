@@ -127,6 +127,8 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
   const [expenseCategory, setExpenseCategory] = useState('Прочее');
   const [expenseMethod, setExpenseMethod] = useState<'cash' | 'bank' | 'card'>('cash');
   const [expenseCurrency, setExpenseCurrency] = useState<'USD' | 'UZS'>('UZS');
+  const [withVat, setWithVat] = useState(false);
+  const [expenseVatAmount, setExpenseVatAmount] = useState('');
 
   // Return State
   const [returnClientName, setReturnClientName] = useState('');
@@ -141,7 +143,7 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
   const [lastOrder, setLastOrder] = useState<Order | null>(null);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [selectedOrderForReceipt, setSelectedOrderForReceipt] = useState<Order | null>(null);
-  
+
   // Mobile Cart Modal State
   const [isCartModalOpen, setIsCartModalOpen] = useState(false);
 
@@ -159,7 +161,7 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
     const cashInUSD = orders
       .filter(o => o.paymentMethod === 'cash' && (o.paymentCurrency === 'USD' || !o.paymentCurrency))
       .reduce((sum, o) => sum + o.amountPaid, 0);
-    
+
     // Cash Out: Expenses + Supplier Payments
     const cashOutUSDExpenses = expenses
       .filter(e => e.paymentMethod === 'cash' && e.currency === 'USD')
@@ -178,11 +180,14 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
     const cashInUZS = orders
       .filter(o => o.paymentMethod === 'cash' && o.paymentCurrency === 'UZS')
       .reduce((sum, o) => sum + o.totalAmountUZS, 0); // Using stored UZS total
-    
+
     // Cash Out UZS: Expenses + Supplier Payments
     const cashOutUZSExpenses = expenses
       .filter(e => e.paymentMethod === 'cash' && e.currency === 'UZS')
-      .reduce((sum, e) => sum + (e.amount * exchangeRate), 0); // Expense amount is USD, convert to UZS
+      .reduce((sum, e) => {
+        // If exchangeRate exists, amount is in UZS. If missing (legacy), amount is USD -> convert to UZS
+        return sum + (e.exchangeRate ? e.amount : (e.amount * exchangeRate));
+      }, 0);
     const cashOutUZSSuppliers = transactions
       .filter(t => t.type === 'supplier_payment' && t.method === 'cash' && t.currency === 'UZS')
       .reduce((sum, t) => {
@@ -196,11 +201,22 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
     const bankInUZS = orders
       .filter(o => o.paymentMethod === 'bank')
       .reduce((sum, o) => sum + o.totalAmountUZS, 0);
-    
+
     // Bank Out: Expenses + Supplier Payments
     const bankOutUZSExpenses = expenses
       .filter(e => e.paymentMethod === 'bank')
-      .reduce((sum, e) => sum + (e.amount * exchangeRate), 0);
+      .reduce((sum, e) => {
+        // Bank expenses are usually UZS. If stored as USD (legacy), convert.
+        // If currency is USD, we might need to handle that too, but here we assume bank is UZS based on previous logic?
+        // Wait, previous logic: .filter(e => e.paymentMethod === 'bank').reduce((sum, e) => sum + (e.amount * exchangeRate), 0);
+        // This implies ALL bank expenses were treated as USD and converted to UZS.
+        // Now, if currency is UZS, we use amount. If USD, we convert.
+        if (e.currency === 'UZS') {
+          return sum + (e.exchangeRate ? e.amount : (e.amount * exchangeRate));
+        } else {
+          return sum + (e.amount * exchangeRate);
+        }
+      }, 0);
     const bankOutUZSSuppliers = transactions
       .filter(t => t.type === 'supplier_payment' && t.method === 'bank')
       .reduce((sum, t) => {
@@ -216,11 +232,17 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
     const cardInUZS = orders
       .filter(o => o.paymentMethod === 'card')
       .reduce((sum, o) => sum + o.totalAmountUZS, 0);
-    
+
     // Card Out: Only expenses (suppliers usually don't accept card)
     const cardOutUZS = expenses
       .filter(e => e.paymentMethod === 'card')
-      .reduce((sum, e) => sum + (e.amount * exchangeRate), 0);
+      .reduce((sum, e) => {
+        if (e.currency === 'UZS') {
+          return sum + (e.exchangeRate ? e.amount : (e.amount * exchangeRate));
+        } else {
+          return sum + (e.amount * exchangeRate);
+        }
+      }, 0);
     const balanceCardUZS = cardInUZS - cardOutUZS;
 
     return { balanceCashUSD, balanceCashUZS, balanceBankUZS, balanceCardUZS };
@@ -248,10 +270,10 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
   const handleAddToCart = (e: React.MouseEvent<HTMLButtonElement>, product: Product) => {
     addToCart(product);
     const btnRect = e.currentTarget.getBoundingClientRect();
-    
+
     // Check if mobile (screen width < 1024px)
     const isMobile = window.innerWidth < 1024;
-    
+
     if (isMobile) {
       // On mobile, open cart modal and animate to floating button position
       setIsCartModalOpen(true);
@@ -501,9 +523,9 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
         
         <div style="border-top: 1px solid #ccc; border-bottom: 1px solid #ccc; padding: 10px 0; margin: 15px 0;">
           ${order.items.map(item => {
-            const itemTotalUZS = item.total * order.exchangeRate;
-            const itemPriceUZS = item.priceAtSale * order.exchangeRate;
-            return `
+      const itemTotalUZS = item.total * order.exchangeRate;
+      const itemPriceUZS = item.priceAtSale * order.exchangeRate;
+      return `
             <div style="margin-bottom: 8px;">
               <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
                 <span style="font-weight: bold;">${item.productName}</span>
@@ -514,7 +536,7 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
               </div>
             </div>
           `;
-          }).join('')}
+    }).join('')}
         </div>
         
         <div style="margin-bottom: 10px; font-size: 12px;">
@@ -610,22 +632,22 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
     if (!expenseDesc || !expenseAmount) return;
 
     const amountVal = parseFloat(expenseAmount);
-    // If currency is UZS, convert to USD for storage (as Expense interface uses USD amount)
-    const amountUSD = expenseCurrency === 'UZS' ? toUSD(amountVal) : amountVal;
 
     const newExpense: Expense = {
       id: `EXP-${Date.now()}`,
       date: new Date().toISOString(),
       description: expenseDesc,
-      amount: amountUSD,
+      amount: amountVal, // Save in original currency
       category: expenseCategory,
       paymentMethod: expenseMethod,
-      currency: expenseCurrency
+      currency: expenseCurrency,
+      exchangeRate: exchangeRate, // Save current rate
+      vatAmount: withVat && expenseVatAmount ? parseFloat(expenseVatAmount) : 0 // Save in original currency
     };
 
     const updatedExpenses = [newExpense, ...expenses];
     setExpenses(updatedExpenses);
-    
+
     // Save to Google Sheets
     if (onSaveExpenses) {
       try {
@@ -635,9 +657,11 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
         toast.warning('Расход добавлен локально, но не удалось сохранить в Google Sheets');
       }
     }
-    
+
     setExpenseDesc('');
     setExpenseAmount('');
+    setWithVat(false);
+    setExpenseVatAmount('');
     toast.success('Расход добавлен!');
   };
 
@@ -980,6 +1004,50 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
                     </button>
                   </div>
                 </div>
+
+                {/* VAT Checkbox & Input (Only for Bank Transfer) */}
+                {expenseMethod === 'bank' && (
+                  <div className="bg-slate-900/50 p-3 rounded-lg border border-slate-700/50 space-y-3 animate-fade-in">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id="withVat"
+                        checked={withVat}
+                        onChange={e => {
+                          setWithVat(e.target.checked);
+                          if (e.target.checked && expenseAmount) {
+                            // Auto-calculate 12% included: Amount * 12/112
+                            const amount = parseFloat(expenseAmount);
+                            const vat = (amount * 12) / 112;
+                            setExpenseVatAmount(vat.toFixed(2));
+                          } else {
+                            setExpenseVatAmount('');
+                          }
+                        }}
+                        className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-primary-600 focus:ring-primary-500"
+                      />
+                      <label htmlFor="withVat" className="text-sm text-slate-300 select-none cursor-pointer">
+                        Учитывать НДС (12%)
+                      </label>
+                    </div>
+
+                    {withVat && (
+                      <div className="animate-fade-in">
+                        <label className="text-xs font-medium text-slate-400 mb-1 block">Сумма НДС ({expenseCurrency})</label>
+                        <input
+                          type="number"
+                          className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-primary-500 outline-none"
+                          placeholder="0.00"
+                          value={expenseVatAmount}
+                          onChange={e => setExpenseVatAmount(e.target.value)}
+                        />
+                        <p className="text-[10px] text-slate-500 mt-1">
+                          * НДС уже включен в общую сумму расхода, здесь мы просто выделяем его для отчета.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <div>
                   <label className="block text-sm font-medium text-slate-400 mb-2">Категория</label>
@@ -1522,7 +1590,7 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
           </div>
         </div>
       )}
-      
+
       {/* Mobile Cart Floating Button */}
       {mode === 'sale' && (
         <button
@@ -1538,7 +1606,7 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
           )}
         </button>
       )}
-      
+
       {/* Mobile Cart Modal */}
       {mode === 'sale' && isCartModalOpen && (
         <div className="lg:hidden fixed inset-0 bg-black/50 z-50 flex items-end" onClick={() => setIsCartModalOpen(false)}>
@@ -1546,7 +1614,7 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
             {/* Modal Header */}
             <div id="cart-target-mobile" className="p-4 border-b border-slate-700 bg-slate-900/50 flex justify-between items-center sticky top-0 z-10">
               <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                <ShoppingCart className={`text-primary-500 transition-transform duration-300 ${flyingItems.length > 0 ? 'scale-110' : 'scale-100'}`} /> 
+                <ShoppingCart className={`text-primary-500 transition-transform duration-300 ${flyingItems.length > 0 ? 'scale-110' : 'scale-100'}`} />
                 Корзина {cart.length > 0 && <span className="text-sm bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full">({cart.length})</span>}
               </h3>
               <button
@@ -1721,11 +1789,10 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
                 </div>
               </div>
 
+
+
               <button
-                onClick={() => {
-                  completeOrder();
-                  setIsCartModalOpen(false);
-                }}
+                onClick={completeOrder}
                 disabled={cart.length === 0 || !customerName}
                 className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-white py-3 rounded-xl font-bold text-lg flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-600/20"
               >

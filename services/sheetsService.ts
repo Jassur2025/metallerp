@@ -26,14 +26,14 @@ const handleApiResponse = async (response: Response, context: string): Promise<v
             console.error(`❌ Google Sheets API Error (${response.status}) in ${context}:`, text);
             errorMessage = `HTTP ${response.status}: ${text.substring(0, 100)}`;
         }
-        
+
         // Clear token on 401 error
         if (response.status === 401) {
             console.error('❌ Access token expired or invalid. Clearing token from storage.');
             localStorage.removeItem('google_access_token');
             throw new Error('UNAUTHENTICATED: Токен доступа истек или недействителен. Пожалуйста, войдите заново.');
         }
-        
+
         throw new Error(errorMessage);
     }
 };
@@ -73,7 +73,7 @@ const fetchSheets = async (accessToken: string, range: string, method: 'GET' | '
 
     try {
         const response = await fetch(url, options);
-        
+
         if (!response.ok) {
             let errorMessage = 'Sheets API Error';
             try {
@@ -85,7 +85,7 @@ const fetchSheets = async (accessToken: string, range: string, method: 'GET' | '
                 console.error(`❌ Google Sheets API Error (${response.status}):`, text);
                 errorMessage = `HTTP ${response.status}: ${text.substring(0, 100)}`;
             }
-            
+
             // Детальная информация об ошибке
             if (response.status === 401) {
                 // Очищаем токен из localStorage при ошибке 401
@@ -99,14 +99,14 @@ const fetchSheets = async (accessToken: string, range: string, method: 'GET' | '
             } else if (response.status === 429) {
                 throw new Error('QUOTA_EXCEEDED: Превышен лимит запросов. Попробуйте позже.');
             }
-            
+
             throw new Error(errorMessage);
         }
-        
+
         return response.json();
     } catch (error) {
         // Если это уже наша ошибка, пробрасываем дальше
-        if (error instanceof Error && error.message.includes('UNAUTHENTICATED') || 
+        if (error instanceof Error && error.message.includes('UNAUTHENTICATED') ||
             error instanceof Error && error.message.includes('PERMISSION_DENIED')) {
             throw error;
         }
@@ -172,11 +172,13 @@ const mapRowToExpense = (row: any[]): Expense => ({
     amount: Number(row[3]),
     category: row[4],
     paymentMethod: (row[5] as any) || 'cash',
-    currency: (row[6] as any) || 'USD'
+    currency: (row[6] as any) || 'USD',
+    vatAmount: Number(row[7]) || 0,
+    exchangeRate: Number(row[8]) || 1
 });
 
 const mapExpenseToRow = (e: Expense) => [
-    e.id, e.date, e.description, e.amount, e.category, e.paymentMethod || 'cash', e.currency || 'USD'
+    e.id, e.date, e.description, e.amount, e.category, e.paymentMethod || 'cash', e.currency || 'USD', e.vatAmount || 0, e.exchangeRate || 1
 ];
 
 // Map FixedAsset <-> Row
@@ -344,8 +346,8 @@ export const sheetsService = {
 
         // 4. Check and create headers for Expenses
         try {
-            await fetchSheets(accessToken, 'Expenses!A1:G1', 'PUT', {
-                values: [['ID', 'Date', 'Description', 'Amount (USD)', 'Category', 'Payment Method', 'Currency']]
+            await fetchSheets(accessToken, 'Expenses!A1:I1', 'PUT', {
+                values: [['ID', 'Date', 'Description', 'Amount', 'Category', 'Payment Method', 'Currency', 'VAT Amount', 'Exchange Rate']]
             });
         } catch (e) { console.error("Error init Expenses", e); }
 
@@ -428,7 +430,7 @@ export const sheetsService = {
                 p.totalInvoiceAmount, p.totalLandedAmount, p.paymentMethod, p.paymentStatus, p.amountPaid
             ]);
             const spreadsheetId = getSpreadsheetId();
-            
+
             if (!spreadsheetId) {
                 throw new Error('Spreadsheet ID not set');
             }
@@ -441,10 +443,7 @@ export const sheetsService = {
                 headers: { 'Authorization': `Bearer ${accessToken}` }
             });
 
-            if (!clearResponse.ok) {
-                const errorData = await clearResponse.json();
-                throw new Error(`Failed to clear Purchases sheet: ${errorData.error?.message || 'Unknown error'}`);
-            }
+            await handleApiResponse(clearResponse, 'clear Purchases sheet');
 
             // Write
             const writeResponse = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Purchases!A2:K?valueInputOption=USER_ENTERED`, {
@@ -469,7 +468,7 @@ export const sheetsService = {
     // --- Products ---
     getProducts: async (accessToken: string, useCache: boolean = true): Promise<Product[]> => {
         const cacheKey = 'products';
-        
+
         // Try cache first
         if (useCache) {
             const cached = cacheService.get<Product[]>(cacheKey);
@@ -484,7 +483,7 @@ export const sheetsService = {
             const products = (data.values || [])
                 .filter(row => row[0] && row[0] !== 'ID' && row[1] !== 'Name')
                 .map(mapRowToProduct);
-            
+
             // Cache the result
             cacheService.set(cacheKey, products, CACHE_TTL);
             console.log('📥 Products loaded from Google Sheets');
@@ -507,10 +506,10 @@ export const sheetsService = {
             if (!accessToken) {
                 throw new Error('Access token not provided');
             }
-            
+
             const rows = products.map(mapProductToRow);
             const spreadsheetId = getSpreadsheetId();
-            
+
             if (!spreadsheetId) {
                 throw new Error('Spreadsheet ID not set');
             }
@@ -520,31 +519,20 @@ export const sheetsService = {
             // Clear existing
             const clearResponse = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Products!A2:K:clear`, {
                 method: 'POST',
-                headers: { 
+                headers: {
                     'Authorization': `Bearer ${accessToken}`,
                     'Content-Type': 'application/json'
                 }
             });
 
-            if (!clearResponse.ok) {
-                let errorMessage = 'Failed to clear Products sheet';
-                try {
-                    const errorData = await clearResponse.json();
-                    errorMessage = errorData.error?.message || `HTTP ${clearResponse.status}`;
-                } catch (e) {
-                    const text = await clearResponse.text();
-                    errorMessage = `HTTP ${clearResponse.status}: ${text.substring(0, 100)}`;
-                }
-                console.error('❌ Error clearing Products:', errorMessage);
-                throw new Error(errorMessage);
-            }
+            await handleApiResponse(clearResponse, 'clear Products sheet');
 
             // Write new
             const writeResponse = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Products!A2:K?valueInputOption=USER_ENTERED`, {
                 method: 'PUT',
-                headers: { 
-                    'Authorization': `Bearer ${accessToken}`, 
-                    'Content-Type': 'application/json' 
+                headers: {
+                    'Authorization': `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({ values: rows })
             });
@@ -584,7 +572,7 @@ export const sheetsService = {
     // --- Orders ---
     getOrders: async (accessToken: string, useCache: boolean = true): Promise<Order[]> => {
         const cacheKey = 'orders';
-        
+
         // Try cache first
         if (useCache) {
             const cached = cacheService.get<Order[]>(cacheKey);
@@ -599,7 +587,7 @@ export const sheetsService = {
             const orders = (data.values || [])
                 .filter(row => row[0] && row[0] !== 'ID')
                 .map(mapRowToOrder);
-            
+
             // Cache the result
             cacheService.set(cacheKey, orders, CACHE_TTL);
             console.log('📥 Orders loaded from Google Sheets');
@@ -621,7 +609,7 @@ export const sheetsService = {
         try {
             const rows = orders.map(mapOrderToRow);
             const spreadsheetId = getSpreadsheetId();
-            
+
             if (!spreadsheetId) {
                 throw new Error('Spreadsheet ID not set');
             }
@@ -631,12 +619,12 @@ export const sheetsService = {
             // Clear
             const clearResponse = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Orders!A2:P:clear`, {
                 method: 'POST',
-                headers: { 
+                headers: {
                     'Authorization': `Bearer ${accessToken}`,
                     'Content-Type': 'application/json'
                 }
             });
-            
+
             await handleApiResponse(clearResponse, 'clear Orders sheet');
 
             // Write
@@ -645,9 +633,9 @@ export const sheetsService = {
                 headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify({ values: rows })
             });
-            
+
             await handleApiResponse(writeResponse, 'write Orders');
-            
+
             console.log('✅ Orders saved successfully!');
             // Invalidate cache after save
             cacheService.invalidate('orders');
@@ -660,7 +648,7 @@ export const sheetsService = {
     // --- Expenses ---
     getExpenses: async (accessToken: string, useCache: boolean = true): Promise<Expense[]> => {
         return cachedFetch('expenses', accessToken, async () => {
-            const data = await fetchSheets(accessToken, 'Expenses!A2:G');
+            const data = await fetchSheets(accessToken, 'Expenses!A2:I');
             return (data.values || [])
                 .filter(row => row[0] && row[0] !== 'ID')
                 .map(mapRowToExpense);
@@ -671,7 +659,7 @@ export const sheetsService = {
         try {
             const rows = expenses.map(mapExpenseToRow);
             const spreadsheetId = getSpreadsheetId();
-            
+
             if (!spreadsheetId) {
                 throw new Error('Spreadsheet ID not set');
             }
@@ -679,18 +667,15 @@ export const sheetsService = {
             console.log(`💾 Saving ${expenses.length} expenses to Google Sheets`);
 
             // Clear
-            const clearResponse = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Expenses!A2:G:clear`, {
+            const clearResponse = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Expenses!A2:I:clear`, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${accessToken}` }
             });
 
-            if (!clearResponse.ok) {
-                const errorData = await clearResponse.json();
-                throw new Error(`Failed to clear Expenses sheet: ${errorData.error?.message || 'Unknown error'}`);
-            }
+            await handleApiResponse(clearResponse, 'clear Expenses sheet');
 
             // Write
-            const writeResponse = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Expenses!A2:G?valueInputOption=USER_ENTERED`, {
+            const writeResponse = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Expenses!A2:I?valueInputOption=USER_ENTERED`, {
                 method: 'PUT',
                 headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify({ values: rows })
@@ -723,7 +708,7 @@ export const sheetsService = {
         try {
             const rows = assets.map(mapFixedAssetToRow);
             const spreadsheetId = getSpreadsheetId();
-            
+
             if (!spreadsheetId) {
                 throw new Error('Spreadsheet ID not set');
             }
@@ -736,10 +721,7 @@ export const sheetsService = {
                 headers: { 'Authorization': `Bearer ${accessToken}` }
             });
 
-            if (!clearResponse.ok) {
-                const errorData = await clearResponse.json();
-                throw new Error(`Failed to clear FixedAssets sheet: ${errorData.error?.message || 'Unknown error'}`);
-            }
+            await handleApiResponse(clearResponse, 'clear FixedAssets sheet');
 
             // Write
             const writeResponse = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/FixedAssets!A2:I?valueInputOption=USER_ENTERED`, {
@@ -775,7 +757,7 @@ export const sheetsService = {
         try {
             const rows = clients.map(mapClientToRow);
             const spreadsheetId = getSpreadsheetId();
-            
+
             if (!spreadsheetId) {
                 throw new Error('Spreadsheet ID not set');
             }
@@ -785,7 +767,7 @@ export const sheetsService = {
             // Clear
             const clearResponse = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Clients!A2:I:clear`, {
                 method: 'POST',
-                headers: { 
+                headers: {
                     'Authorization': `Bearer ${accessToken}`,
                     'Content-Type': 'application/json'
                 }
@@ -824,7 +806,7 @@ export const sheetsService = {
         try {
             const rows = employees.map(mapEmployeeToRow);
             const spreadsheetId = getSpreadsheetId();
-            
+
             if (!spreadsheetId) {
                 throw new Error('Spreadsheet ID not set');
             }
@@ -915,7 +897,7 @@ export const sheetsService = {
                 t.relatedId || ''
             ]);
             const spreadsheetId = getSpreadsheetId();
-            
+
             if (!spreadsheetId) {
                 throw new Error('Spreadsheet ID not set');
             }
@@ -925,7 +907,7 @@ export const sheetsService = {
             // Clear
             const clearResponse = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Transactions!A2:I:clear`, {
                 method: 'POST',
-                headers: { 
+                headers: {
                     'Authorization': `Bearer ${accessToken}`,
                     'Content-Type': 'application/json'
                 }
@@ -967,7 +949,7 @@ export const sheetsService = {
         try {
             const row = mapJournalEventToRow(event);
             const spreadsheetId = getSpreadsheetId();
-            
+
             if (!spreadsheetId) {
                 console.warn('⚠️ Spreadsheet ID not set, journal event not saved');
                 return;

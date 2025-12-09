@@ -90,7 +90,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
         let itemsWithLandedCost = cart;
 
         if (procurementType === 'import') {
-            totalOverheads = overheads.logistics + overheads.customsDuty + overheads.importVat + overheads.other;
+            totalOverheads = overheads.logistics + overheads.customsDuty + overheads.other;
             totalLandedValue = totalInvoiceValue + totalOverheads;
 
             itemsWithLandedCost = cart.map(item => {
@@ -157,10 +157,10 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
         if (paymentMethod !== 'debt') {
             // Calculate amount in the payment currency
             // If paying in UZS, convert USD amount to UZS
-            const transactionAmount = paymentCurrency === 'UZS' 
+            const transactionAmount = paymentCurrency === 'UZS'
                 ? totals.totalInvoiceValue * settings.defaultExchangeRate
                 : totals.totalInvoiceValue;
-            
+
             const newTransaction: Transaction = {
                 id: `TRX-${Date.now()}`,
                 date: new Date().toISOString(),
@@ -477,6 +477,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                                             onChange={e => setOverheads({ ...overheads, importVat: Number(e.target.value) })}
                                         />
                                     </div>
+
                                     <div className="space-y-1">
                                         <label className="text-xs text-slate-400">Прочее</label>
                                         <input
@@ -565,21 +566,21 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                                     </p>
                                 </div>
                             </div>
-                            
+
                             {/* Payment Info */}
                             {paymentMethod !== 'debt' && (
                                 <div className="mb-4 p-3 bg-slate-800/50 border border-slate-700 rounded-lg">
                                     <p className="text-xs text-slate-400 mb-1">Оплата будет списана:</p>
                                     <p className="text-sm font-mono text-white">
                                         {paymentMethod === 'cash' ? '💵 Касса' : '🏦 Расчетный счет'} - {
-                                            paymentCurrency === 'USD' 
+                                            paymentCurrency === 'USD'
                                                 ? `$${totals.totalInvoiceValue.toFixed(2)}`
                                                 : `${(totals.totalInvoiceValue * settings.defaultExchangeRate).toLocaleString()} сўм`
                                         }
                                     </p>
                                 </div>
                             )}
-                            
+
                             {paymentMethod === 'debt' && (
                                 <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
                                     <p className="text-xs text-red-400 mb-1">⚠️ Закупка будет оформлена в долг</p>

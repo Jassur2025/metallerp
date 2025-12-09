@@ -110,11 +110,11 @@ export interface WorkflowOrder {
 
   // Status workflow
   status: 'draft' | 'confirmed' | 'sent_to_cash' | 'completed' | 'cancelled';
-  
+
   // Notes and comments
   notes?: string;
   deliveryDate?: string; // Optional delivery date
-  
+
   // Link to actual Order (when converted to sale)
   convertedToOrderId?: string;
   convertedAt?: string;
@@ -128,6 +128,8 @@ export interface Expense {
   category: string;
   paymentMethod: 'cash' | 'bank' | 'card';
   currency: 'USD' | 'UZS';
+  exchangeRate?: number; // Rate at time of expense (USD -> UZS)
+  vatAmount?: number; // In original currency
 }
 
 export interface PurchaseOverheads {

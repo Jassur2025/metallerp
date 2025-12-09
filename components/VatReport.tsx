@@ -1,0 +1,318 @@
+import React, { useState, useMemo } from 'react';
+import { Purchase, Order, Expense, AppSettings } from '../types';
+import { Calendar, Filter, ArrowDownRight, ArrowUpRight, Scale, FileText, List } from 'lucide-react';
+
+interface VatReportProps {
+    purchases: Purchase[];
+    orders: Order[];
+    expenses: Expense[];
+    settings: AppSettings;
+}
+
+export const VatReport: React.FC<VatReportProps> = ({ purchases, orders, expenses, settings }) => {
+    // Default to current month
+    const today = new Date();
+    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
+    const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().split('T')[0];
+
+    const [startDate, setStartDate] = useState(firstDay);
+    const [endDate, setEndDate] = useState(lastDay);
+
+    const reportData = useMemo(() => {
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999); // End of day
+
+        // 1. Input VAT (from Imports/Purchases) & Customs
+        const filteredPurchases = purchases.filter(p => {
+            const d = new Date(p.date);
+            return d >= start && d <= end;
+        });
+
+        // 2. Input VAT (from Expenses)
+        const filteredExpenses = expenses.filter(e => {
+            const d = new Date(e.date);
+            return d >= start && d <= end && e.vatAmount && e.vatAmount > 0;
+        });
+
+        const importVat = filteredPurchases.reduce((sum, p) => sum + (p.overheads?.importVat || 0), 0);
+        const expenseVat = filteredExpenses.reduce((sum, e) => sum + (e.vatAmount || 0), 0);
+        const totalImportVat = importVat + expenseVat;
+
+        const totalCustomsDuty = filteredPurchases.reduce((sum, p) => sum + (p.overheads?.customsDuty || 0), 0);
+
+        // 3. Output VAT (from Sales/Orders)
+        const filteredOrders = orders.filter(o => {
+            const d = new Date(o.date);
+            return d >= start && d <= end && o.status !== 'cancelled';
+        });
+
+        const totalOutputVat = filteredOrders.reduce((sum, o) => sum + (o.vatAmount || 0), 0);
+
+        // 4. Net VAT
+        const netVat = totalOutputVat - totalImportVat;
+
+        // 5. Registry (Combined List)
+        const registry = [
+            ...filteredPurchases.map(p => ({
+                id: p.id,
+                date: p.date,
+                type: 'import' as const,
+                counterparty: p.supplierName,
+                amount: p.totalLandedValue, // Approximate
+                vatIn: p.overheads?.importVat || 0,
+                vatOut: 0
+            })),
+            ...filteredExpenses.map(e => ({
+                id: e.id,
+                date: e.date,
+                type: 'expense' as const,
+                counterparty: e.category,
+                amount: e.amount,
+                vatIn: e.vatAmount || 0,
+                vatOut: 0
+            })),
+            ...filteredOrders.map(o => ({
+                id: o.id,
+                date: o.date,
+                type: 'sale' as const,
+                counterparty: o.customerName,
+                amount: o.totalAmount,
+                vatIn: 0,
+                vatOut: o.vatAmount || 0
+            }))
+        ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+        return {
+            totalImportVat,
+            totalCustomsDuty,
+            totalOutputVat,
+            netVat,
+            filteredPurchases,
+            filteredOrders,
+            registry
+        };
+    }, [purchases, orders, expenses, startDate, endDate]);
+
+    return (
+        <div className="space-y-6 animate-fade-in">
+            {/* Header & Filters */}
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-lg">
+                <div>
+                    <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                        <Scale className="text-blue-500" /> Отчет по НДС и Таможне
+                    </h2>
+                    <p className="text-sm text-slate-400">Анализ входящего и исходящего НДС за период</p>
+                </div>
+
+                <div className="flex items-center gap-2 bg-slate-900 p-1 rounded-lg border border-slate-600">
+                    <div className="flex items-center gap-2 px-3 py-1 border-r border-slate-700">
+                        <Calendar size={16} className="text-slate-400" />
+                        <span className="text-xs text-slate-500 font-medium uppercase">Период</span>
+                    </div>
+                    <input
+                        type="date"
+                        value={startDate}
+                        onChange={e => setStartDate(e.target.value)}
+                        className="bg-transparent text-white text-sm outline-none px-2 py-1"
+                    />
+                    <span className="text-slate-500">-</span>
+                    <input
+                        type="date"
+                        value={endDate}
+                        onChange={e => setEndDate(e.target.value)}
+                        className="bg-transparent text-white text-sm outline-none px-2 py-1"
+                    />
+                </div>
+            </div>
+
+            {/* KPI Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                {/* Output VAT */}
+                <div className="bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-lg relative overflow-hidden group">
+                    <div className="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                        <ArrowUpRight size={60} className="text-red-500" />
+                    </div>
+                    <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">НДС к уплате (OUT)</p>
+                    <h3 className="text-2xl font-bold text-white mt-1 group-hover:text-red-400 transition-colors">
+                        ${reportData.totalOutputVat.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-2">Начислено с продаж</p>
+                </div>
+
+                {/* Input VAT */}
+                <div className="bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-lg relative overflow-hidden group">
+                    <div className="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                        <ArrowDownRight size={60} className="text-emerald-500" />
+                    </div>
+                    <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">НДС к зачету (IN)</p>
+                    <h3 className="text-2xl font-bold text-white mt-1 group-hover:text-emerald-400 transition-colors">
+                        ${reportData.totalImportVat.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-2">Уплачено при импорте</p>
+                </div>
+
+                {/* Net VAT Position */}
+                <div className="bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-lg relative overflow-hidden group">
+                    <div className="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                        <Scale size={60} className={reportData.netVat > 0 ? "text-amber-500" : "text-blue-500"} />
+                    </div>
+                    <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Итого НДС (Сальдо)</p>
+                    <h3 className={`text-2xl font-bold mt-1 transition-colors ${reportData.netVat > 0 ? 'text-amber-400' : 'text-blue-400'}`}>
+                        ${Math.abs(reportData.netVat).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-2">
+                        {reportData.netVat > 0 ? 'К уплате в бюджет' : 'К возмещению из бюджета'}
+                    </p>
+                </div>
+
+                {/* Customs Duty */}
+                <div className="bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-lg relative overflow-hidden group">
+                    <div className="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                        <FileText size={60} className="text-purple-500" />
+                    </div>
+                    <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Таможенные пошлины</p>
+                    <h3 className="text-2xl font-bold text-white mt-1 group-hover:text-purple-400 transition-colors">
+                        ${reportData.totalCustomsDuty.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-2">Справочно (не влияет на НДС)</p>
+                </div>
+            </div>
+
+            {/* Detailed Tables */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Import VAT Details */}
+                <div className="bg-slate-800 rounded-xl border border-slate-700 shadow-lg overflow-hidden flex flex-col h-[500px]">
+                    <div className="p-4 border-b border-slate-700 bg-slate-900/50">
+                        <h3 className="font-bold text-white text-sm uppercase tracking-wider flex items-center gap-2">
+                            <ArrowDownRight size={16} className="text-emerald-500" /> Входящий НДС и Пошлины (Импорт)
+                        </h3>
+                    </div>
+                    <div className="flex-1 overflow-y-auto">
+                        <table className="w-full text-left text-sm">
+                            <thead className="bg-slate-900 text-xs uppercase text-slate-400 font-medium sticky top-0">
+                                <tr>
+                                    <th className="px-4 py-3">Дата</th>
+                                    <th className="px-4 py-3">Поставщик</th>
+                                    <th className="px-4 py-3 text-right">Пошлина</th>
+                                    <th className="px-4 py-3 text-right">НДС (In)</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-700">
+                                {reportData.filteredPurchases.length > 0 ? (
+                                    reportData.filteredPurchases.map(p => (
+                                        <tr key={p.id} className="hover:bg-slate-700/30">
+                                            <td className="px-4 py-3 text-slate-300">{new Date(p.date).toLocaleDateString()}</td>
+                                            <td className="px-4 py-3 font-medium text-white">{p.supplierName}</td>
+                                            <td className="px-4 py-3 text-right font-mono text-purple-300">
+                                                {p.overheads?.customsDuty ? `$${p.overheads.customsDuty.toFixed(2)}` : '-'}
+                                            </td>
+                                            <td className="px-4 py-3 text-right font-mono text-emerald-400 font-bold">
+                                                {p.overheads?.importVat ? `$${p.overheads.importVat.toFixed(2)}` : '-'}
+                                            </td>
+                                        </tr>
+                                    ))
+                                ) : (
+                                    <tr>
+                                        <td colSpan={4} className="px-4 py-8 text-center text-slate-500">Нет данных за период</td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                {/* Output VAT Details */}
+                <div className="bg-slate-800 rounded-xl border border-slate-700 shadow-lg overflow-hidden flex flex-col h-[500px]">
+                    <div className="p-4 border-b border-slate-700 bg-slate-900/50">
+                        <h3 className="font-bold text-white text-sm uppercase tracking-wider flex items-center gap-2">
+                            <ArrowUpRight size={16} className="text-red-500" /> Исходящий НДС (Продажи)
+                        </h3>
+                    </div>
+                    <div className="flex-1 overflow-y-auto">
+                        <table className="w-full text-left text-sm">
+                            <thead className="bg-slate-900 text-xs uppercase text-slate-400 font-medium sticky top-0">
+                                <tr>
+                                    <th className="px-4 py-3">Дата</th>
+                                    <th className="px-4 py-3">Клиент</th>
+                                    <th className="px-4 py-3 text-right">Сумма</th>
+                                    <th className="px-4 py-3 text-right">НДС (Out)</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-700">
+                                {reportData.filteredOrders.length > 0 ? (
+                                    reportData.filteredOrders.map(o => (
+                                        <tr key={o.id} className="hover:bg-slate-700/30">
+                                            <td className="px-4 py-3 text-slate-300">{new Date(o.date).toLocaleDateString()}</td>
+                                            <td className="px-4 py-3 font-medium text-white">{o.customerName}</td>
+                                            <td className="px-4 py-3 text-right font-mono text-slate-400">${o.totalAmount.toFixed(2)}</td>
+                                            <td className="px-4 py-3 text-right font-mono text-red-400 font-bold">
+                                                {o.vatAmount ? `$${o.vatAmount.toFixed(2)}` : '-'}
+                                            </td>
+                                        </tr>
+                                    ))
+                                ) : (
+                                    <tr>
+                                        <td colSpan={4} className="px-4 py-8 text-center text-slate-500">Нет данных за период</td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            {/* VAT Registry Table */}
+            <div className="bg-slate-800 rounded-xl border border-slate-700 shadow-lg overflow-hidden flex flex-col h-[600px] mt-6">
+                <div className="p-4 border-b border-slate-700 bg-slate-900/50">
+                    <h3 className="font-bold text-white text-sm uppercase tracking-wider flex items-center gap-2">
+                        <List size={16} className="text-blue-500" /> Реестр НДС (Все операции)
+                    </h3>
+                </div>
+                <div className="flex-1 overflow-y-auto">
+                    <table className="w-full text-left text-sm">
+                        <thead className="bg-slate-900 text-xs uppercase text-slate-400 font-medium sticky top-0">
+                            <tr>
+                                <th className="px-4 py-3">Дата</th>
+                                <th className="px-4 py-3">Тип</th>
+                                <th className="px-4 py-3">Контрагент</th>
+                                <th className="px-4 py-3 text-right">Сумма</th>
+                                <th className="px-4 py-3 text-right text-emerald-500">НДС (Входящий)</th>
+                                <th className="px-4 py-3 text-right text-red-500">НДС (Исходящий)</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-700">
+                            {reportData.registry.length > 0 ? (
+                                reportData.registry.map((item, idx) => (
+                                    <tr key={`${item.type}-${item.id}-${idx}`} className="hover:bg-slate-700/30">
+                                        <td className="px-4 py-3 text-slate-300">{new Date(item.date).toLocaleDateString()}</td>
+                                        <td className="px-4 py-3">
+                                            <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${item.type === 'import' ? 'bg-purple-500/20 text-purple-400' :
+                                                    item.type === 'expense' ? 'bg-amber-500/20 text-amber-400' :
+                                                        'bg-blue-500/20 text-blue-400'
+                                                }`}>
+                                                {item.type === 'import' ? 'Импорт' : item.type === 'expense' ? 'Расход' : 'Продажа'}
+                                            </span>
+                                        </td>
+                                        <td className="px-4 py-3 font-medium text-white">{item.counterparty}</td>
+                                        <td className="px-4 py-3 text-right font-mono text-slate-400">${item.amount.toFixed(2)}</td>
+                                        <td className="px-4 py-3 text-right font-mono text-emerald-400 font-bold">
+                                            {item.vatIn > 0 ? `+$${item.vatIn.toFixed(2)}` : '-'}
+                                        </td>
+                                        <td className="px-4 py-3 text-right font-mono text-red-400 font-bold">
+                                            {item.vatOut > 0 ? `-$${item.vatOut.toFixed(2)}` : '-'}
+                                        </td>
+                                    </tr>
+                                ))
+                            ) : (
+                                <tr>
+                                    <td colSpan={6} className="px-4 py-8 text-center text-slate-500">Нет данных за период</td>
+                                </tr>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    );
+};

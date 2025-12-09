@@ -80,7 +80,14 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
     // --- Calculation Logic ---
     const totals = useMemo(() => {
         const totalInvoiceValue = cart.reduce((sum, item) => sum + (item.quantity * item.invoicePrice), 0);
-        const totalOverheads = overheads.logistics + overheads.customsDuty + overheads.importVat + overheads.other;
+
+        // Modified: Exclude Customs Duty and Import VAT from Landed Cost calculation
+        // They are treated as separate tax/expense items, not part of the product cost.
+        const totalOverheads = overheads.logistics + overheads.other;
+
+        // For display purposes, we might want to show the total "out of pocket" including taxes,
+        // but for Landed Cost (Cost Price), we only use logistics + other.
+        const totalTaxes = overheads.customsDuty + overheads.importVat;
         const totalLandedValue = totalInvoiceValue + totalOverheads;
 
         const itemsWithLandedCost = cart.map(item => {
@@ -101,6 +108,7 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
         return {
             totalInvoiceValue,
             totalOverheads,
+            totalTaxes,
             totalLandedValue,
             itemsWithLandedCost
         };
@@ -143,6 +151,7 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
                 date: new Date().toISOString(),
                 type: 'supplier_payment',
                 amount: totals.totalInvoiceValue,
+                currency: 'USD',
                 method: paymentMethod as 'cash' | 'bank',
                 description: `Оплата поставщику: ${supplierName} (Закупка #${purchase.id})`,
                 relatedId: purchase.id
@@ -197,6 +206,7 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
             date: new Date().toISOString(),
             type: 'supplier_payment',
             amount: repaymentAmount,
+            currency: 'USD',
             method: 'cash', // Default
             description: `Погашение долга поставщику: ${selectedPurchaseForRepayment.supplierName} (Закупка #${selectedPurchaseForRepayment.id})`,
             relatedId: selectedPurchaseForRepayment.id
@@ -456,20 +466,25 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
 
                         {/* Footer Summary */}
                         <div className="bg-slate-900 p-6 border-t border-slate-700">
-                            <div className="grid grid-cols-3 gap-8 mb-6">
+                            <div className="grid grid-cols-4 gap-8 mb-6">
                                 <div>
                                     <p className="text-xs text-slate-500 uppercase">Сумма по Инвойсу</p>
                                     <p className="text-xl font-mono font-bold text-slate-300">${totals.totalInvoiceValue.toFixed(2)}</p>
                                 </div>
                                 <div>
-                                    <p className="text-xs text-slate-500 uppercase">Накладные расходы</p>
+                                    <p className="text-xs text-slate-500 uppercase">Накладные (Логистика+)</p>
                                     <p className="text-xl font-mono font-bold text-amber-400">+${totals.totalOverheads.toFixed(2)}</p>
+                                </div>
+                                <div>
+                                    <p className="text-xs text-slate-500 uppercase">Налоги (Пошлина+НДС)</p>
+                                    <p className="text-xl font-mono font-bold text-blue-400">+${totals.totalTaxes.toFixed(2)}</p>
                                 </div>
                                 <div>
                                     <p className="text-xs text-slate-500 uppercase">Итого Себестоимость</p>
                                     <p className="text-2xl font-mono font-bold text-white border-b-2 border-primary-500 inline-block">
                                         ${totals.totalLandedValue.toFixed(2)}
                                     </p>
+                                    <p className="text-[10px] text-slate-500 mt-1">(Без учета налогов)</p>
                                 </div>
                             </div>
 
