@@ -13,18 +13,42 @@ interface SettingsProps {
 
 export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
     const { accessToken } = useAuth();
-    const [formData, setFormData] = useState<AppSettings>(settings);
+    const envSheetId = import.meta.env.VITE_GOOGLE_SHEET_ID || '';
+    const envBotToken = import.meta.env.VITE_BOT_TOKEN || '';
+    const envChatId = import.meta.env.VITE_TELEGRAM_CHAT_ID || import.meta.env.VITE_ADMIN_CHAT_ID || '';
+
+    const isSheetFromEnv = Boolean(envSheetId);
+    const isBotFromEnv = Boolean(envBotToken);
+    const isChatFromEnv = Boolean(envChatId);
+
+    const [formData, setFormData] = useState<AppSettings>({
+        ...settings,
+        telegramBotToken: envBotToken || settings.telegramBotToken,
+        telegramChatId: envChatId || settings.telegramChatId,
+    });
     const [message, setMessage] = useState<string | null>(null);
 
     // Sync state with props when they change (e.g. loaded from localStorage)
     React.useEffect(() => {
-        setFormData(settings);
-    }, [settings]);
+        setFormData((prev) => ({
+            ...settings,
+            telegramBotToken: envBotToken || settings.telegramBotToken || prev.telegramBotToken,
+            telegramChatId: envChatId || settings.telegramChatId || prev.telegramChatId,
+        }));
+    }, [settings, envBotToken, envChatId]);
 
     // Google Sheets State
-    const [spreadsheetId, setSpreadsheetId] = useState(getSpreadsheetId());
+    const [spreadsheetId, setSpreadsheetId] = useState(envSheetId || getSpreadsheetId());
     const [connectionStatus, setConnectionStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
     const [connectionMessage, setConnectionMessage] = useState('');
+
+    // Ensure env Sheet ID сохраняется локально, но не показывается
+    React.useEffect(() => {
+        if (envSheetId) {
+            saveSpreadsheetId(envSheetId);
+            setSpreadsheetId(envSheetId);
+        }
+    }, [envSheetId]);
 
     const handleSaveId = () => {
         saveSpreadsheetId(spreadsheetId);
@@ -92,14 +116,16 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
                         </label>
                         <div className="flex gap-2">
                             <input
-                                type="text"
-                                className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm"
-                                value={spreadsheetId}
+                                type={isSheetFromEnv ? 'password' : 'text'}
+                                className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm disabled:opacity-60"
+                                value={isSheetFromEnv ? '••••••••••••••••' : spreadsheetId}
+                                readOnly={isSheetFromEnv}
                                 onChange={(e) => setSpreadsheetId(e.target.value)}
                                 placeholder="1Sz3dpCAJqgY5oF-d0K50TlItj7gySubJ-iNhPFS5RzE"
                             />
                             <button
                                 onClick={handleSaveId}
+                                disabled={isSheetFromEnv}
                                 className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-lg font-medium transition-colors"
                             >
                                 Сохранить
@@ -128,7 +154,9 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
                         </div>
 
                         <p className="text-xs text-slate-500">
-                            Вставьте ID вашей Google Таблицы. Приложение будет автоматически сохранять туда товары и заказы.
+                            {isSheetFromEnv
+                                ? 'ID таблицы задается через env и скрыт для безопасности.'
+                                : 'Вставьте ID вашей Google Таблицы. Приложение будет автоматически сохранять туда товары и заказы.'}
                         </p>
                     </div>
                 </div>
@@ -202,12 +230,18 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
                                 Токен от @BotFather
                             </p>
                             <input
-                                type="text"
-                                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm"
-                                value={formData.telegramBotToken || ''}
+                                type="password"
+                                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm disabled:opacity-60"
+                                value={isBotFromEnv ? '••••••••••••••••' : (formData.telegramBotToken || '')}
+                                readOnly={isBotFromEnv}
                                 onChange={(e) => setFormData({ ...formData, telegramBotToken: e.target.value })}
                                 placeholder="123456789:ABCdef..."
                             />
+                            {isBotFromEnv && (
+                                <p className="text-xs text-slate-500">
+                                    Bot Token задан через env и скрыт.
+                                </p>
+                            )}
                         </div>
 
                         <div className="space-y-2">
@@ -219,9 +253,10 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
                             </p>
                             <div className="flex gap-2">
                                 <input
-                                    type="text"
-                                    className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm"
-                                    value={formData.telegramChatId || ''}
+                                    type={isChatFromEnv ? 'password' : 'text'}
+                                    className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm disabled:opacity-60"
+                                    value={isChatFromEnv ? '••••••••••' : (formData.telegramChatId || '')}
+                                    readOnly={isChatFromEnv}
                                     onChange={(e) => setFormData({ ...formData, telegramChatId: e.target.value })}
                                     placeholder="123456789"
                                 />
@@ -233,6 +268,11 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
                                     <Send size={18} />
                                 </button>
                             </div>
+                            {isChatFromEnv && (
+                                <p className="text-xs text-slate-500">
+                                    Chat ID задан через env и скрыт.
+                                </p>
+                            )}
                         </div>
                     </div>
                 </div>
