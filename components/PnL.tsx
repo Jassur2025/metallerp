@@ -16,6 +16,12 @@ export const PnL: React.FC<PnLProps> = ({ orders, expenses }) => {
     const [timeRange, setTimeRange] = useState<'all' | 'currentMonth' | 'lastMonth'>('currentMonth');
     const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
+    // Normalize potentially invalid numeric values to avoid runtime crashes
+    const safeNumber = (value: any, fallback = 0) => {
+        const num = Number(value);
+        return Number.isFinite(num) ? num : fallback;
+    };
+
     // Filter Logic
     const filteredData = useMemo(() => {
         const now = new Date();
@@ -44,11 +50,13 @@ export const PnL: React.FC<PnLProps> = ({ orders, expenses }) => {
     }, [orders, expenses, timeRange]);
 
     // Calculations
-    const revenue = filteredData.orders.reduce((sum, o) => sum + o.subtotalAmount, 0); // Excluding VAT
+    const revenue = filteredData.orders.reduce((sum, o) => sum + safeNumber(o.subtotalAmount), 0); // Excluding VAT
 
     const cogs = filteredData.orders.reduce((sumOrder, order) => {
         const orderCost = order.items.reduce((sumItem, item) => {
-            return sumItem + (item.quantity * (item.costAtSale || 0));
+            const qty = safeNumber(item.quantity);
+            const cost = safeNumber(item.costAtSale);
+            return sumItem + (qty * cost);
         }, 0);
         return sumOrder + orderCost;
     }, 0);
@@ -60,9 +68,15 @@ export const PnL: React.FC<PnLProps> = ({ orders, expenses }) => {
         // If exchangeRate exists, it means amount is in original currency.
         // If currency is UZS, convert to USD.
         // If exchangeRate is missing (legacy data), amount is already in USD.
+
+        // Safety check for exchange rate to avoid division by zero
+        const rate = safeNumber(e.exchangeRate, 1);
+        const amount = safeNumber(e.amount);
+
         const amountUSD = (e.exchangeRate && e.currency === 'UZS')
-            ? e.amount / e.exchangeRate
-            : e.amount;
+            ? amount / rate
+            : amount;
+
         return sum + amountUSD;
     }, 0);
 
@@ -146,7 +160,7 @@ export const PnL: React.FC<PnLProps> = ({ orders, expenses }) => {
                 ${filteredData.expenses.map(e => `
                     <tr>
                         <td>${e.category}</td>
-                        <td>${e.amount.toFixed(2)}</td>
+                        <td>${safeNumber(e.amount).toFixed(2)}</td>
                     </tr>
                 `).join('')}
             </tbody>
@@ -398,8 +412,16 @@ export const PnL: React.FC<PnLProps> = ({ orders, expenses }) => {
                                             <div key={e.id} className="flex justify-between">
                                                 <span>{e.category}</span>
                                                 <span>
-                                                    {formatCurrency((e.exchangeRate && e.currency === 'UZS') ? e.amount / e.exchangeRate : e.amount)}
-                                                    {e.currency === 'UZS' && <span className="text-xs text-slate-500 ml-1">({e.amount.toLocaleString()} UZS)</span>}
+                                                    {formatCurrency(
+                                                        (e.exchangeRate && e.currency === 'UZS')
+                                                            ? safeNumber(e.amount) / safeNumber(e.exchangeRate, 1)
+                                                            : safeNumber(e.amount)
+                                                    )}
+                                                    {e.currency === 'UZS' && (
+                                                        <span className="text-xs text-slate-500 ml-1">
+                                                            ({safeNumber(e.amount).toLocaleString()} UZS)
+                                                        </span>
+                                                    )}
                                                 </span>
                                             </div>
                                         ))

@@ -156,43 +156,44 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
 
   // --- Balance Calculations ---
   const calculateBalance = () => {
+    // Helper to ensure number
+    const val = (n: number | undefined | null) => n || 0;
+    const getRate = (rate: number | undefined | null) => (rate && rate > 0) ? rate : (exchangeRate || 1);
+
     // 1. Cash USD
     // Include orders with paymentCurrency === 'USD' OR undefined (legacy orders assumed USD)
     const cashInUSD = orders
       .filter(o => o.paymentMethod === 'cash' && (o.paymentCurrency === 'USD' || !o.paymentCurrency))
-      .reduce((sum, o) => sum + o.amountPaid, 0);
+      .reduce((sum, o) => sum + val(o.amountPaid), 0);
 
     // Cash Out: Expenses + Supplier Payments
     const cashOutUSDExpenses = expenses
       .filter(e => e.paymentMethod === 'cash' && e.currency === 'USD')
-      .reduce((sum, e) => sum + e.amount, 0);
+      .reduce((sum, e) => sum + val(e.amount), 0);
     const cashOutUSDSuppliers = transactions
       .filter(t => t.type === 'supplier_payment' && t.method === 'cash' && t.currency === 'USD')
-      .reduce((sum, t) => sum + t.amount, 0);
+      .reduce((sum, t) => sum + val(t.amount), 0);
     const cashOutUSD = cashOutUSDExpenses + cashOutUSDSuppliers;
     const balanceCashUSD = cashInUSD - cashOutUSD;
 
     // 2. Cash UZS
-    // Note: Orders store amountPaid in USD. We need to convert back to UZS for display if it was paid in UZS.
-    // Ideally we should have stored amountPaidUZS. But we can approximate: amountPaid * exchangeRate (at time of order).
-    // For now, let's use the current exchange rate for simplicity or the stored totalAmountUZS if fully paid.
-    // Better: use totalAmountUZS for paid orders.
     const cashInUZS = orders
       .filter(o => o.paymentMethod === 'cash' && o.paymentCurrency === 'UZS')
-      .reduce((sum, o) => sum + o.totalAmountUZS, 0); // Using stored UZS total
+      .reduce((sum, o) => sum + val(o.totalAmountUZS), 0);
 
     // Cash Out UZS: Expenses + Supplier Payments
     const cashOutUZSExpenses = expenses
       .filter(e => e.paymentMethod === 'cash' && e.currency === 'UZS')
       .reduce((sum, e) => {
         // If exchangeRate exists, amount is in UZS. If missing (legacy), amount is USD -> convert to UZS
-        return sum + (e.exchangeRate ? e.amount : (e.amount * exchangeRate));
+        const rate = getRate(e.exchangeRate);
+        return sum + (e.exchangeRate ? val(e.amount) : (val(e.amount) * rate));
       }, 0);
     const cashOutUZSSuppliers = transactions
       .filter(t => t.type === 'supplier_payment' && t.method === 'cash' && t.currency === 'UZS')
       .reduce((sum, t) => {
         // Supplier payments in UZS - amount is already in UZS
-        return sum + t.amount;
+        return sum + val(t.amount);
       }, 0);
     const cashOutUZS = cashOutUZSExpenses + cashOutUZSSuppliers;
     const balanceCashUZS = cashInUZS - cashOutUZS;
@@ -200,29 +201,25 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
     // 3. Bank UZS
     const bankInUZS = orders
       .filter(o => o.paymentMethod === 'bank')
-      .reduce((sum, o) => sum + o.totalAmountUZS, 0);
+      .reduce((sum, o) => sum + val(o.totalAmountUZS), 0);
 
     // Bank Out: Expenses + Supplier Payments
     const bankOutUZSExpenses = expenses
       .filter(e => e.paymentMethod === 'bank')
       .reduce((sum, e) => {
-        // Bank expenses are usually UZS. If stored as USD (legacy), convert.
-        // If currency is USD, we might need to handle that too, but here we assume bank is UZS based on previous logic?
-        // Wait, previous logic: .filter(e => e.paymentMethod === 'bank').reduce((sum, e) => sum + (e.amount * exchangeRate), 0);
-        // This implies ALL bank expenses were treated as USD and converted to UZS.
-        // Now, if currency is UZS, we use amount. If USD, we convert.
+        const rate = getRate(e.exchangeRate);
         if (e.currency === 'UZS') {
-          return sum + (e.exchangeRate ? e.amount : (e.amount * exchangeRate));
+          return sum + (e.exchangeRate ? val(e.amount) : (val(e.amount) * rate));
         } else {
-          return sum + (e.amount * exchangeRate);
+          return sum + (val(e.amount) * rate);
         }
       }, 0);
     const bankOutUZSSuppliers = transactions
       .filter(t => t.type === 'supplier_payment' && t.method === 'bank')
       .reduce((sum, t) => {
         // Supplier payments are in USD, convert to UZS using exchangeRate from transaction or current rate
-        const rate = t.exchangeRate && t.exchangeRate > 0 ? t.exchangeRate : exchangeRate;
-        const amountUZS = t.currency === 'UZS' ? t.amount : (t.amount * rate);
+        const rate = getRate(t.exchangeRate);
+        const amountUZS = t.currency === 'UZS' ? val(t.amount) : (val(t.amount) * rate);
         return sum + amountUZS;
       }, 0);
     const bankOutUZS = bankOutUZSExpenses + bankOutUZSSuppliers;
@@ -231,16 +228,17 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
     // 4. Card UZS
     const cardInUZS = orders
       .filter(o => o.paymentMethod === 'card')
-      .reduce((sum, o) => sum + o.totalAmountUZS, 0);
+      .reduce((sum, o) => sum + val(o.totalAmountUZS), 0);
 
     // Card Out: Only expenses (suppliers usually don't accept card)
     const cardOutUZS = expenses
       .filter(e => e.paymentMethod === 'card')
       .reduce((sum, e) => {
+        const rate = getRate(e.exchangeRate);
         if (e.currency === 'UZS') {
-          return sum + (e.exchangeRate ? e.amount : (e.amount * exchangeRate));
+          return sum + (e.exchangeRate ? val(e.amount) : (val(e.amount) * rate));
         } else {
-          return sum + (e.amount * exchangeRate);
+          return sum + (val(e.amount) * rate);
         }
       }, 0);
     const balanceCardUZS = cardInUZS - cardOutUZS;
@@ -258,6 +256,7 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
     const newItem: OrderItem = {
       productId: product.id,
       productName: product.name,
+      dimensions: product.dimensions,
       quantity: 1,
       priceAtSale: product.pricePerUnit,
       costAtSale: product.costPrice || 0,
@@ -528,7 +527,7 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
       return `
             <div style="margin-bottom: 8px;">
               <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
-                <span style="font-weight: bold;">${item.productName}</span>
+                <span style="font-weight: bold;">${item.productName}${item.dimensions ? ` (${item.dimensions})` : ''}</span>
                 <span>${itemTotalUZS.toLocaleString()} сўм</span>
               </div>
               <div style="font-size: 11px; color: #666; margin-left: 10px;">
@@ -1466,7 +1465,10 @@ export const Sales: React.FC<SalesProps> = ({ products, setProducts, orders, set
                     return (
                       <div key={idx} className="flex justify-between items-start">
                         <div className="flex-1">
-                          <div className="font-semibold text-gray-900">{item.productName}</div>
+                          <div className="font-semibold text-gray-900">
+                            {item.productName}
+                            {item.dimensions && <span className="text-xs text-gray-500 ml-1">({item.dimensions})</span>}
+                          </div>
                           <div className="text-xs text-gray-600 mt-1">
                             {item.quantity} {item.unit} × {itemPriceUZS.toLocaleString()} сўм
                           </div>

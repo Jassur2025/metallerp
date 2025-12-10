@@ -33,6 +33,11 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
   const [sortBy, setSortBy] = useState<'date' | 'customer' | 'product' | 'seller' | 'total'>('date');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
+  const safeNumber = (value: any, fallback = 0) => {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : fallback;
+  };
+
   // Transform orders into detailed rows
   const salesRows = useMemo(() => {
     const rows: SalesRow[] = [];
@@ -52,10 +57,10 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
           sellerName: order.sellerName || 'Не указан',
           dimensions: dimensions,
           productName: item.productName,
-          quantity: item.quantity,
+          quantity: safeNumber(item.quantity),
           unit: item.unit,
-          priceAtSale: item.priceAtSale,
-          total: item.total,
+          priceAtSale: safeNumber(item.priceAtSale),
+          total: safeNumber(item.total),
           paymentMethod: order.paymentMethod,
           paymentStatus: order.paymentStatus
         });
@@ -180,10 +185,10 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
         `"${row.sellerName}"`,
         `"${row.dimensions}"`,
         `"${row.productName}"`,
-        row.quantity,
+        safeNumber(row.quantity),
         row.unit,
-        row.priceAtSale.toFixed(2),
-        row.total.toFixed(2),
+        safeNumber(row.priceAtSale).toFixed(2),
+        safeNumber(row.total).toFixed(2),
         formatPaymentMethod(row.paymentMethod),
         row.paymentStatus === 'paid' ? 'Оплачено' : row.paymentStatus === 'unpaid' ? 'Не оплачено' : 'Частично'
       ].join(','))
@@ -444,13 +449,13 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
                       {row.productName}
                     </td>
                     <td className="px-4 py-3 text-sm text-right text-slate-300 font-mono">
-                      {row.quantity} <span className="text-xs text-slate-500">{row.unit}</span>
+                      {safeNumber(row.quantity)} <span className="text-xs text-slate-500">{row.unit}</span>
                     </td>
                     <td className="px-4 py-3 text-sm text-right text-slate-300 font-mono">
-                      ${row.priceAtSale.toFixed(2)}
+                      ${safeNumber(row.priceAtSale).toFixed(2)}
                     </td>
                     <td className="px-4 py-3 text-sm text-right font-mono font-bold text-emerald-400">
-                      ${row.total.toFixed(2)}
+                      ${safeNumber(row.total).toFixed(2)}
                     </td>
                     <td className="px-4 py-3 text-center">
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${

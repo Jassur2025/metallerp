@@ -72,18 +72,46 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fi
         }, 0);
 
     // Subtract Supplier Payments (Outflow)
+    // Subtract Supplier Payments (Outflow)
+    // Subtract Supplier Payments (Outflow)
+    // Subtract Supplier Payments (Outflow)
     const supplierPaymentsCash = safeTransactions
         .filter(t => t && t.type === 'supplier_payment' && t.method === 'cash')
-        .reduce((sum, t) => sum + (t.amount || 0), 0); // Assuming supplier payments are currently just USD or handled simply. 
-    // TODO: If supplier payments become multi-currency, update here too. For now, Import.tsx handles debt in USD.
+        .reduce((sum, t) => {
+            const rate = t.exchangeRate || settings.defaultExchangeRate || 1;
+            const amountUSD = t.currency === 'UZS'
+                ? (t.amount || 0) / rate
+                : (t.amount || 0);
+            return sum + amountUSD;
+        }, 0);
+
     const supplierPaymentsBank = safeTransactions
         .filter(t => t && t.type === 'supplier_payment' && t.method === 'bank')
-        .reduce((sum, t) => sum + (t.amount || 0), 0);
+        .reduce((sum, t) => {
+            const rate = t.exchangeRate || settings.defaultExchangeRate || 1;
+            const amountUSD = t.currency === 'UZS'
+                ? (t.amount || 0) / rate
+                : (t.amount || 0);
+            return sum + amountUSD;
+        }, 0);
 
     // Subtract Expenses (Outflow)
-    const expensesCash = safeExpenses.filter(e => e && e.paymentMethod === 'cash').reduce((sum, e) => sum + (e.amount || 0), 0);
-    const expensesBank = safeExpenses.filter(e => e && e.paymentMethod === 'bank').reduce((sum, e) => sum + (e.amount || 0), 0);
-    const expensesCard = safeExpenses.filter(e => e && e.paymentMethod === 'card').reduce((sum, e) => sum + (e.amount || 0), 0); // Assuming card expenses reduce card balance
+    // Subtract Expenses (Outflow)
+    const expensesCash = safeExpenses.filter(e => e && e.paymentMethod === 'cash').reduce((sum, e) => {
+        const rate = e.exchangeRate || settings.defaultExchangeRate || 1;
+        const amountUSD = (e.currency === 'UZS') ? (e.amount || 0) / rate : (e.amount || 0);
+        return sum + amountUSD;
+    }, 0);
+    const expensesBank = safeExpenses.filter(e => e && e.paymentMethod === 'bank').reduce((sum, e) => {
+        const rate = e.exchangeRate || settings.defaultExchangeRate || 1;
+        const amountUSD = (e.currency === 'UZS') ? (e.amount || 0) / rate : (e.amount || 0);
+        return sum + amountUSD;
+    }, 0);
+    const expensesCard = safeExpenses.filter(e => e && e.paymentMethod === 'card').reduce((sum, e) => {
+        const rate = e.exchangeRate || settings.defaultExchangeRate || 1;
+        const amountUSD = (e.currency === 'UZS') ? (e.amount || 0) / rate : (e.amount || 0);
+        return sum + amountUSD;
+    }, 0);
 
     // Net Cash Positions
     const netCash = Math.max(0, cashSales + clientRepaymentsCash - supplierPaymentsCash - expensesCash - clientReturnsCash);
@@ -98,7 +126,12 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fi
     const accountsReceivable = safeClients.reduce((sum, client) => sum + (client.totalDebt || 0), 0);
 
     // Total Expenses (already subtracted from cash, but needed for net profit calc)
-    const totalExpensesAll = safeExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
+    // Total Expenses (already subtracted from cash, but needed for net profit calc)
+    const totalExpensesAll = safeExpenses.reduce((sum, e) => {
+        const rate = e.exchangeRate || settings.defaultExchangeRate || 1;
+        const amountUSD = (e.currency === 'UZS') ? (e.amount || 0) / rate : (e.amount || 0);
+        return sum + amountUSD;
+    }, 0);
 
     // Liquid Assets (Net)
     const totalLiquidAssets = netCash + netBank + netCard;

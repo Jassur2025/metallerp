@@ -40,6 +40,7 @@ import { sheetsService } from './services/sheetsService';
 import { SUPER_ADMIN_EMAILS, IS_DEV_MODE } from './constants';
 import { getErrorMessage } from './utils/errorHandler';
 import { validateAccessToken, isTokenExpiredError, logTokenStatus } from './utils/tokenHelper';
+import { telegramService } from './services/telegramService';
 
 // Default Settings
 const defaultSettings: AppSettings = {
@@ -86,6 +87,29 @@ const AppContent: React.FC = () => {
       return defaultSettings;
     }
   });
+
+  type MoneyEvent = {
+    type: 'expense' | 'purchase' | 'supplier_payment' | 'client_payment' | 'sale';
+    amount: number;
+    currency: 'USD' | 'UZS';
+    method?: 'cash' | 'bank' | 'card' | 'debt';
+    counterparty?: string;
+    description?: string;
+    id?: string;
+    date?: string;
+  };
+
+  const safeNumber = (value: any, fallback = 0) => {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : fallback;
+  };
+
+  const sendTelegramMoneyEvent = (event: MoneyEvent) => {
+    if (!settings.telegramBotToken || !settings.telegramChatId) return;
+    telegramService
+      .sendMoneyEvent(settings.telegramBotToken, settings.telegramChatId, event)
+      .catch(err => console.error('Telegram money event failed', err));
+  };
 
   // Load Data on Mount
   useEffect(() => {
@@ -386,6 +410,17 @@ const AppContent: React.FC = () => {
         }
       }
     }
+
+    // Telegram notification
+    sendTelegramMoneyEvent({
+      type: 'expense',
+      amount: safeNumber(newExpense.amount),
+      currency: newExpense.currency || 'USD',
+      method: newExpense.paymentMethod,
+      description: newExpense.description,
+      id: newExpense.id,
+      date: newExpense.date
+    });
   };
 
   const handleSaveEmployees = async (newEmployees: Employee[]) => {
@@ -411,6 +446,9 @@ const AppContent: React.FC = () => {
   };
 
   const handleSavePurchases = async (newPurchases: Purchase[]) => {
+    const prevIds = new Set(purchases.map(p => p.id));
+    const addedPurchases = newPurchases.filter(p => !prevIds.has(p.id));
+
     setPurchases(newPurchases);
     if (!accessToken) {
       toast.warning('Вы не авторизованы. Данные сохранены только локально.');
@@ -419,6 +457,18 @@ const AppContent: React.FC = () => {
     setIsLoading(true);
     try {
       await sheetsService.saveAllPurchases(accessToken, newPurchases);
+
+      addedPurchases.forEach(p =>
+        sendTelegramMoneyEvent({
+          type: 'purchase',
+          amount: safeNumber(p.totalLandedAmount ?? p.totalInvoiceAmount ?? 0),
+          currency: 'USD',
+          method: p.paymentMethod,
+          counterparty: p.supplierName,
+          id: p.id,
+          date: p.date
+        })
+      );
     } catch (err) {
       console.error(err);
       const errorMessage = getErrorMessage(err);
@@ -457,6 +507,9 @@ const AppContent: React.FC = () => {
   };
 
   const handleSaveExpenses = async (newExpenses: Expense[]) => {
+    const prevIds = new Set(expenses.map(e => e.id));
+    const addedExpenses = newExpenses.filter(e => !prevIds.has(e.id));
+
     setExpenses(newExpenses);
     if (!accessToken) {
       toast.warning('Вы не авторизованы. Данные сохранены только локально.');
@@ -465,6 +518,19 @@ const AppContent: React.FC = () => {
     setIsLoading(true);
     try {
       await sheetsService.saveAllExpenses(accessToken, newExpenses);
+
+      // Telegram notifications for newly added expenses
+      addedExpenses.forEach(exp =>
+        sendTelegramMoneyEvent({
+          type: 'expense',
+          amount: safeNumber(exp.amount),
+          currency: exp.currency || 'USD',
+          method: exp.paymentMethod,
+          description: exp.description,
+          id: exp.id,
+          date: exp.date
+        })
+      );
     } catch (err) {
       console.error(err);
       const errorMessage = getErrorMessage(err);
@@ -523,6 +589,9 @@ const AppContent: React.FC = () => {
   };
 
   const handleSaveOrders = async (newOrders: Order[]) => {
+    const prevIds = new Set(orders.map(o => o.id));
+    const addedOrders = newOrders.filter(o => !prevIds.has(o.id));
+
     console.log('💾 Saving orders to Google Sheets:', newOrders.length, 'orders');
     console.log('📋 Orders details:', newOrders.map(o => ({
       id: o.id,
@@ -555,6 +624,26 @@ const AppContent: React.FC = () => {
     try {
       await sheetsService.saveAllOrders(accessToken!, newOrders);
       console.log('✅ Orders saved successfully to Google Sheets!');
+
+      addedOrders.forEach(o =>
+        sendTelegramMoneyEvent({
+          type: 'sale',
+          amount: safeNumber(o.totalAmount),
+          currency: (o.paymentCurrency as 'USD' | 'UZS') || 'USD',
+          method: o.paymentMethod,
+          counterparty: o.customerName,
+          id: o.id,
+          date: o.date,
+          details: (() => {
+            if (!o.items || !Array.isArray(o.items)) return undefined;
+            const lines = o.items.slice(0, 3).map(it =>
+              `${it.productName}${it.dimensions ? ` (${it.dimensions})` : ''} × ${safeNumber(it.quantity)} ${it.unit}`
+            );
+            const extra = o.items.length > 3 ? `, +${o.items.length - 3} поз.` : '';
+            return lines.join(', ') + extra;
+          })()
+        })
+      );
       return true; // Success
     } catch (err) {
       console.error('❌ Error saving orders:', err);
@@ -574,6 +663,9 @@ const AppContent: React.FC = () => {
   };
 
   const handleSaveTransactions = async (newTransactions: Transaction[]) => {
+    const prevIds = new Set(transactions.map(t => t.id));
+    const addedTransactions = newTransactions.filter(t => !prevIds.has(t.id));
+
     setTransactions(newTransactions);
     if (!accessToken) {
       console.warn('Access token not available, transaction saved locally only');
@@ -583,6 +675,21 @@ const AppContent: React.FC = () => {
     setIsLoading(true);
     try {
       await sheetsService.saveAllTransactions(accessToken, newTransactions);
+
+      addedTransactions.forEach(t => {
+        if (t.type === 'supplier_payment' || t.type === 'client_payment') {
+          sendTelegramMoneyEvent({
+            type: t.type === 'supplier_payment' ? 'supplier_payment' : 'client_payment',
+            amount: safeNumber(t.amount),
+            currency: t.currency,
+            method: t.method,
+            counterparty: t.relatedId,
+            description: t.description,
+            id: t.id,
+            date: t.date
+          });
+        }
+      });
       return true; // Success
     } catch (err) {
       console.error(err);
@@ -606,6 +713,16 @@ const AppContent: React.FC = () => {
     } catch (err) {
       console.error("Failed to save journal event", err);
     }
+  };
+
+  const handleSaveSettings = async (newSettings: AppSettings) => {
+    setSettings(newSettings);
+    // Save to localStorage for persistence
+    localStorage.setItem('metal_erp_settings', JSON.stringify(newSettings));
+
+    // Also try to save to Google Sheets if possible (optional, but good for sync)
+    // For now, local storage is enough for Telegram tokens as they are device-specific or sensitive
+    toast.success('Настройки сохранены!');
   };
 
   if (!user) {
@@ -678,7 +795,7 @@ const AppContent: React.FC = () => {
           onAddJournalEvent={handleAddJournalEvent}
         />);
       case 'reports':
-        return renderLazyComponent(<Reports orders={orders} expenses={expenses} products={products} purchases={purchases} settings={settings} onAddExpense={handleAddExpense} />);
+        return renderLazyComponent(<Reports orders={orders} expenses={expenses} products={products} purchases={purchases} settings={settings} transactions={transactions} onAddExpense={handleAddExpense} />);
       case 'fixedAssets':
         return renderLazyComponent(<FixedAssets assets={fixedAssets} setAssets={setFixedAssets} onSaveAssets={handleSaveFixedAssets} />);
       case 'crm':
@@ -703,7 +820,7 @@ const AppContent: React.FC = () => {
           transactions={transactions}
         />);
       case 'settings':
-        return renderLazyComponent(<SettingsComponent settings={settings} setSettings={setSettings} />);
+        return renderLazyComponent(<SettingsComponent settings={settings} onSave={handleSaveSettings} />);
       default:
         return renderLazyComponent(<Dashboard products={products} orders={orders} settings={settings} />);
     }

@@ -1,8 +1,9 @@
 
 import React, { useState } from 'react';
 import { AppSettings } from '../types';
-import { Save, Settings as SettingsIcon, AlertCircle, Database, CheckCircle, XCircle, Loader2 } from 'lucide-react';
+import { Save, Settings as SettingsIcon, AlertCircle, Database, CheckCircle, XCircle, Loader2, Send } from 'lucide-react';
 import { getSpreadsheetId, saveSpreadsheetId, sheetsService } from '../services/sheetsService';
+import { telegramService } from '../services/telegramService';
 import { useAuth } from '../contexts/AuthContext';
 
 interface SettingsProps {
@@ -14,6 +15,11 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
     const { accessToken } = useAuth();
     const [formData, setFormData] = useState<AppSettings>(settings);
     const [message, setMessage] = useState<string | null>(null);
+
+    // Sync state with props when they change (e.g. loaded from localStorage)
+    React.useEffect(() => {
+        setFormData(settings);
+    }, [settings]);
 
     // Google Sheets State
     const [spreadsheetId, setSpreadsheetId] = useState(getSpreadsheetId());
@@ -39,6 +45,20 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
             setConnectionStatus('error');
             setConnectionMessage(e.message);
         }
+    };
+
+    const handleTestTelegram = async () => {
+        if (!formData.telegramBotToken || !formData.telegramChatId) {
+            setMessage('Введите Token и Chat ID');
+            return;
+        }
+        try {
+            await telegramService.sendMessage(formData.telegramBotToken, formData.telegramChatId, '🔔 Тестовое сообщение от Google ERP');
+            setMessage('Тестовое сообщение отправлено!');
+        } catch (e: any) {
+            setMessage(`Ошибка Telegram: ${e.message}`);
+        }
+        setTimeout(() => setMessage(null), 3000);
     };
 
     const handleSave = () => {
@@ -162,6 +182,61 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
 
 
 
+
+
+                <div className="border-t border-slate-700 my-6"></div>
+
+                {/* Telegram Settings */}
+                <div className="space-y-6">
+                    <h3 className="text-xl font-bold text-white border-l-4 border-blue-400 pl-4 flex items-center gap-2">
+                        <Send size={24} className="text-blue-400" />
+                        Интеграция с Telegram
+                    </h3>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        <div className="space-y-2">
+                            <label className="block text-sm font-medium text-slate-300">
+                                Bot Token
+                            </label>
+                            <p className="text-xs text-slate-500 mb-2">
+                                Токен от @BotFather
+                            </p>
+                            <input
+                                type="text"
+                                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm"
+                                value={formData.telegramBotToken || ''}
+                                onChange={(e) => setFormData({ ...formData, telegramBotToken: e.target.value })}
+                                placeholder="123456789:ABCdef..."
+                            />
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="block text-sm font-medium text-slate-300">
+                                Chat ID
+                            </label>
+                            <p className="text-xs text-slate-500 mb-2">
+                                ID вашего чата (можно узнать через @userinfobot)
+                            </p>
+                            <div className="flex gap-2">
+                                <input
+                                    type="text"
+                                    className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm"
+                                    value={formData.telegramChatId || ''}
+                                    onChange={(e) => setFormData({ ...formData, telegramChatId: e.target.value })}
+                                    placeholder="123456789"
+                                />
+                                <button
+                                    onClick={handleTestTelegram}
+                                    className="bg-slate-700 hover:bg-slate-600 text-white px-4 rounded-lg transition-colors"
+                                    title="Отправить тестовое сообщение"
+                                >
+                                    <Send size={18} />
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 flex items-start gap-3">
                     <AlertCircle className="text-amber-500 shrink-0 mt-1" size={20} />
                     <div className="text-sm text-amber-200/80">
@@ -181,7 +256,6 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
                         Сохранить настройки
                     </button>
                 </div>
-
             </div>
         </div>
     );

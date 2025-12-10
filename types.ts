@@ -16,6 +16,8 @@ export enum Unit {
 export interface AppSettings {
   vatRate: number; // Percentage (e.g. 12)
   defaultExchangeRate: number;
+  telegramBotToken?: string;
+  telegramChatId?: string;
   modules?: {
     dashboard: boolean;
     inventory: boolean;
@@ -59,6 +61,7 @@ export interface Product {
 export interface OrderItem {
   productId: string;
   productName: string;
+  dimensions?: string;
   quantity: number;
   priceAtSale: number; // Base currency (USD)
   costAtSale: number; // Base currency (USD) - Cost at moment of sale

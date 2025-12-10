@@ -13,12 +13,75 @@ const CACHE_PREFIX = 'metal_erp_cache_';
 const DEFAULT_TTL = 5 * 60 * 1000; // 5 minutes default TTL
 
 class CacheService {
+  // In-memory fallback to keep working when localStorage is mocked or unavailable
+  private memoryStore = new Map<string, string>();
+
+  private getCacheKey(key: string) {
+    return `${CACHE_PREFIX}${key}`;
+  }
+
+  private getFromStorage(key: string): string | null {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        const value = localStorage.getItem(key);
+        if (value !== null && value !== undefined) {
+          return value;
+        }
+      }
+    } catch (error) {
+      console.error(`Cache get error for key ${key}:`, error);
+    }
+
+    return this.memoryStore.get(key) ?? null;
+  }
+
+  private setInStorage(key: string, value: string): void {
+    let stored = false;
+
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(key, value);
+        stored = true;
+      }
+    } catch (error) {
+      console.error(`Cache set error for key ${key}:`, error);
+    }
+
+    // Always keep a memory copy so tests/mocks without real storage still work
+    this.memoryStore.set(key, value);
+
+    // If storage failed because it was full, try clearing expired entries once
+    if (!stored) {
+      this.clearExpired();
+      try {
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem(key, value);
+        }
+      } catch (retryError) {
+        console.error(`Cache set retry failed for key ${key}:`, retryError);
+      }
+    }
+  }
+
+  private removeFromStorage(key: string): void {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem(key);
+      }
+    } catch (error) {
+      console.error(`Cache remove error for key ${key}:`, error);
+    }
+    this.memoryStore.delete(key);
+  }
+
   /**
    * Get cached data if it exists and is not expired
    */
   get<T>(key: string): T | null {
+    const cacheKey = this.getCacheKey(key);
+
     try {
-      const cached = localStorage.getItem(`${CACHE_PREFIX}${key}`);
+      const cached = this.getFromStorage(cacheKey);
       if (!cached) return null;
 
       const entry: CacheEntry<T> = JSON.parse(cached);
@@ -26,7 +89,7 @@ class CacheService {
 
       // Check if cache is expired
       if (now - entry.timestamp > entry.ttl) {
-        localStorage.removeItem(`${CACHE_PREFIX}${key}`);
+        this.removeFromStorage(cacheKey);
         return null;
       }
 
@@ -41,35 +104,22 @@ class CacheService {
    * Set cache with TTL
    */
   set<T>(key: string, data: T, ttl: number = DEFAULT_TTL): void {
-    try {
-      const entry: CacheEntry<T> = {
-        data,
-        timestamp: Date.now(),
-        ttl
-      };
-      localStorage.setItem(`${CACHE_PREFIX}${key}`, JSON.stringify(entry));
-    } catch (error) {
-      console.error(`Cache set error for key ${key}:`, error);
-      // If storage is full, try to clear old cache entries
-      this.clearExpired();
-      try {
-        const entry: CacheEntry<T> = {
-          data,
-          timestamp: Date.now(),
-          ttl
-        };
-        localStorage.setItem(`${CACHE_PREFIX}${key}`, JSON.stringify(entry));
-      } catch (retryError) {
-        console.error(`Cache set retry failed for key ${key}:`, retryError);
-      }
-    }
+    const cacheKey = this.getCacheKey(key);
+    const entry: CacheEntry<T> = {
+      data,
+      timestamp: Date.now(),
+      ttl
+    };
+
+    this.setInStorage(cacheKey, JSON.stringify(entry));
   }
 
   /**
    * Remove specific cache entry
    */
   remove(key: string): void {
-    localStorage.removeItem(`${CACHE_PREFIX}${key}`);
+    const cacheKey = this.getCacheKey(key);
+    this.removeFromStorage(cacheKey);
   }
 
   /**
@@ -77,43 +127,76 @@ class CacheService {
    */
   clearExpired(): void {
     const now = Date.now();
+
     const keysToRemove: string[] = [];
 
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key && key.startsWith(CACHE_PREFIX)) {
-        try {
-          const cached = localStorage.getItem(key);
-          if (cached) {
-            const entry: CacheEntry<any> = JSON.parse(cached);
-            if (now - entry.timestamp > entry.ttl) {
-              keysToRemove.push(key);
-            }
+    const storageKeys = new Set<string>();
+
+    // Collect keys from localStorage if available
+    try {
+      if (typeof localStorage !== 'undefined') {
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith(CACHE_PREFIX)) {
+            storageKeys.add(key);
           }
-        } catch (error) {
-          // Invalid cache entry, remove it
-          keysToRemove.push(key);
         }
       }
+    } catch {
+      // Ignore storage iteration issues
     }
 
-    keysToRemove.forEach(key => localStorage.removeItem(key));
+    // Collect keys from memory fallback
+    this.memoryStore.forEach((_, key) => {
+      if (key.startsWith(CACHE_PREFIX)) {
+        storageKeys.add(key);
+      }
+    });
+
+    storageKeys.forEach(key => {
+      try {
+        const cached = this.getFromStorage(key);
+        if (cached) {
+          const entry: CacheEntry<any> = JSON.parse(cached);
+          if (now - entry.timestamp > entry.ttl) {
+            keysToRemove.push(key);
+          }
+        }
+      } catch {
+        // Invalid cache entry, remove it
+        keysToRemove.push(key);
+      }
+    });
+
+    keysToRemove.forEach(key => this.removeFromStorage(key));
   }
 
   /**
    * Clear all cache entries
    */
   clearAll(): void {
-    const keysToRemove: string[] = [];
+    const storageKeys = new Set<string>();
 
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key && key.startsWith(CACHE_PREFIX)) {
-        keysToRemove.push(key);
+    try {
+      if (typeof localStorage !== 'undefined') {
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith(CACHE_PREFIX)) {
+            storageKeys.add(key);
+          }
+        }
       }
+    } catch {
+      // Ignore storage iteration issues
     }
 
-    keysToRemove.forEach(key => localStorage.removeItem(key));
+    this.memoryStore.forEach((_, key) => {
+      if (key.startsWith(CACHE_PREFIX)) {
+        storageKeys.add(key);
+      }
+    });
+
+    storageKeys.forEach(key => this.removeFromStorage(key));
   }
 
   /**
@@ -135,6 +218,8 @@ export const cacheService = new CacheService();
 
 // Clear expired cache on service load
 cacheService.clearExpired();
+
+
 
 
 
