@@ -18,6 +18,15 @@ export const VatReport: React.FC<VatReportProps> = ({ purchases, orders, expense
     const [startDate, setStartDate] = useState(firstDay);
     const [endDate, setEndDate] = useState(lastDay);
 
+    // Курс для конвертации USD → UZS (НДС отчёт в национальной валюте)
+    const exchangeRate = settings.defaultExchangeRate || 12650;
+
+    // Форматирование в сумах
+    const formatUZS = (usd: number) => {
+        const uzs = usd * exchangeRate;
+        return `${uzs.toLocaleString('ru-RU', { minimumFractionDigits: 0, maximumFractionDigits: 0 })} сум`;
+    };
+
     const reportData = useMemo(() => {
         const start = new Date(startDate);
         const end = new Date(endDate);
@@ -59,7 +68,7 @@ export const VatReport: React.FC<VatReportProps> = ({ purchases, orders, expense
                 date: p.date,
                 type: 'import' as const,
                 counterparty: p.supplierName,
-                amount: p.totalLandedValue, // Approximate
+                amount: p.totalLandedAmount || 0,
                 vatIn: p.overheads?.importVat || 0,
                 vatOut: 0
             })),
@@ -102,7 +111,7 @@ export const VatReport: React.FC<VatReportProps> = ({ purchases, orders, expense
                     <h2 className="text-xl font-bold text-white flex items-center gap-2">
                         <Scale className="text-blue-500" /> Отчет по НДС и Таможне
                     </h2>
-                    <p className="text-sm text-slate-400">Анализ входящего и исходящего НДС за период</p>
+                    <p className="text-sm text-slate-400">Анализ входящего и исходящего НДС за период (в сумах, курс: {exchangeRate.toLocaleString()} UZS)</p>
                 </div>
 
                 <div className="flex items-center gap-2 bg-slate-900 p-1 rounded-lg border border-slate-600">
@@ -135,7 +144,7 @@ export const VatReport: React.FC<VatReportProps> = ({ purchases, orders, expense
                     </div>
                     <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">НДС к уплате (OUT)</p>
                     <h3 className="text-2xl font-bold text-white mt-1 group-hover:text-red-400 transition-colors">
-                        ${reportData.totalOutputVat.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        {formatUZS(reportData.totalOutputVat)}
                     </h3>
                     <p className="text-xs text-slate-500 mt-2">Начислено с продаж</p>
                 </div>
@@ -147,7 +156,7 @@ export const VatReport: React.FC<VatReportProps> = ({ purchases, orders, expense
                     </div>
                     <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">НДС к зачету (IN)</p>
                     <h3 className="text-2xl font-bold text-white mt-1 group-hover:text-emerald-400 transition-colors">
-                        ${reportData.totalImportVat.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        {formatUZS(reportData.totalImportVat)}
                     </h3>
                     <p className="text-xs text-slate-500 mt-2">Уплачено при импорте</p>
                 </div>
@@ -159,7 +168,7 @@ export const VatReport: React.FC<VatReportProps> = ({ purchases, orders, expense
                     </div>
                     <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Итого НДС (Сальдо)</p>
                     <h3 className={`text-2xl font-bold mt-1 transition-colors ${reportData.netVat > 0 ? 'text-amber-400' : 'text-blue-400'}`}>
-                        ${Math.abs(reportData.netVat).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        {formatUZS(Math.abs(reportData.netVat))}
                     </h3>
                     <p className="text-xs text-slate-500 mt-2">
                         {reportData.netVat > 0 ? 'К уплате в бюджет' : 'К возмещению из бюджета'}
@@ -173,7 +182,7 @@ export const VatReport: React.FC<VatReportProps> = ({ purchases, orders, expense
                     </div>
                     <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Таможенные пошлины</p>
                     <h3 className="text-2xl font-bold text-white mt-1 group-hover:text-purple-400 transition-colors">
-                        ${reportData.totalCustomsDuty.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        {formatUZS(reportData.totalCustomsDuty)}
                     </h3>
                     <p className="text-xs text-slate-500 mt-2">Справочно (не влияет на НДС)</p>
                 </div>
@@ -205,10 +214,10 @@ export const VatReport: React.FC<VatReportProps> = ({ purchases, orders, expense
                                             <td className="px-4 py-3 text-slate-300">{new Date(p.date).toLocaleDateString()}</td>
                                             <td className="px-4 py-3 font-medium text-white">{p.supplierName}</td>
                                             <td className="px-4 py-3 text-right font-mono text-purple-300">
-                                                {p.overheads?.customsDuty ? `$${p.overheads.customsDuty.toFixed(2)}` : '-'}
+                                                {p.overheads?.customsDuty ? formatUZS(p.overheads.customsDuty) : '-'}
                                             </td>
                                             <td className="px-4 py-3 text-right font-mono text-emerald-400 font-bold">
-                                                {p.overheads?.importVat ? `$${p.overheads.importVat.toFixed(2)}` : '-'}
+                                                {p.overheads?.importVat ? formatUZS(p.overheads.importVat) : '-'}
                                             </td>
                                         </tr>
                                     ))
@@ -245,9 +254,9 @@ export const VatReport: React.FC<VatReportProps> = ({ purchases, orders, expense
                                         <tr key={o.id} className="hover:bg-slate-700/30">
                                             <td className="px-4 py-3 text-slate-300">{new Date(o.date).toLocaleDateString()}</td>
                                             <td className="px-4 py-3 font-medium text-white">{o.customerName}</td>
-                                            <td className="px-4 py-3 text-right font-mono text-slate-400">${o.totalAmount.toFixed(2)}</td>
+                                            <td className="px-4 py-3 text-right font-mono text-slate-400">{formatUZS(o.totalAmount)}</td>
                                             <td className="px-4 py-3 text-right font-mono text-red-400 font-bold">
-                                                {o.vatAmount ? `$${o.vatAmount.toFixed(2)}` : '-'}
+                                                {o.vatAmount ? formatUZS(o.vatAmount) : '-'}
                                             </td>
                                         </tr>
                                     ))
@@ -295,12 +304,12 @@ export const VatReport: React.FC<VatReportProps> = ({ purchases, orders, expense
                                             </span>
                                         </td>
                                         <td className="px-4 py-3 font-medium text-white">{item.counterparty}</td>
-                                        <td className="px-4 py-3 text-right font-mono text-slate-400">${item.amount.toFixed(2)}</td>
+                                        <td className="px-4 py-3 text-right font-mono text-slate-400">{formatUZS(item.amount)}</td>
                                         <td className="px-4 py-3 text-right font-mono text-emerald-400 font-bold">
-                                            {item.vatIn > 0 ? `+$${item.vatIn.toFixed(2)}` : '-'}
+                                            {item.vatIn > 0 ? `+${formatUZS(item.vatIn)}` : '-'}
                                         </td>
                                         <td className="px-4 py-3 text-right font-mono text-red-400 font-bold">
-                                            {item.vatOut > 0 ? `-$${item.vatOut.toFixed(2)}` : '-'}
+                                            {item.vatOut > 0 ? `-${formatUZS(item.vatOut)}` : '-'}
                                         </td>
                                     </tr>
                                 ))
