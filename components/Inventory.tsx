@@ -16,6 +16,8 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [isAiLoading, setIsAiLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const pageSize = 20;
 
   // State to track which item is being edited (null means creating new)
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -136,6 +138,13 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
     p.dimensions.includes(searchTerm)
   );
 
+  const totalPages = Math.max(1, Math.ceil(filteredProducts.length / pageSize));
+  const displayedProducts = filteredProducts.slice((page - 1) * pageSize, page * pageSize);
+
+  React.useEffect(() => {
+    setPage(1);
+  }, [searchTerm, products.length]);
+
   return (
     <div className="p-3 sm:p-4 lg:p-6 space-y-4 lg:space-y-6 animate-fade-in">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
@@ -180,7 +189,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-700">
-              {filteredProducts.map((product) => (
+              {displayedProducts.map((product) => (
                 <tr key={product.id} className="hover:bg-slate-700/30 transition-colors">
                   <td className="px-6 py-4 font-medium text-white">
                     <div>{product.name}</div>
@@ -243,7 +252,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
 
       {/* Cards - Mobile/Tablet */}
       <div className="lg:hidden space-y-3">
-        {filteredProducts.map((product) => (
+        {displayedProducts.map((product) => (
           <div key={product.id} className="bg-slate-800/50 rounded-xl border border-slate-700 p-4 space-y-3">
             <div className="flex justify-between items-start">
               <div className="flex-1">
@@ -312,6 +321,29 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
           </div>
         )}
       </div>
+
+      {/* Pagination */}
+      {filteredProducts.length > pageSize && (
+        <div className="flex items-center justify-between bg-slate-800 border border-slate-700 rounded-xl px-4 py-3">
+          <button
+            onClick={() => setPage(p => Math.max(1, p - 1))}
+            disabled={page === 1}
+            className="px-3 py-2 rounded-lg text-sm font-medium border border-slate-600 text-slate-200 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-700 transition-colors"
+          >
+            Назад
+          </button>
+          <div className="text-sm text-slate-300">
+            Стр. {page} из {totalPages} • {filteredProducts.length} товаров
+          </div>
+          <button
+            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+            disabled={page === totalPages}
+            className="px-3 py-2 rounded-lg text-sm font-medium border border-slate-600 text-slate-200 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-700 transition-colors"
+          >
+            Вперёд
+          </button>
+        </div>
+      )}
 
       {/* Add/Edit Modal */}
       {showAddModal && (

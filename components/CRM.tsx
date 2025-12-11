@@ -27,6 +27,8 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
     const [isPhoneCheckModalOpen, setIsPhoneCheckModalOpen] = useState(false);
     const [phoneCheckResults, setPhoneCheckResults] = useState<ReturnType<typeof checkAllPhones> | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
+    const [page, setPage] = useState(1);
+    const pageSize = 12;
     const [editingClient, setEditingClient] = useState<Client | null>(null);
     const [selectedClientForRepayment, setSelectedClientForRepayment] = useState<Client | null>(null);
     const [statsTimeRange, setStatsTimeRange] = useState<'week' | 'month' | 'year' | 'all'>('month');
@@ -156,11 +158,23 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
     };
 
     const filteredClients = useMemo(() => {
-        return clients.filter(c =>
+        const list = clients.filter(c =>
             c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
             c.phone.includes(searchTerm)
         );
+        return list;
     }, [clients, searchTerm]);
+
+    const totalPages = Math.max(1, Math.ceil(filteredClients.length / pageSize));
+    const displayedClients = useMemo(() => {
+        const start = (page - 1) * pageSize;
+        return filteredClients.slice(start, start + pageSize);
+    }, [filteredClients, page]);
+
+    // Сброс страницы при поиске
+    React.useEffect(() => {
+        setPage(1);
+    }, [searchTerm]);
 
     // Calculate stats per client
     const getClientStats = (clientId: string) => {
@@ -510,8 +524,8 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
                     </div>
 
                     {/* Clients Grid */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 overflow-y-auto pb-20 custom-scrollbar">
-                        {filteredClients.map(client => {
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 overflow-y-auto pb-12 custom-scrollbar">
+                        {displayedClients.map(client => {
                             return (
                                 <div key={client.id} className="bg-slate-800 rounded-xl border border-slate-700 p-5 hover:border-slate-600 transition-all group relative overflow-hidden">
                                     <div className="absolute top-0 right-0 p-4 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
@@ -573,6 +587,29 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
                             );
                         })}
                     </div>
+
+                    {/* Pagination */}
+                    {filteredClients.length > pageSize && (
+                        <div className="flex items-center justify-between bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 mt-2">
+                            <button
+                                onClick={() => setPage(p => Math.max(1, p - 1))}
+                                disabled={page === 1}
+                                className="px-3 py-2 rounded-lg text-sm font-medium border border-slate-600 text-slate-200 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-700 transition-colors"
+                            >
+                                Назад
+                            </button>
+                            <div className="text-sm text-slate-300">
+                                Стр. {page} из {totalPages} • {filteredClients.length} клиентов
+                            </div>
+                            <button
+                                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                                disabled={page === totalPages}
+                                className="px-3 py-2 rounded-lg text-sm font-medium border border-slate-600 text-slate-200 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-700 transition-colors"
+                            >
+                                Вперёд
+                            </button>
+                        </div>
+                    )}
                 </>
             )}
 
