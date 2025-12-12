@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Product, Purchase, PurchaseItem, PurchaseOverheads, Transaction, AppSettings, WorkflowOrder, OrderItem } from '../types';
+import { Product, Purchase, PurchaseItem, PurchaseOverheads, Transaction, AppSettings, WorkflowOrder, OrderItem, ProductType, Unit } from '../types';
 import { Plus, Trash2, Save, Calculator, Container, DollarSign, AlertTriangle, Truck, Scale, FileText, History, Wallet, CheckCircle, Globe, MapPin, ClipboardList, Send } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 
@@ -51,6 +51,20 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
     const [isRepayModalOpen, setIsRepayModalOpen] = useState(false);
     const [selectedPurchaseForRepayment, setSelectedPurchaseForRepayment] = useState<Purchase | null>(null);
     const [repaymentAmount, setRepaymentAmount] = useState<number>(0);
+
+    // New Product Modal (allow adding products directly from procurement)
+    const [isNewProductModalOpen, setIsNewProductModalOpen] = useState(false);
+    const [newProductData, setNewProductData] = useState<Partial<Product>>({
+        name: '',
+        type: ProductType.PIPE,
+        dimensions: '',
+        steelGrade: 'Ст3',
+        unit: Unit.METER,
+        pricePerUnit: 0,
+        costPrice: 0,
+        minStockLevel: 0,
+        origin: 'local'
+    });
 
     React.useEffect(() => {
         localStorage.setItem('procurement_active_tab', activeTab);
@@ -113,6 +127,53 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
         const next = workflowOrders.map(o => o.id === wf.id ? { ...o, status: 'sent_to_cash' as const } : o);
         await onSaveWorkflowOrders(next);
         toast.success('Заявка отправлена в кассу.');
+    };
+
+    const openNewProductModal = () => {
+        setNewProductData({
+            name: '',
+            type: ProductType.PIPE,
+            dimensions: '',
+            steelGrade: 'Ст3',
+            unit: Unit.METER,
+            pricePerUnit: 0,
+            costPrice: 0,
+            minStockLevel: 0,
+            origin: procurementType === 'import' ? 'import' : 'local'
+        });
+        setIsNewProductModalOpen(true);
+    };
+
+    const handleCreateNewProduct = async () => {
+        if (!newProductData.name || !newProductData.name.trim()) {
+            toast.warning('Введите название товара');
+            return;
+        }
+        if (!newProductData.dimensions || !newProductData.dimensions.trim()) {
+            toast.warning('Введите размеры (например: 50x50x3)');
+            return;
+        }
+
+        const product: Product = {
+            id: Date.now().toString(),
+            name: newProductData.name.trim(),
+            type: (newProductData.type as ProductType) || ProductType.OTHER,
+            dimensions: newProductData.dimensions.trim(),
+            steelGrade: (newProductData.steelGrade || 'Ст3').trim(),
+            quantity: 0,
+            unit: (newProductData.unit as Unit) || Unit.METER,
+            pricePerUnit: Number(newProductData.pricePerUnit) || 0,
+            costPrice: Number(newProductData.costPrice) || 0,
+            minStockLevel: Number(newProductData.minStockLevel) || 0,
+            origin: newProductData.origin || 'local'
+        };
+
+        const updated = [...products, product];
+        setProducts(updated);
+        await onSaveProducts?.(updated);
+        setSelectedProductId(product.id);
+        setIsNewProductModalOpen(false);
+        toast.success('Товар добавлен. Теперь можно добавить его в закупку.');
     };
 
     // --- Logic to Add Item ---
@@ -459,9 +520,17 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
 
                         {/* Add Item Form */}
                         <div className="bg-slate-800 p-5 rounded-xl border border-slate-700 space-y-4 shadow-lg">
-                            <h3 className="text-white font-bold flex items-center gap-2">
-                                <Plus size={18} className="text-emerald-500" /> Добавить товар
-                            </h3>
+                            <div className="flex items-center justify-between">
+                                <h3 className="text-white font-bold flex items-center gap-2">
+                                    <Plus size={18} className="text-emerald-500" /> Добавить товар
+                                </h3>
+                                <button
+                                    onClick={openNewProductModal}
+                                    className="px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-colors"
+                                >
+                                    + Новый товар
+                                </button>
+                            </div>
 
                             <div className="space-y-2">
                                 <label className="text-xs font-medium text-slate-400">Товар</label>
@@ -889,6 +958,127 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                                 className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 disabled:text-slate-500 text-white py-3 rounded-xl font-bold transition-colors shadow-lg shadow-emerald-600/20"
                             >
                                 Подтвердить оплату
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* New Product Modal */}
+            {isNewProductModalOpen && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-slate-800 rounded-2xl w-full max-w-2xl border border-slate-700 shadow-2xl overflow-hidden">
+                        <div className="p-6 border-b border-slate-700 flex justify-between items-center bg-slate-900/50">
+                            <h3 className="text-xl font-bold text-white">Новый товар</h3>
+                            <button onClick={() => setIsNewProductModalOpen(false)} className="text-slate-400 hover:text-white">
+                                ✕
+                            </button>
+                        </div>
+
+                        <div className="p-6 space-y-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-2 md:col-span-2">
+                                    <label className="text-xs font-medium text-slate-400">Название *</label>
+                                    <input
+                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white outline-none focus:ring-2 focus:ring-indigo-500"
+                                        value={newProductData.name || ''}
+                                        onChange={(e) => setNewProductData({ ...newProductData, name: e.target.value })}
+                                        placeholder="Например: Труба"
+                                    />
+                                </div>
+
+                                <div className="space-y-2">
+                                    <label className="text-xs font-medium text-slate-400">Тип</label>
+                                    <select
+                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white outline-none"
+                                        value={newProductData.type}
+                                        onChange={(e) => setNewProductData({ ...newProductData, type: e.target.value as ProductType })}
+                                    >
+                                        {Object.values(ProductType).map(t => (
+                                            <option key={t} value={t}>{t}</option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <label className="text-xs font-medium text-slate-400">Ед. изм.</label>
+                                    <select
+                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white outline-none"
+                                        value={newProductData.unit}
+                                        onChange={(e) => setNewProductData({ ...newProductData, unit: e.target.value as Unit })}
+                                    >
+                                        {Object.values(Unit).map(u => (
+                                            <option key={u} value={u}>{u}</option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <label className="text-xs font-medium text-slate-400">Размеры *</label>
+                                    <input
+                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white outline-none focus:ring-2 focus:ring-indigo-500"
+                                        value={newProductData.dimensions || ''}
+                                        onChange={(e) => setNewProductData({ ...newProductData, dimensions: e.target.value })}
+                                        placeholder="50x50x3"
+                                    />
+                                </div>
+
+                                <div className="space-y-2">
+                                    <label className="text-xs font-medium text-slate-400">Марка стали</label>
+                                    <input
+                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white outline-none focus:ring-2 focus:ring-indigo-500"
+                                        value={newProductData.steelGrade || ''}
+                                        onChange={(e) => setNewProductData({ ...newProductData, steelGrade: e.target.value })}
+                                        placeholder="Ст3"
+                                    />
+                                </div>
+
+                                <div className="space-y-2">
+                                    <label className="text-xs font-medium text-slate-400">Цена продажи (USD)</label>
+                                    <input
+                                        type="number"
+                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+                                        value={newProductData.pricePerUnit ?? 0}
+                                        onChange={(e) => setNewProductData({ ...newProductData, pricePerUnit: Number(e.target.value) })}
+                                    />
+                                </div>
+
+                                <div className="space-y-2">
+                                    <label className="text-xs font-medium text-slate-400">Минимальный остаток</label>
+                                    <input
+                                        type="number"
+                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+                                        value={newProductData.minStockLevel ?? 0}
+                                        onChange={(e) => setNewProductData({ ...newProductData, minStockLevel: Number(e.target.value) })}
+                                    />
+                                </div>
+
+                                <div className="space-y-2">
+                                    <label className="text-xs font-medium text-slate-400">Происхождение</label>
+                                    <select
+                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white outline-none"
+                                        value={newProductData.origin || 'local'}
+                                        onChange={(e) => setNewProductData({ ...newProductData, origin: e.target.value as 'import' | 'local' })}
+                                    >
+                                        <option value="local">Местный</option>
+                                        <option value="import">Импорт</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="p-6 border-t border-slate-700 flex justify-end gap-3 bg-slate-900/50">
+                            <button
+                                onClick={() => setIsNewProductModalOpen(false)}
+                                className="px-4 py-2 text-slate-300 hover:text-white transition-colors"
+                            >
+                                Отмена
+                            </button>
+                            <button
+                                onClick={handleCreateNewProduct}
+                                className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-lg font-bold shadow-lg shadow-indigo-600/20"
+                            >
+                                Сохранить
                             </button>
                         </div>
                     </div>
