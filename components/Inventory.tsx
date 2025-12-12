@@ -18,6 +18,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [page, setPage] = useState(1);
   const pageSize = 20;
+  const [sortMode, setSortMode] = useState<'qty_desc' | 'qty_asc' | 'name_asc'>('qty_desc');
 
   // State to track which item is being edited (null means creating new)
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -138,8 +139,20 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
     p.dimensions.includes(searchTerm)
   );
 
-  const totalPages = Math.max(1, Math.ceil(filteredProducts.length / pageSize));
-  const displayedProducts = filteredProducts.slice((page - 1) * pageSize, page * pageSize);
+  const sortedProducts = [...filteredProducts].sort((a, b) => {
+    if (sortMode === 'qty_desc') {
+      if (b.quantity !== a.quantity) return b.quantity - a.quantity;
+      return a.name.localeCompare(b.name);
+    }
+    if (sortMode === 'qty_asc') {
+      if (a.quantity !== b.quantity) return a.quantity - b.quantity;
+      return a.name.localeCompare(b.name);
+    }
+    return a.name.localeCompare(b.name);
+  });
+
+  const totalPages = Math.max(1, Math.ceil(sortedProducts.length / pageSize));
+  const displayedProducts = sortedProducts.slice((page - 1) * pageSize, page * pageSize);
 
   React.useEffect(() => {
     setPage(1);
@@ -160,16 +173,27 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
         </button>
       </div>
 
-      {/* Search Bar */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-        <input
-          type="text"
-          placeholder="Поиск по названию или размерам..."
-          className="w-full bg-slate-800 border border-slate-700 text-slate-200 pl-10 pr-4 py-3 rounded-xl focus:ring-2 focus:ring-primary-500 focus:outline-none transition-all"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-        />
+      {/* Search + Sort */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+          <input
+            type="text"
+            placeholder="Поиск по названию или размерам..."
+            className="w-full bg-slate-800 border border-slate-700 text-slate-200 pl-10 pr-4 py-3 rounded-xl focus:ring-2 focus:ring-primary-500 focus:outline-none transition-all"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
+        <select
+          value={sortMode}
+          onChange={(e) => setSortMode(e.target.value as typeof sortMode)}
+          className="bg-slate-800 border border-slate-700 text-slate-200 px-3 py-3 rounded-xl focus:ring-2 focus:ring-primary-500 focus:outline-none"
+        >
+          <option value="qty_desc">Остаток: по убыванию</option>
+          <option value="qty_asc">Остаток: по возрастанию</option>
+          <option value="name_asc">Название: А → Я</option>
+        </select>
       </div>
 
       {/* Table - Desktop */}
