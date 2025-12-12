@@ -262,7 +262,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
         }
     }, [totals.totalInvoiceValue, paymentMethod]);
 
-    const handleComplete = () => {
+    const handleComplete = async () => {
         if (!supplierName || cart.length === 0) return;
 
         const purchase: Purchase = {
@@ -309,26 +309,51 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
         }
 
         // 3. Update Product Stock & Cost
-        const updatedProducts = products.map(p => {
-            const item = totals.itemsWithLandedCost.find(i => i.productId === p.id);
-            if (item) {
-                const newQuantity = p.quantity + item.quantity;
-                // Weighted Average Cost
-                const oldValue = p.quantity * p.costPrice;
-                const newValue = item.quantity * item.landedCost;
-                const newCost = (oldValue + newValue) / newQuantity;
+        const existingById = new Map(products.map(p => [p.id, p]));
+        const nextProducts: Product[] = [...products];
 
-                return {
-                    ...p,
+        // Update existing products and auto-create missing ones
+        totals.itemsWithLandedCost.forEach(item => {
+            const existing = existingById.get(item.productId);
+            if (existing) {
+                const newQuantity = (existing.quantity || 0) + item.quantity;
+                // Weighted Average Cost (safe)
+                const oldValue = (existing.quantity || 0) * (existing.costPrice || 0);
+                const newValue = item.quantity * (item.landedCost || 0);
+                const newCost = newQuantity > 0 ? (oldValue + newValue) / newQuantity : (existing.costPrice || 0);
+
+                const updated: Product = {
+                    ...existing,
                     quantity: newQuantity,
                     costPrice: newCost
                 };
+                const idx = nextProducts.findIndex(p => p.id === existing.id);
+                if (idx !== -1) nextProducts[idx] = updated;
+                existingById.set(updated.id, updated);
+            } else {
+                // Product missing from warehouse list — create it so закуп всегда связан со складом
+                const created: Product = {
+                    id: item.productId || Date.now().toString(),
+                    name: item.productName || 'Новый товар',
+                    type: ProductType.OTHER,
+                    dimensions: '-',
+                    steelGrade: 'Ст3',
+                    quantity: item.quantity,
+                    unit: item.unit,
+                    pricePerUnit: item.invoicePrice || 0, // можно потом отредактировать в складе
+                    costPrice: item.landedCost || item.invoicePrice || 0,
+                    minStockLevel: 0,
+                    origin: procurementType === 'import' ? 'import' : 'local'
+                };
+                nextProducts.push(created);
+                existingById.set(created.id, created);
             }
-            return p;
         });
+
+        const updatedProducts = nextProducts;
         setProducts(updatedProducts);
         if (onSaveProducts) {
-            onSaveProducts(updatedProducts);
+            await onSaveProducts(updatedProducts);
         }
 
         // Reset
