@@ -31,16 +31,22 @@ const Staff = lazy(() => import('./components/Staff').then(m => ({ default: m.St
 const JournalEventsView = lazy(() => import('./components/JournalEventsView').then(m => ({ default: m.JournalEventsView })));
 const FixedAssets = lazy(() => import('./components/FixedAssets').then(m => ({ default: m.FixedAssets })));
 const SettingsComponent = lazy(() => import('./components/Settings').then(m => ({ default: m.Settings })));
+const Workflow = lazy(() => import('./components/Workflow').then(m => ({ default: m.Workflow })));
 
 import { Login } from './components/Login';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ToastProvider, useToast } from './contexts/ToastContext';
-import { Product, Order, AppSettings, Expense, FixedAsset, Client, Employee, Transaction, Purchase, JournalEvent } from './types';
+import { Product, Order, AppSettings, Expense, FixedAsset, Client, Employee, Transaction, Purchase, JournalEvent, WorkflowOrder } from './types';
 import { sheetsService } from './services/sheetsService';
 import { SUPER_ADMIN_EMAILS, IS_DEV_MODE } from './constants';
 import { getErrorMessage } from './utils/errorHandler';
 import { validateAccessToken, isTokenExpiredError, logTokenStatus } from './utils/tokenHelper';
 import { telegramService } from './services/telegramService';
+
+const isDev = import.meta.env.DEV;
+const logDev = (...args: unknown[]) => { if (isDev) console.log(...args); };
+const warnDev = (...args: unknown[]) => { if (isDev) console.warn(...args); };
+const errorDev = (...args: unknown[]) => { if (isDev) console.error(...args); };
 
 // Default Settings
 const defaultSettings: AppSettings = {
@@ -51,6 +57,7 @@ const defaultSettings: AppSettings = {
     inventory: true,
     import: true,
     sales: true,
+    workflow: true,
     reports: true,
     balance: true,
     fixedAssets: true,
@@ -64,7 +71,17 @@ const AppContent: React.FC = () => {
   const { user, logout, accessToken } = useAuth();
   const toast = useToast();
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('metal_erp_sidebar_open');
+      if (saved === 'true') return true;
+      if (saved === 'false') return false;
+    } catch {
+      // ignore
+    }
+    // Default: open on desktop, closed on mobile
+    return window.innerWidth >= 1024;
+  });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -78,12 +95,13 @@ const AppContent: React.FC = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [journalEvents, setJournalEvents] = useState<JournalEvent[]>([]);
+  const [workflowOrders, setWorkflowOrders] = useState<WorkflowOrder[]>([]);
   const [settings, setSettings] = useState<AppSettings>(() => {
     try {
       const saved = localStorage.getItem('metal_erp_settings');
       return saved ? JSON.parse(saved) : defaultSettings;
     } catch (e) {
-      console.error("Failed to parse settings", e);
+      errorDev("Failed to parse settings", e);
       return defaultSettings;
     }
   });
@@ -97,9 +115,10 @@ const AppContent: React.FC = () => {
     description?: string;
     id?: string;
     date?: string;
+    details?: string;
   };
 
-  const safeNumber = (value: any, fallback = 0) => {
+  const safeNumber = (value: unknown, fallback = 0) => {
     const num = Number(value);
     return Number.isFinite(num) ? num : fallback;
   };
@@ -108,7 +127,7 @@ const AppContent: React.FC = () => {
     if (!settings.telegramBotToken || !settings.telegramChatId) return;
     telegramService
       .sendMoneyEvent(settings.telegramBotToken, settings.telegramChatId, event)
-      .catch(err => console.error('Telegram money event failed', err));
+      .catch(err => errorDev('Telegram money event failed', err));
   };
 
   // Load Data on Mount
@@ -122,6 +141,15 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('metal_erp_settings', JSON.stringify(settings));
   }, [settings]);
+
+  // Persist sidebar state
+  useEffect(() => {
+    try {
+      localStorage.setItem('metal_erp_sidebar_open', String(isSidebarOpen));
+    } catch {
+      // ignore
+    }
+  }, [isSidebarOpen]);
 
   // Recalculate client debt based on transactions
   const recalculateClientDebts = (clients: Client[], transactions: Transaction[]): Client[] => {
@@ -183,7 +211,8 @@ const AppContent: React.FC = () => {
       employees,
       transactions,
       purchases,
-      journalEvents
+      journalEvents,
+      workflowOrders
     };
 
     try {
@@ -200,7 +229,7 @@ const AppContent: React.FC = () => {
           // ВАЖНО: Всегда используем загруженные данные, если загрузка прошла успешно
           // Это гарантирует синхронизацию между устройствами
           // Если загруженные данные пустые - это нормально (таблица может быть пустой)
-          console.log(`✅ ${name}: загружено ${loaded.length} записей из Google Sheets`);
+          logDev(`✅ ${name}: загружено ${loaded.length} записей из Google Sheets`);
           return loaded;
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
@@ -208,30 +237,30 @@ const AppContent: React.FC = () => {
             errorMessage.includes('401') ||
             errorMessage.includes('токен доступа истек');
 
-          console.error(`❌ Ошибка загрузки ${name}:`, error);
+          errorDev(`❌ Ошибка загрузки ${name}:`, error);
 
           // При ошибке аутентификации НЕ заменяем данные на пустой массив
           // Это критично для защиты от потери данных при истечении токена
           if (isAuthError && current.length > 0) {
-            console.warn(`🔒 ${name}: ошибка аутентификации, сохраняем текущие данные (${current.length} записей)`);
+            warnDev(`🔒 ${name}: ошибка аутентификации, сохраняем текущие данные (${current.length} записей)`);
             return current;
           }
 
           // При других ошибках возвращаем текущие данные, если они есть
           // Это защищает от потери данных при временных проблемах с сетью
           if (current.length > 0) {
-            console.log(`📦 ${name}: используем текущие данные (${current.length} записей) из-за ошибки загрузки`);
+            logDev(`📦 ${name}: используем текущие данные (${current.length} записей) из-за ошибки загрузки`);
             return current;
           }
 
           // Если текущих данных нет и произошла ошибка - возвращаем пустой массив
           // Это нормально для первого входа, когда данных еще нет
-          console.warn(`⚠️ ${name}: нет данных и ошибка загрузки, возвращаем пустой массив`);
+          warnDev(`⚠️ ${name}: нет данных и ошибка загрузки, возвращаем пустой массив`);
           return [];
         }
       };
 
-      const [loadedProducts, loadedOrders, loadedExpenses, loadedAssets, loadedClients, loadedEmployees, loadedTransactions, loadedPurchases, loadedJournalEvents] = await Promise.allSettled([
+      const [loadedProducts, loadedOrders, loadedExpenses, loadedAssets, loadedClients, loadedEmployees, loadedTransactions, loadedPurchases, loadedJournalEvents, loadedWorkflowOrders] = await Promise.allSettled([
         loadWithFallback(() => sheetsService.getProducts(accessToken), currentData.products, 'Products'),
         loadWithFallback(() => sheetsService.getOrders(accessToken), currentData.orders, 'Orders'),
         loadWithFallback(() => sheetsService.getExpenses(accessToken), currentData.expenses, 'Expenses'),
@@ -240,7 +269,8 @@ const AppContent: React.FC = () => {
         loadWithFallback(() => sheetsService.getEmployees(accessToken), currentData.employees, 'Employees'),
         loadWithFallback(() => sheetsService.getTransactions(accessToken), currentData.transactions, 'Transactions'),
         loadWithFallback(() => sheetsService.getPurchases(accessToken), currentData.purchases, 'Purchases'),
-        loadWithFallback(() => sheetsService.getJournalEvents(accessToken), currentData.journalEvents, 'JournalEvents')
+        loadWithFallback(() => sheetsService.getJournalEvents(accessToken), currentData.journalEvents, 'JournalEvents'),
+        loadWithFallback(() => sheetsService.getWorkflowOrders(accessToken), currentData.workflowOrders, 'WorkflowOrders')
       ]);
 
       // Обрабатываем результаты Promise.allSettled
@@ -249,11 +279,11 @@ const AppContent: React.FC = () => {
           // Всегда используем успешно загруженные данные для синхронизации между устройствами
           return result.value;
         }
-        console.error(`❌ Ошибка загрузки ${name}:`, result.reason);
+        errorDev(`❌ Ошибка загрузки ${name}:`, result.reason);
         // При ошибке используем текущие данные, если они есть
         // Это защищает от потери данных при временных проблемах
         if (current.length > 0) {
-          console.log(`📦 ${name}: используем текущие данные (${current.length} записей) из-за ошибки`);
+          logDev(`📦 ${name}: используем текущие данные (${current.length} записей) из-за ошибки`);
           return current;
         }
         // Если данных нет - возвращаем пустой массив
@@ -269,6 +299,7 @@ const AppContent: React.FC = () => {
       const finalTransactions = getResult(loadedTransactions, currentData.transactions, 'Transactions');
       const finalPurchases = getResult(loadedPurchases, currentData.purchases, 'Purchases');
       const finalJournalEvents = getResult(loadedJournalEvents, currentData.journalEvents, 'JournalEvents');
+      const finalWorkflowOrders = getResult(loadedWorkflowOrders, currentData.workflowOrders, 'WorkflowOrders');
 
       // Recalculate client debts based on transactions to ensure accuracy
       const clientsWithRecalculatedDebts = recalculateClientDebts(finalClients, finalTransactions);
@@ -283,11 +314,12 @@ const AppContent: React.FC = () => {
       setTransactions(finalTransactions);
       setPurchases(finalPurchases);
       setJournalEvents(finalJournalEvents);
+      setWorkflowOrders(finalWorkflowOrders);
 
       // Проверяем, были ли ошибки при загрузке
       const hasErrors = [
         loadedProducts, loadedOrders, loadedExpenses, loadedAssets,
-        loadedClients, loadedEmployees, loadedTransactions, loadedPurchases, loadedJournalEvents
+        loadedClients, loadedEmployees, loadedTransactions, loadedPurchases, loadedJournalEvents, loadedWorkflowOrders
       ].some(result => result.status === 'rejected');
 
       if (hasErrors) {
@@ -299,11 +331,11 @@ const AppContent: React.FC = () => {
         Math.abs((client.totalDebt || 0) - (finalClients[index]?.totalDebt || 0)) > 0.01
       );
       if (debtsChanged) {
-        console.log('🔄 Долги клиентов пересчитаны на основе транзакций, сохраняем обновленные данные...');
+        logDev('🔄 Долги клиентов пересчитаны на основе транзакций, сохраняем обновленные данные...');
         await sheetsService.saveAllClients(accessToken, clientsWithRecalculatedDebts);
       }
-    } catch (err: any) {
-      console.error('❌ Критическая ошибка при загрузке данных:', err);
+    } catch (err: unknown) {
+      errorDev('❌ Критическая ошибка при загрузке данных:', err);
       const errorMessage = getErrorMessage(err);
       setError(errorMessage);
 
@@ -341,22 +373,23 @@ const AppContent: React.FC = () => {
         sheetsService.saveAllClients(accessToken!, clients).then(() => ({ name: 'Клиенты', success: true })),
         sheetsService.saveAllEmployees(accessToken!, employees).then(() => ({ name: 'Сотрудники', success: true })),
         sheetsService.saveAllTransactions(accessToken!, transactions).then(() => ({ name: 'Транзакции', success: true })),
-        sheetsService.saveAllPurchases(accessToken!, purchases).then(() => ({ name: 'Закупки', success: true }))
+        sheetsService.saveAllPurchases(accessToken!, purchases).then(() => ({ name: 'Закупки', success: true })),
+        sheetsService.saveAllWorkflowOrders(accessToken!, workflowOrders).then(() => ({ name: 'Workflow', success: true }))
       ]);
 
       // Обрабатываем результаты
       saveResults.forEach((result, index) => {
-        const names = ['Товары', 'Заказы', 'Расходы', 'Основные средства', 'Клиенты', 'Сотрудники', 'Транзакции', 'Закупки'];
+        const names = ['Товары', 'Заказы', 'Расходы', 'Основные средства', 'Клиенты', 'Сотрудники', 'Транзакции', 'Закупки', 'Workflow'];
         if (result.status === 'fulfilled') {
           results.push({ success: true, name: names[index] });
         } else {
           const errorMsg = getErrorMessage(result.reason);
           results.push({ success: false, name: names[index], error: errorMsg });
-          console.error(`❌ Ошибка сохранения ${names[index]}:`, result.reason);
+          errorDev(`❌ Ошибка сохранения ${names[index]}:`, result.reason);
 
           // Если ошибка связана с токеном, предлагаем перелогиниться
           if (isTokenExpiredError(result.reason)) {
-            console.warn(`⚠️ Токен истек при сохранении ${names[index]}`);
+            warnDev(`⚠️ Токен истек при сохранении ${names[index]}`);
           }
         }
       });
@@ -379,7 +412,7 @@ const AppContent: React.FC = () => {
         toast.error(`Не удалось сохранить данные: ${errorMessages}`);
       }
     } catch (err) {
-      console.error('❌ Критическая ошибка при сохранении:', err);
+      errorDev('❌ Критическая ошибка при сохранении:', err);
       const errorMessage = getErrorMessage(err);
 
       if (isTokenExpiredError(err)) {
@@ -401,7 +434,7 @@ const AppContent: React.FC = () => {
       try {
         await sheetsService.saveAllExpenses(accessToken, updatedExpenses);
       } catch (err) {
-        console.error('Ошибка при сохранении расхода:', err);
+        errorDev('Ошибка при сохранении расхода:', err);
         const errorMessage = getErrorMessage(err);
         if (isTokenExpiredError(err)) {
           toast.error('Сессия истекла. Пожалуйста, войдите заново.');
@@ -433,7 +466,7 @@ const AppContent: React.FC = () => {
     try {
       await sheetsService.saveAllEmployees(accessToken, newEmployees);
     } catch (err) {
-      console.error(err);
+      errorDev(err);
       const errorMessage = getErrorMessage(err);
       if (isTokenExpiredError(err)) {
         toast.error('Сессия истекла. Пожалуйста, войдите заново.');
@@ -470,7 +503,7 @@ const AppContent: React.FC = () => {
         })
       );
     } catch (err) {
-      console.error(err);
+      errorDev(err);
       const errorMessage = getErrorMessage(err);
       if (isTokenExpiredError(err)) {
         toast.error('Сессия истекла. Пожалуйста, войдите заново.');
@@ -483,7 +516,7 @@ const AppContent: React.FC = () => {
   };
 
   const handleSaveClients = async (newClients: Client[]) => {
-    console.log('💾 Saving clients to Google Sheets:', newClients.map(c => ({ name: c.name, totalDebt: c.totalDebt })));
+    logDev('💾 Saving clients to Google Sheets:', newClients.map(c => ({ name: c.name, totalDebt: c.totalDebt })));
     setClients(newClients);
     if (!accessToken) {
       toast.warning('Вы не авторизованы. Данные сохранены только локально.');
@@ -492,9 +525,9 @@ const AppContent: React.FC = () => {
     setIsLoading(true);
     try {
       await sheetsService.saveAllClients(accessToken, newClients);
-      console.log('✅ Clients saved successfully!');
+      logDev('✅ Clients saved successfully!');
     } catch (err) {
-      console.error('❌ Error saving clients:', err);
+      errorDev('❌ Error saving clients:', err);
       const errorMessage = getErrorMessage(err);
       if (isTokenExpiredError(err)) {
         toast.error('Сессия истекла. Пожалуйста, войдите заново.');
@@ -532,7 +565,7 @@ const AppContent: React.FC = () => {
         })
       );
     } catch (err) {
-      console.error(err);
+      errorDev(err);
       const errorMessage = getErrorMessage(err);
       if (isTokenExpiredError(err)) {
         toast.error('Сессия истекла. Пожалуйста, войдите заново.');
@@ -554,7 +587,7 @@ const AppContent: React.FC = () => {
     try {
       await sheetsService.saveAllFixedAssets(accessToken, newAssets);
     } catch (err) {
-      console.error(err);
+      errorDev(err);
       const errorMessage = getErrorMessage(err);
       if (isTokenExpiredError(err)) {
         toast.error('Сессия истекла. Пожалуйста, войдите заново.');
@@ -576,7 +609,7 @@ const AppContent: React.FC = () => {
     try {
       await sheetsService.saveAllProducts(accessToken, newProducts);
     } catch (err) {
-      console.error(err);
+      errorDev(err);
       const errorMessage = getErrorMessage(err);
       if (isTokenExpiredError(err)) {
         toast.error('Сессия истекла. Пожалуйста, войдите заново.');
@@ -592,8 +625,8 @@ const AppContent: React.FC = () => {
     const prevIds = new Set(orders.map(o => o.id));
     const addedOrders = newOrders.filter(o => !prevIds.has(o.id));
 
-    console.log('💾 Saving orders to Google Sheets:', newOrders.length, 'orders');
-    console.log('📋 Orders details:', newOrders.map(o => ({
+    logDev('💾 Saving orders to Google Sheets:', newOrders.length, 'orders');
+    logDev('📋 Orders details:', newOrders.map(o => ({
       id: o.id,
       customer: o.customerName,
       total: o.totalAmount,
@@ -607,7 +640,7 @@ const AppContent: React.FC = () => {
 
     // Проверяем токен
     if (!validateAccessToken(accessToken)) {
-      console.warn('⚠️ Access token not available, order saved locally only');
+      warnDev('⚠️ Access token not available, order saved locally only');
       toast.warning('Заказ сохранен локально. Войдите заново для сохранения в Google Sheets.');
       return false; // Saved locally but not in Sheets
     }
@@ -615,7 +648,7 @@ const AppContent: React.FC = () => {
     // Дополнительная проверка: если токен есть, но он может быть невалидным
     const currentToken = localStorage.getItem('google_access_token');
     if (!currentToken || currentToken !== accessToken) {
-      console.warn('⚠️ Токен в localStorage не совпадает с токеном в состоянии');
+      warnDev('⚠️ Токен в localStorage не совпадает с токеном в состоянии');
       toast.warning('Проблема с токеном доступа. Войдите заново.');
       return false;
     }
@@ -623,7 +656,7 @@ const AppContent: React.FC = () => {
     setIsLoading(true);
     try {
       await sheetsService.saveAllOrders(accessToken!, newOrders);
-      console.log('✅ Orders saved successfully to Google Sheets!');
+      logDev('✅ Orders saved successfully to Google Sheets!');
 
       addedOrders.forEach(o =>
         sendTelegramMoneyEvent({
@@ -646,7 +679,7 @@ const AppContent: React.FC = () => {
       );
       return true; // Success
     } catch (err) {
-      console.error('❌ Error saving orders:', err);
+      errorDev('❌ Error saving orders:', err);
       const errorMessage = getErrorMessage(err);
 
       if (isTokenExpiredError(err)) {
@@ -662,13 +695,32 @@ const AppContent: React.FC = () => {
     }
   };
 
+  const handleSaveWorkflowOrders = async (newWorkflowOrders: WorkflowOrder[]) => {
+    setWorkflowOrders(newWorkflowOrders);
+    if (!accessToken) {
+      toast.warning('Вы не авторизованы. Данные сохранены только локально.');
+      return false;
+    }
+    setIsLoading(true);
+    try {
+      await sheetsService.saveAllWorkflowOrders(accessToken, newWorkflowOrders);
+      return true;
+    } catch (err) {
+      errorDev(err);
+      toast.error(`Ошибка при сохранении Workflow: ${getErrorMessage(err)}`);
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleSaveTransactions = async (newTransactions: Transaction[]) => {
     const prevIds = new Set(transactions.map(t => t.id));
     const addedTransactions = newTransactions.filter(t => !prevIds.has(t.id));
 
     setTransactions(newTransactions);
     if (!accessToken) {
-      console.warn('Access token not available, transaction saved locally only');
+      warnDev('Access token not available, transaction saved locally only');
       toast.warning('Вы не авторизованы. Данные сохранены только локально.');
       return false; // Saved locally but not in Sheets
     }
@@ -692,7 +744,7 @@ const AppContent: React.FC = () => {
       });
       return true; // Success
     } catch (err) {
-      console.error(err);
+      errorDev(err);
       const errorMessage = getErrorMessage(err);
       if (isTokenExpiredError(err)) {
         toast.error('Сессия истекла. Пожалуйста, войдите заново.');
@@ -711,7 +763,7 @@ const AppContent: React.FC = () => {
     try {
       await sheetsService.addJournalEvent(accessToken, event);
     } catch (err) {
-      console.error("Failed to save journal event", err);
+      errorDev("Failed to save journal event", err);
     }
   };
 
@@ -768,6 +820,8 @@ const AppContent: React.FC = () => {
           onSavePurchases={handleSavePurchases}
           transactions={transactions}
           setTransactions={setTransactions}
+          workflowOrders={workflowOrders}
+          onSaveWorkflowOrders={handleSaveWorkflowOrders}
           onSaveProducts={handleSaveProducts}
           onSaveTransactions={handleSaveTransactions}
         />);
@@ -788,11 +842,37 @@ const AppContent: React.FC = () => {
           onSaveClients={handleSaveClients}
           transactions={transactions}
           setTransactions={setTransactions}
+          workflowOrders={workflowOrders}
+          onSaveWorkflowOrders={handleSaveWorkflowOrders}
+          currentUserEmail={user?.email}
+          onNavigateToProcurement={() => setActiveTab('import')}
           onSaveOrders={handleSaveOrders}
           onSaveTransactions={handleSaveTransactions}
           onSaveProducts={handleSaveProducts}
           onSaveExpenses={handleSaveExpenses}
           onAddJournalEvent={handleAddJournalEvent}
+        />);
+      case 'workflow':
+        return renderLazyComponent(<Workflow
+          products={products}
+          setProducts={setProducts}
+          workflowOrders={workflowOrders}
+          setWorkflowOrders={setWorkflowOrders}
+          orders={orders}
+          setOrders={setOrders}
+          clients={clients}
+          onSaveClients={handleSaveClients}
+          transactions={transactions}
+          setTransactions={setTransactions}
+          employees={employees}
+          settings={settings}
+          currentUserEmail={user?.email}
+          onSaveOrders={handleSaveOrders}
+          onSaveProducts={handleSaveProducts}
+          onSaveTransactions={handleSaveTransactions}
+          onSaveWorkflowOrders={handleSaveWorkflowOrders}
+          onAddJournalEvent={handleAddJournalEvent}
+          onNavigateToProcurement={() => setActiveTab('import')}
         />);
       case 'reports':
         return renderLazyComponent(<Reports orders={orders} expenses={expenses} products={products} purchases={purchases} settings={settings} transactions={transactions} onAddExpense={handleAddExpense} />);
@@ -923,6 +1003,16 @@ const AppContent: React.FC = () => {
               onMobileClose={() => setIsSidebarOpen(false)}
             />
           )}
+          {checkPermission('workflow') && (
+            <SidebarItem
+              icon={<BookOpen size={20} />}
+              label="Workflow"
+              active={activeTab === 'workflow'}
+              onClick={() => setActiveTab('workflow')}
+              isOpen={isSidebarOpen}
+              onMobileClose={() => setIsSidebarOpen(false)}
+            />
+          )}
           {checkPermission('reports') && (
             <SidebarItem
               icon={<FileText size={20} />}
@@ -1034,6 +1124,7 @@ const AppContent: React.FC = () => {
             {activeTab === 'inventory' && 'Управление складом'}
             {activeTab === 'import' && 'Закуп и Импорт'}
             {activeTab === 'sales' && 'Касса и Расходы'}
+            {activeTab === 'workflow' && 'Workflow заявки'}
             {activeTab === 'reports' && 'Финансовые Отчеты'}
             {activeTab === 'crm' && 'База Клиентов'}
             {activeTab === 'staff' && 'Управление Сотрудниками'}
@@ -1076,24 +1167,43 @@ const AppContent: React.FC = () => {
   );
 };
 
-const SidebarItem = ({ icon, label, active, onClick, isOpen }: any) => (
-  <button
-    onClick={onClick}
-    className={`w-full flex items-center ${isOpen ? 'justify-start px-4' : 'justify-center'} gap-3 py-3 transition-all relative group ${active
-      ? 'text-white bg-gradient-to-r from-indigo-600/20 to-transparent border-r-2 border-indigo-500'
-      : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
-      }`}
-    title={!isOpen ? label : ''}
-  >
-    <div className={`${active ? 'text-indigo-400' : ''}`}>{icon}</div>
-    {isOpen && <span className="font-medium">{label}</span>}
-    {!isOpen && (
-      <div className="absolute left-16 bg-slate-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50 border border-slate-700 shadow-xl">
-        {label}
-      </div>
-    )}
-  </button>
-);
+interface SidebarItemProps {
+  icon: React.ReactNode;
+  label: string;
+  active: boolean;
+  onClick: () => void;
+  isOpen: boolean;
+  onMobileClose?: () => void;
+}
+
+const SidebarItem = ({ icon, label, active, onClick, isOpen, onMobileClose }: SidebarItemProps) => {
+  const handleClick = () => {
+    onClick();
+    // Close sidebar only on mobile/tablet (below lg)
+    if (onMobileClose && window.matchMedia('(max-width: 1023px)').matches) {
+      onMobileClose();
+    }
+  };
+
+  return (
+    <button
+      onClick={handleClick}
+      className={`w-full flex items-center ${isOpen ? 'justify-start px-4' : 'justify-center'} gap-3 py-3 transition-all relative group ${active
+        ? 'text-white bg-gradient-to-r from-indigo-600/20 to-transparent border-r-2 border-indigo-500'
+        : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
+        }`}
+      title={!isOpen ? label : ''}
+    >
+      <div className={`${active ? 'text-indigo-400' : ''}`}>{icon}</div>
+      {isOpen && <span className="font-medium">{label}</span>}
+      {!isOpen && (
+        <div className="absolute left-16 bg-slate-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50 border border-slate-700 shadow-xl">
+          {label}
+        </div>
+      )}
+    </button>
+  );
+};
 
 const App = () => (
   <AuthProvider>

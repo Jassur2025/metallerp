@@ -162,7 +162,7 @@ export const validateProduct = (product: {
 /**
  * Debounce function for search inputs
  */
-export const debounce = <T extends (...args: any[]) => any>(
+export const debounce = <T extends (...args: unknown[]) => unknown>(
   func: T,
   wait: number
 ): ((...args: Parameters<T>) => void) => {

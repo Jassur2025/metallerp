@@ -378,6 +378,7 @@ export const Staff: React.FC<StaffProps> = ({ employees, onSave }) => {
                                         { key: 'inventory', label: 'Склад' },
                                         { key: 'import', label: 'Импорт' },
                                         { key: 'sales', label: 'Касса' },
+                                        { key: 'workflow', label: 'Workflow' },
                                         { key: 'reports', label: 'Отчеты' },
                                         { key: 'crm', label: 'Клиенты' },
                                         { key: 'staff', label: 'Сотрудники' },
@@ -399,12 +400,8 @@ export const Staff: React.FC<StaffProps> = ({ employees, onSave }) => {
                                                 className="hidden"
                                                 checked={formData.permissions?.[module.key as keyof typeof formData.permissions] === true}
                                                 onChange={(e) => {
-                                                    const newPermissions = { ...formData.permissions };
-                                                    if (e.target.checked) {
-                                                        (newPermissions as any)[module.key] = true;
-                                                    } else {
-                                                        (newPermissions as any)[module.key] = false;
-                                                    }
+                                                    const newPermissions: Record<string, boolean> = { ...(formData.permissions || {}) };
+                                                    newPermissions[module.key] = e.target.checked;
                                                     setFormData({ ...formData, permissions: newPermissions });
                                                 }}
                                             />

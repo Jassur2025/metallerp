@@ -23,6 +23,7 @@ export interface AppSettings {
     inventory: boolean;
     import: boolean;
     sales: boolean;
+    workflow: boolean;
     reports: boolean;
     balance: boolean;
     fixedAssets: boolean;
@@ -112,7 +113,13 @@ export interface WorkflowOrder {
   totalAmountUZS: number; // Sales currency (UZS)
 
   // Status workflow
-  status: 'draft' | 'confirmed' | 'sent_to_cash' | 'completed' | 'cancelled';
+  status: 'draft' | 'confirmed' | 'sent_to_cash' | 'sent_to_procurement' | 'completed' | 'cancelled';
+
+  // Payment intent (set by sales, verified by cashier)
+  paymentMethod: 'cash' | 'bank' | 'card' | 'debt';
+  paymentStatus: 'paid' | 'unpaid' | 'partial';
+  paymentCurrency?: 'USD' | 'UZS';
+  amountPaid: number; // USD
 
   // Notes and comments
   notes?: string;
@@ -300,6 +307,6 @@ export interface JournalEvent {
   };
 
   // Метаданные
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 

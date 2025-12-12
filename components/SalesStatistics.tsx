@@ -33,7 +33,7 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
   const [sortBy, setSortBy] = useState<'date' | 'customer' | 'product' | 'seller' | 'total'>('date');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
-  const safeNumber = (value: any, fallback = 0) => {
+  const safeNumber = (value: unknown, fallback = 0) => {
     const n = Number(value);
     return Number.isFinite(n) ? n : fallback;
   };
@@ -93,7 +93,7 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
 
     // Sort
     filtered.sort((a, b) => {
-      let aVal: any, bVal: any;
+      let aVal: number, bVal: number;
       
       switch (sortBy) {
         case 'date':

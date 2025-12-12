@@ -10,6 +10,9 @@ import { SalesAnalytics } from './SalesAnalytics';
 import { SalesStatistics } from './SalesStatistics';
 import { ArrowRightLeft, TrendingUp, FileText, PieChart, Table, Scale } from 'lucide-react';
 
+const isDev = import.meta.env.DEV;
+const errorDev = (...args: unknown[]) => { if (isDev) console.error(...args); };
+
 interface ReportsProps {
   orders: Order[];
   expenses: Expense[];
@@ -160,9 +163,10 @@ export const Reports: React.FC<ReportsProps> = ({ orders, expenses, products, pu
       );
 
       toast.success('Отчет отправлен в Telegram!');
-    } catch (e: any) {
-      console.error(e);
-      toast.error(`Ошибка отправки: ${e.message}`);
+    } catch (e: unknown) {
+      errorDev(e);
+      const msg = e instanceof Error ? e.message : 'Unknown error';
+      toast.error(`Ошибка отправки: ${msg}`);
     } finally {
       setIsSending(false);
     }

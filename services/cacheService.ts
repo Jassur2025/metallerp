@@ -11,6 +11,8 @@ interface CacheEntry<T> {
 
 const CACHE_PREFIX = 'metal_erp_cache_';
 const DEFAULT_TTL = 5 * 60 * 1000; // 5 minutes default TTL
+const isDev = import.meta.env.DEV;
+const errorDev = (...args: unknown[]) => { if (isDev) console.error(...args); };
 
 class CacheService {
   // In-memory fallback to keep working when localStorage is mocked or unavailable
@@ -29,7 +31,7 @@ class CacheService {
         }
       }
     } catch (error) {
-      console.error(`Cache get error for key ${key}:`, error);
+      errorDev(`Cache get error for key ${key}:`, error);
     }
 
     return this.memoryStore.get(key) ?? null;
@@ -44,7 +46,7 @@ class CacheService {
         stored = true;
       }
     } catch (error) {
-      console.error(`Cache set error for key ${key}:`, error);
+      errorDev(`Cache set error for key ${key}:`, error);
     }
 
     // Always keep a memory copy so tests/mocks without real storage still work
@@ -58,7 +60,7 @@ class CacheService {
           localStorage.setItem(key, value);
         }
       } catch (retryError) {
-        console.error(`Cache set retry failed for key ${key}:`, retryError);
+        errorDev(`Cache set retry failed for key ${key}:`, retryError);
       }
     }
   }
@@ -69,7 +71,7 @@ class CacheService {
         localStorage.removeItem(key);
       }
     } catch (error) {
-      console.error(`Cache remove error for key ${key}:`, error);
+      errorDev(`Cache remove error for key ${key}:`, error);
     }
     this.memoryStore.delete(key);
   }
@@ -95,7 +97,7 @@ class CacheService {
 
       return entry.data;
     } catch (error) {
-      console.error(`Cache get error for key ${key}:`, error);
+      errorDev(`Cache get error for key ${key}:`, error);
       return null;
     }
   }
@@ -157,7 +159,7 @@ class CacheService {
       try {
         const cached = this.getFromStorage(key);
         if (cached) {
-          const entry: CacheEntry<any> = JSON.parse(cached);
+          const entry: CacheEntry<unknown> = JSON.parse(cached);
           if (now - entry.timestamp > entry.ttl) {
             keysToRemove.push(key);
           }

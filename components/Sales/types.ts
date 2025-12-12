@@ -1,4 +1,4 @@
-import { Product, Order, OrderItem, AppSettings, Expense, Employee, Client, Transaction, JournalEvent } from '../../types';
+import { Product, Order, OrderItem, AppSettings, Expense, Employee, Client, Transaction, JournalEvent, WorkflowOrder } from '../../types';
 
 export interface SalesProps {
   products: Product[];
@@ -14,6 +14,10 @@ export interface SalesProps {
   onSaveClients: (clients: Client[]) => void;
   transactions: Transaction[];
   setTransactions: (t: Transaction[]) => void;
+  workflowOrders: WorkflowOrder[];
+  onSaveWorkflowOrders: (workflowOrders: WorkflowOrder[]) => Promise<boolean | void>;
+  currentUserEmail?: string | null;
+  onNavigateToProcurement?: () => void;
   onSaveOrders?: (orders: Order[]) => Promise<boolean | void>;
   onSaveTransactions?: (transactions: Transaction[]) => Promise<boolean | void>;
   onSaveProducts?: (products: Product[]) => Promise<void>;
@@ -36,7 +40,7 @@ export interface FlyingItem {
   targetY: number;
 }
 
-export type SalesMode = 'sale' | 'expense' | 'return';
+export type SalesMode = 'sale' | 'expense' | 'return' | 'workflow';
 export type PaymentMethod = 'cash' | 'bank' | 'card' | 'debt';
 export type Currency = 'USD' | 'UZS';
 

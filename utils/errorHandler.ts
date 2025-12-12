@@ -5,7 +5,7 @@
 export interface AppError {
   message: string;
   code?: string;
-  details?: any;
+  details?: unknown;
 }
 
 /**

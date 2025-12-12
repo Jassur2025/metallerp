@@ -65,9 +65,9 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
             setConnectionStatus('success');
             setConnectionMessage(msg);
             saveSpreadsheetId(spreadsheetId); // Auto-save on success
-        } catch (e: any) {
+        } catch (e: unknown) {
             setConnectionStatus('error');
-            setConnectionMessage(e.message);
+            setConnectionMessage(e instanceof Error ? e.message : 'Ошибка соединения');
         }
     };
 
@@ -79,8 +79,8 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
         try {
             await telegramService.sendMessage(formData.telegramBotToken, formData.telegramChatId, '🔔 Тестовое сообщение от Google ERP');
             setMessage('Тестовое сообщение отправлено!');
-        } catch (e: any) {
-            setMessage(`Ошибка Telegram: ${e.message}`);
+        } catch (e: unknown) {
+            setMessage(`Ошибка Telegram: ${e instanceof Error ? e.message : 'Unknown error'}`);
         }
         setTimeout(() => setMessage(null), 3000);
     };

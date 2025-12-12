@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Product, Order, Client, Transaction } from '../types';
+import { Product, Order, Client, Transaction, AppSettings } from '../types';
 import { geminiService } from '../services/geminiService';
 import { 
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid 
@@ -15,8 +15,11 @@ interface DashboardProps {
   orders: Order[];
   clients?: Client[];
   transactions?: Transaction[];
-  settings?: any;
+  settings?: AppSettings;
 }
+
+const isDev = import.meta.env.DEV;
+const errorDev = (...args: unknown[]) => { if (isDev) console.error(...args); };
 
 type TimeRange = 'today' | 'week' | 'month' | 'year' | 'all';
 
@@ -235,7 +238,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products, orders, clients 
       const result = await geminiService.analyzeBusiness(products, filteredOrders);
       setInsight(result);
     } catch (error) {
-      console.error("Failed to fetch insight:", error);
+      errorDev("Failed to fetch insight:", error);
       setInsight("Не удалось получить аналитику. Проверьте API ключ.");
     } finally {
       setLoadingInsight(false);

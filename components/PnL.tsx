@@ -2,9 +2,10 @@ import React, { useState, useMemo } from 'react';
 import { Order, Expense } from '../types';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, Cell } from 'recharts';
 import { TrendingUp, DollarSign, Printer, FileSpreadsheet, Download } from 'lucide-react';
-import html2canvas from 'html2canvas';
-import jsPDF from 'jspdf';
 import { useToast } from '../contexts/ToastContext';
+
+const isDev = import.meta.env.DEV;
+const errorDev = (...args: unknown[]) => { if (isDev) console.error(...args); };
 
 interface PnLProps {
     orders: Order[];
@@ -17,7 +18,7 @@ export const PnL: React.FC<PnLProps> = ({ orders, expenses }) => {
     const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
     // Normalize potentially invalid numeric values to avoid runtime crashes
-    const safeNumber = (value: any, fallback = 0) => {
+    const safeNumber = (value: unknown, fallback = 0) => {
         const num = Number(value);
         return Number.isFinite(num) ? num : fallback;
     };
@@ -184,6 +185,10 @@ export const PnL: React.FC<PnLProps> = ({ orders, expenses }) => {
     };
 
     const handleDownloadPDF = async () => {
+        const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
+            import('html2canvas'),
+            import('jspdf'),
+        ]);
         const element = document.getElementById('pnl-report-content');
         if (!element) return;
         setIsGeneratingPdf(true);
@@ -213,7 +218,7 @@ export const PnL: React.FC<PnLProps> = ({ orders, expenses }) => {
             pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, finalHeight);
             pdf.save(`PnL_Report_${new Date().toISOString().split('T')[0]}.pdf`);
         } catch (err) {
-            console.error("PDF Generation failed", err);
+            errorDev("PDF Generation failed", err);
             toast.error("Ошибка при создании PDF. Пожалуйста, воспользуйтесь функцией печати (Ctrl+P).");
         } finally {
             setIsGeneratingPdf(false);

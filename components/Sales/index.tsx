@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Product, Order, OrderItem, Expense, Client, Transaction, JournalEvent } from '../../types';
-import { ShoppingCart, ArrowDownRight, ArrowUpRight, RefreshCw, FileText } from 'lucide-react';
-import html2canvas from 'html2canvas';
-import jsPDF from 'jspdf';
+import { Product, Order, OrderItem, Expense, Client, Transaction, JournalEvent, WorkflowOrder } from '../../types';
+import { ShoppingCart, ArrowDownRight, ArrowUpRight, RefreshCw, FileText, ClipboardList, BadgeCheck, AlertTriangle } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
+import { SUPER_ADMIN_EMAILS, IS_DEV_MODE } from '../../constants';
 
 // Sub-components
 import { SalesProps, Balances, FlyingItem, SalesMode, PaymentMethod, Currency } from './types';
@@ -16,13 +15,27 @@ import { ExpenseForm } from './ExpenseForm';
 import { ReturnModal } from './ReturnModal';
 import { ReceiptModal } from './ReceiptModal';
 import { ClientModal } from './ClientModal';
+const isDev = import.meta.env.DEV;
+const errorDev = (...args: unknown[]) => { if (isDev) console.error(...args); };
 
 export const Sales: React.FC<SalesProps> = ({
   products, setProducts, orders, setOrders, settings, expenses, setExpenses,
   employees, onNavigateToStaff, clients, onSaveClients, transactions, setTransactions,
+  workflowOrders, onSaveWorkflowOrders, currentUserEmail, onNavigateToProcurement,
   onSaveOrders, onSaveTransactions, onSaveProducts, onSaveExpenses, onAddJournalEvent
 }) => {
   const toast = useToast();
+
+  const currentEmployee = React.useMemo(
+    () => employees.find(e => e.email?.toLowerCase() === (currentUserEmail || '').toLowerCase()),
+    [employees, currentUserEmail]
+  );
+  const isCashier =
+    IS_DEV_MODE ||
+    (!!currentUserEmail && SUPER_ADMIN_EMAILS.includes(currentUserEmail.toLowerCase())) ||
+    currentEmployee?.role === 'accountant' ||
+    currentEmployee?.role === 'manager' ||
+    currentEmployee?.role === 'admin';
 
   // Mode State
   const [mode, setMode] = useState<SalesMode>('sale');
@@ -76,6 +89,136 @@ export const Sales: React.FC<SalesProps> = ({
   // Helpers
   const toUZS = (usd: number) => Math.round(usd * exchangeRate);
   const toUSD = (uzs: number) => exchangeRate > 0 ? uzs / exchangeRate : 0;
+
+  const workflowCashQueue = React.useMemo(() => {
+    return (workflowOrders || [])
+      .filter(o => o.status === 'sent_to_cash')
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [workflowOrders]);
+
+  const getMissingItems = (items: OrderItem[]) => {
+    const missing: { productId: string; need: number; available: number }[] = [];
+    items.forEach(it => {
+      const p = products.find(pp => pp.id === it.productId);
+      const available = p?.quantity ?? 0;
+      if (!p || available < it.quantity) {
+        missing.push({ productId: it.productId, need: it.quantity, available });
+      }
+    });
+    return missing;
+  };
+
+  const approveWorkflowInCash = async (wf: WorkflowOrder) => {
+    if (!isCashier) {
+      toast.error('Нет прав: только кассир/финансист может подтверждать.');
+      return;
+    }
+
+    const missing = getMissingItems(wf.items || []);
+    if (missing.length > 0) {
+      toast.warning('Недостаточно остатков. Заявка отправлена в закуп.');
+      const next = workflowOrders.map(o => o.id === wf.id ? { ...o, status: 'sent_to_procurement' as const } : o);
+      await onSaveWorkflowOrders(next);
+      localStorage.setItem('procurement_active_tab', 'workflow');
+      onNavigateToProcurement?.();
+      return;
+    }
+
+    const newOrder: Order = {
+      id: `ORD-${Date.now()}`,
+      date: new Date().toISOString(),
+      customerName: wf.customerName,
+      sellerName: wf.createdBy || 'Sales',
+      items: wf.items,
+      subtotalAmount: wf.subtotalAmount,
+      vatRateSnapshot: wf.vatRateSnapshot,
+      vatAmount: wf.vatAmount,
+      totalAmount: wf.totalAmount,
+      exchangeRate: wf.exchangeRate,
+      totalAmountUZS: wf.totalAmountUZS,
+      status: 'completed',
+      paymentMethod: wf.paymentMethod,
+      paymentStatus: wf.paymentStatus,
+      amountPaid: wf.amountPaid,
+      paymentCurrency: wf.paymentCurrency
+    };
+
+    const updatedProducts = products.map(p => {
+      const it = wf.items.find((i: OrderItem) => i.productId === p.id);
+      return it ? { ...p, quantity: p.quantity - it.quantity } : p;
+    });
+    setProducts(updatedProducts);
+    await onSaveProducts?.(updatedProducts);
+
+    // Update client (create if missing)
+    const nextClients = [...clients];
+    let idx = nextClients.findIndex(c => c.name.toLowerCase() === String(wf.customerName || '').toLowerCase());
+    let clientId = '';
+    if (idx === -1) {
+      const c: Client = {
+        id: `CLI-${Date.now()}`,
+        name: wf.customerName,
+        phone: wf.customerPhone || '',
+        creditLimit: 0,
+        totalPurchases: 0,
+        totalDebt: 0,
+        notes: 'Автоматически создан из Workflow'
+      };
+      nextClients.push(c);
+      idx = nextClients.length - 1;
+      clientId = c.id;
+    } else {
+      clientId = nextClients[idx].id;
+    }
+    const isDebt = wf.paymentMethod === 'debt';
+    nextClients[idx] = {
+      ...nextClients[idx],
+      totalPurchases: (nextClients[idx].totalPurchases || 0) + (wf.totalAmount || 0),
+      totalDebt: isDebt ? (nextClients[idx].totalDebt || 0) + (wf.totalAmount || 0) : (nextClients[idx].totalDebt || 0)
+    };
+    onSaveClients(nextClients);
+
+    if (isDebt) {
+      const trx: Transaction = {
+        id: `TRX-${Date.now()}`,
+        date: new Date().toISOString(),
+        type: 'debt_obligation',
+        amount: wf.totalAmount,
+        currency: 'USD',
+        method: 'debt',
+        description: `Workflow → Долг: ${wf.id}`,
+        relatedId: clientId
+      };
+      const updatedTx = [...transactions, trx];
+      setTransactions(updatedTx);
+      await onSaveTransactions?.(updatedTx);
+    }
+
+    const updatedOrders = [newOrder, ...orders];
+    setOrders(updatedOrders);
+    await onSaveOrders?.(updatedOrders);
+
+    const nextWorkflow = workflowOrders.map(o =>
+      o.id === wf.id ? { ...o, status: 'completed' as const, convertedToOrderId: newOrder.id, convertedAt: new Date().toISOString() } : o
+    );
+    await onSaveWorkflowOrders(nextWorkflow);
+
+    await onAddJournalEvent?.({
+      id: `JE-${Date.now()}`,
+      date: new Date().toISOString(),
+      type: 'employee_action',
+      employeeName: currentEmployee?.name || 'Кассир',
+      action: 'Workflow подтвержден (из кассы)',
+      description: `Workflow ${wf.id} подтвержден в кассе. Создан заказ ${newOrder.id}.`,
+      module: 'sales',
+      relatedType: 'workflow',
+      relatedId: wf.id,
+      metadata: { convertedTo: newOrder.id }
+    });
+
+    toast.success('Workflow подтвержден: продажа создана и склад списан.');
+    setMode('sale');
+  };
 
   // --- Balance Calculations ---
   const calculateBalance = (): Balances => {
@@ -274,6 +417,11 @@ export const Sales: React.FC<SalesProps> = ({
 
   // --- Receipt Printing ---
   const handlePrintReceipt = async (order: Order) => {
+    const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
+      import('html2canvas'),
+      import('jspdf')
+    ]);
+
     const receiptHTML = `
       <div id="receipt-content" style="width: 300px; padding: 20px; font-family: Arial, sans-serif; background: white; color: black;">
         <div style="text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 15px;">
@@ -314,7 +462,7 @@ export const Sales: React.FC<SalesProps> = ({
       pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, canvas.height * ratio);
       pdf.save(`Чек_${order.id}_${new Date().toISOString().split('T')[0]}.pdf`);
     } catch (err) {
-      console.error('Ошибка при печати чека:', err);
+      errorDev('Ошибка при печати чека:', err);
       toast.error('Ошибка при создании чека.');
     } finally {
       document.body.removeChild(tempDiv);
@@ -422,9 +570,73 @@ export const Sales: React.FC<SalesProps> = ({
             <button onClick={() => setMode('return')} className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${mode === 'return' ? 'bg-amber-600 text-white shadow-lg shadow-amber-900/20' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
               <RefreshCw size={20} /> Возврат
             </button>
+            {isCashier && (
+              <button onClick={() => setMode('workflow')} className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${mode === 'workflow' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
+                <ClipboardList size={20} /> Workflow
+              </button>
+            )}
           </div>
 
-          {mode === 'sale' ? (
+          {mode === 'workflow' ? (
+            <div className="bg-slate-800 rounded-2xl border border-slate-700 p-5 overflow-y-auto custom-scrollbar">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-white font-bold flex items-center gap-2">
+                  <ClipboardList size={18} className="text-indigo-400" /> Заявки из Workflow (в кассу)
+                </h3>
+                <div className="text-xs text-slate-400">{workflowCashQueue.length} заявок</div>
+              </div>
+
+              {workflowCashQueue.length === 0 ? (
+                <div className="text-slate-500 text-center py-10">Пока нет заявок из Workflow</div>
+              ) : (
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                  {workflowCashQueue.map((wf: any) => (
+                    <div key={wf.id} className="bg-slate-900/50 border border-slate-700 rounded-2xl p-5">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <div className="text-white font-bold">{wf.customerName}</div>
+                          <div className="text-xs text-slate-400 mt-1">{new Date(wf.date).toLocaleString('ru-RU')}</div>
+                          <div className="text-xs text-slate-500 mt-1">ID: {wf.id} • Создал: {wf.createdBy}</div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-emerald-300 font-mono font-bold">{Number(wf.totalAmountUZS || 0).toLocaleString()} сум</div>
+                          <div className="text-xs text-slate-500">${Number(wf.totalAmount || 0).toFixed(2)}</div>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 space-y-1 text-sm">
+                        {(wf.items || []).slice(0, 5).map((it: any, idx: number) => (
+                          <div key={idx} className="flex justify-between text-slate-300">
+                            <span className="truncate max-w-[260px]">{it.productName} × {it.quantity}</span>
+                            <span className="font-mono text-slate-400">{Math.round(Number(it.total || 0) * Number(wf.exchangeRate || exchangeRate)).toLocaleString()} сум</span>
+                          </div>
+                        ))}
+                        {(wf.items || []).length > 5 && <div className="text-xs text-slate-500">+ ещё {(wf.items || []).length - 5} поз.</div>}
+                      </div>
+
+                      <div className="mt-4 flex items-center justify-between">
+                        <div className="text-xs text-slate-400">
+                          Оплата: <span className="text-slate-200 font-semibold">{wf.paymentMethod}</span>
+                          {wf.paymentMethod === 'debt' && <span className="ml-2 text-amber-300 font-bold">ДОЛГ</span>}
+                        </div>
+                        <button
+                          onClick={() => approveWorkflowInCash(wf)}
+                          className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2"
+                        >
+                          <BadgeCheck size={18} /> Подтвердить
+                        </button>
+                      </div>
+
+                      <div className="mt-3 text-xs text-slate-500 flex items-center gap-2">
+                        <AlertTriangle size={14} className="text-amber-400" />
+                        Если остатков не хватит — заявка уйдет обратно в закуп.
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : mode === 'sale' ? (
             <ProductGrid products={products} searchTerm={searchTerm} setSearchTerm={setSearchTerm}
               sortOption={sortOption} setSortOption={setSortOption} onAddToCart={handleAddToCart} toUZS={toUZS} />
           ) : mode === 'expense' ? (
