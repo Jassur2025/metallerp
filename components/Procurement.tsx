@@ -3,6 +3,9 @@ import { Product, Purchase, PurchaseItem, PurchaseOverheads, Transaction, AppSet
 import { Plus, Trash2, Save, Calculator, Container, DollarSign, AlertTriangle, Truck, Scale, FileText, History, Wallet, CheckCircle, Globe, MapPin, ClipboardList, Send } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 
+const isDev = import.meta.env.DEV;
+const logDev = (...args: unknown[]) => { if (isDev) console.log(...args); };
+
 interface ProcurementProps {
     products: Product[];
     setProducts: (products: Product[]) => void;
@@ -309,6 +312,9 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
         }
 
         // 3. Update Product Stock & Cost
+        logDev('🔄 handleComplete: updating products. Current count:', products.length);
+        logDev('🛒 Cart items:', totals.itemsWithLandedCost.map(i => ({ id: i.productId, name: i.productName, qty: i.quantity })));
+        
         const existingById = new Map(products.map(p => [p.id, p]));
         const nextProducts: Product[] = [...products];
 
@@ -322,6 +328,8 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                 const newValue = item.quantity * (item.landedCost || 0);
                 const newCost = newQuantity > 0 ? (oldValue + newValue) / newQuantity : (existing.costPrice || 0);
 
+                logDev(`✅ Found product "${existing.name}" (${existing.id}): ${existing.quantity} + ${item.quantity} = ${newQuantity}`);
+                
                 const updated: Product = {
                     ...existing,
                     quantity: newQuantity,
@@ -332,6 +340,8 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                 existingById.set(updated.id, updated);
             } else {
                 // Product missing from warehouse list — create it so закуп всегда связан со складом
+                logDev(`⚠️ Product NOT FOUND in warehouse: "${item.productName}" (${item.productId}). Creating new...`);
+                
                 const created: Product = {
                     id: item.productId || Date.now().toString(),
                     name: item.productName || 'Новый товар',
@@ -351,9 +361,28 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
         });
 
         const updatedProducts = nextProducts;
+        logDev('📦 Updated products count:', updatedProducts.length);
+        
         setProducts(updatedProducts);
         if (onSaveProducts) {
-            await onSaveProducts(updatedProducts);
+            logDev('💾 Calling onSaveProducts...');
+            try {
+                await onSaveProducts(updatedProducts);
+                logDev('✅ onSaveProducts completed');
+                
+                // Показываем какие товары были обновлены
+                const updatedNames = totals.itemsWithLandedCost.map(i => {
+                    const p = updatedProducts.find(pr => pr.id === i.productId);
+                    return p ? `${p.name}: ${p.quantity} ${p.unit}` : i.productName;
+                }).join(', ');
+                toast.success(`Закупка проведена! Обновлены: ${updatedNames}`);
+            } catch (err) {
+                logDev('❌ onSaveProducts error:', err);
+                toast.error('Ошибка при сохранении товаров в базу!');
+            }
+        } else {
+            logDev('⚠️ onSaveProducts is not defined!');
+            toast.warning('Данные сохранены только локально (onSaveProducts не определён)');
         }
 
         // Reset
@@ -362,7 +391,6 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
         setOverheads({ logistics: 0, customsDuty: 0, importVat: 0, other: 0 });
         setPaymentMethod('cash');
         setPaymentCurrency('USD');
-        toast.success('Закупка успешно проведена! Остатки и себестоимость обновлены.');
     };
 
     // ...

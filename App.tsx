@@ -600,6 +600,7 @@ const AppContent: React.FC = () => {
   };
 
   const handleSaveProducts = async (newProducts: Product[]) => {
+    logDev(`📦 handleSaveProducts called with ${newProducts.length} products`);
     setProducts(newProducts);
     if (!accessToken) {
       toast.warning('Вы не авторизованы. Данные сохранены только локально.');
@@ -608,6 +609,7 @@ const AppContent: React.FC = () => {
     setIsLoading(true);
     try {
       await sheetsService.saveAllProducts(accessToken, newProducts);
+      logDev(`✅ Products saved successfully to Google Sheets`);
     } catch (err) {
       errorDev(err);
       const errorMessage = getErrorMessage(err);

@@ -159,7 +159,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
   }, [searchTerm, products.length]);
 
   return (
-    <div className="p-3 sm:p-4 lg:p-6 space-y-4 lg:space-y-6 animate-fade-in">
+    <div className="p-3 sm:p-4 lg:p-6 space-y-4 lg:space-y-6 animate-fade-in h-[calc(100vh-2rem)] flex flex-col">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
           <h2 className="text-xl sm:text-2xl font-bold text-white">Складской Учет</h2>
@@ -196,9 +196,11 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
         </select>
       </div>
 
-      {/* Table - Desktop */}
-      <div className="hidden lg:block bg-slate-800/50 rounded-xl border border-slate-700 overflow-hidden backdrop-blur-sm">
-        <div className="overflow-x-auto">
+      {/* List Container (scrollable because parent content is overflow-hidden) */}
+      <div className="flex-1 overflow-y-auto custom-scrollbar pb-2">
+        {/* Table - Desktop */}
+        <div className="hidden lg:block bg-slate-800/50 rounded-xl border border-slate-700 overflow-hidden backdrop-blur-sm">
+          <div className="overflow-x-auto">
           <table className="w-full text-left text-slate-300">
             <thead className="bg-slate-900/50 text-xs uppercase tracking-wider text-slate-400 font-medium">
               <tr>
@@ -271,11 +273,11 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
               )}
             </tbody>
           </table>
+          </div>
         </div>
-      </div>
 
-      {/* Cards - Mobile/Tablet */}
-      <div className="lg:hidden space-y-3">
+        {/* Cards - Mobile/Tablet */}
+        <div className="lg:hidden space-y-3">
         {displayedProducts.map((product) => (
           <div key={product.id} className="bg-slate-800/50 rounded-xl border border-slate-700 p-4 space-y-3">
             <div className="flex justify-between items-start">
@@ -344,6 +346,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
             Товары не найдены
           </div>
         )}
+        </div>
       </div>
 
       {/* Pagination */}
