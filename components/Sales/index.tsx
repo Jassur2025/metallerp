@@ -655,7 +655,8 @@ export const Sales: React.FC<SalesProps> = ({
               expenseCurrency={expenseCurrency} setExpenseCurrency={setExpenseCurrency}
               withVat={withVat} setWithVat={setWithVat}
               expenseVatAmount={expenseVatAmount} setExpenseVatAmount={setExpenseVatAmount}
-              onSubmit={handleAddExpense} />
+              onSubmit={handleAddExpense}
+              expenseCategories={settings.expenseCategories} />
           ) : null}
         </div>
 

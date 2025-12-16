@@ -13,11 +13,20 @@ export enum Unit {
   PIECE = 'шт'
 }
 
+export type ExpensePnLCategory = 'administrative' | 'operational' | 'commercial';
+
+export interface ExpenseCategory {
+  id: string;
+  name: string;
+  pnlCategory: ExpensePnLCategory;
+}
+
 export interface AppSettings {
   vatRate: number; // Percentage (e.g. 12)
   defaultExchangeRate: number;
   telegramBotToken?: string;
   telegramChatId?: string;
+  expenseCategories?: ExpenseCategory[];
   modules?: {
     dashboard: boolean;
     inventory: boolean;

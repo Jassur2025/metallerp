@@ -48,10 +48,48 @@ const logDev = (...args: unknown[]) => { if (isDev) console.log(...args); };
 const warnDev = (...args: unknown[]) => { if (isDev) console.warn(...args); };
 const errorDev = (...args: unknown[]) => { if (isDev) console.error(...args); };
 
+// Default Expense Categories for PnL
+const DEFAULT_EXPENSE_CATEGORIES = [
+  { id: 'rent', name: 'Аренда земельных участков, зданий и сооружений', pnlCategory: 'administrative' as const },
+  { id: 'special_equipment', name: 'Аренда специальной техники', pnlCategory: 'operational' as const },
+  { id: 'bank_fees', name: 'Банковские комиссии', pnlCategory: 'administrative' as const },
+  { id: 'sales_bonus', name: 'Бонусы от продаж', pnlCategory: 'commercial' as const },
+  { id: 'customs', name: 'Государственные пошлины', pnlCategory: 'administrative' as const },
+  { id: 'salary', name: 'Зарплата', pnlCategory: 'administrative' as const },
+  { id: 'crane_costs', name: 'Затраты крана', pnlCategory: 'operational' as const },
+  { id: 'food', name: 'Затраты питания', pnlCategory: 'operational' as const },
+  { id: 'corporate_events', name: 'Затраты по корпоративно-культурным мероприятиям', pnlCategory: 'operational' as const },
+  { id: 'office_supplies', name: 'Канцелярские затраты', pnlCategory: 'administrative' as const },
+  { id: 'business_trips', name: 'Командировки и встречи', pnlCategory: 'administrative' as const },
+  { id: 'utilities', name: 'Коммунальные затраты', pnlCategory: 'administrative' as const },
+  { id: 'training', name: 'Корпоративное обучение', pnlCategory: 'administrative' as const },
+  { id: 'corporate_gifts', name: 'Корпоративные подарки', pnlCategory: 'administrative' as const },
+  { id: 'courier_fuel', name: 'Курьерские\\ГСМ затраты', pnlCategory: 'administrative' as const },
+  { id: 'marketing', name: 'Маркетинг и реклама', pnlCategory: 'commercial' as const },
+  { id: 'loading', name: 'Погрузочные затраты', pnlCategory: 'commercial' as const },
+  { id: 'postal', name: 'Почтовые затраты', pnlCategory: 'administrative' as const },
+  { id: 'bonus', name: 'Премии', pnlCategory: 'commercial' as const },
+  { id: 'professional_services', name: 'Профессиональные услуги', pnlCategory: 'administrative' as const },
+  { id: 'other_services', name: 'Прочие услуги', pnlCategory: 'administrative' as const },
+  { id: 'metal_services', name: 'Прочие услуги по металл сервису', pnlCategory: 'operational' as const },
+  { id: 'materials', name: 'Расходные материалы для обработки металла', pnlCategory: 'operational' as const },
+  { id: 'overtime', name: 'Сверхурочная работа', pnlCategory: 'operational' as const },
+  { id: 'internet', name: 'Связь и интернет', pnlCategory: 'administrative' as const },
+  { id: 'social', name: 'Социальная политика', pnlCategory: 'administrative' as const },
+  { id: 'construction', name: 'Строительные затраты', pnlCategory: 'operational' as const },
+  { id: 'telecom_it', name: 'Телекоммуникации и ИТ', pnlCategory: 'administrative' as const },
+  { id: 'os_maintenance', name: 'Техническое обслуживание ОС', pnlCategory: 'administrative' as const },
+  { id: 'transport_purchases', name: 'Транспортные услуги при закупках', pnlCategory: 'operational' as const },
+  { id: 'crane_services', name: 'Услуги крана при закупках', pnlCategory: 'operational' as const },
+  { id: 'insurance', name: 'Услуги страхования', pnlCategory: 'commercial' as const },
+  { id: 'household', name: 'Хозяйственные затраты', pnlCategory: 'administrative' as const },
+];
+
 // Default Settings
 const defaultSettings: AppSettings = {
   vatRate: 12,
   defaultExchangeRate: 12800,
+  expenseCategories: DEFAULT_EXPENSE_CATEGORIES,
   modules: {
     dashboard: true,
     inventory: true,
@@ -99,7 +137,15 @@ const AppContent: React.FC = () => {
   const [settings, setSettings] = useState<AppSettings>(() => {
     try {
       const saved = localStorage.getItem('metal_erp_settings');
-      return saved ? JSON.parse(saved) : defaultSettings;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // Ensure expenseCategories exist (fallback for old saved settings)
+        if (!parsed.expenseCategories || parsed.expenseCategories.length === 0) {
+          parsed.expenseCategories = DEFAULT_EXPENSE_CATEGORIES;
+        }
+        return { ...defaultSettings, ...parsed };
+      }
+      return defaultSettings;
     } catch (e) {
       errorDev("Failed to parse settings", e);
       return defaultSettings;
@@ -479,6 +525,7 @@ const AppContent: React.FC = () => {
   };
 
   const handleSavePurchases = async (newPurchases: Purchase[]) => {
+    logDev(`📦 handleSavePurchases called with ${newPurchases.length} purchases`);
     const prevIds = new Set(purchases.map(p => p.id));
     const addedPurchases = newPurchases.filter(p => !prevIds.has(p.id));
 
@@ -489,7 +536,9 @@ const AppContent: React.FC = () => {
     }
     setIsLoading(true);
     try {
+      logDev('💾 Calling sheetsService.saveAllPurchases...');
       await sheetsService.saveAllPurchases(accessToken, newPurchases);
+      logDev('✅ Purchases saved successfully to Google Sheets');
 
       addedPurchases.forEach(p =>
         sendTelegramMoneyEvent({
@@ -503,7 +552,7 @@ const AppContent: React.FC = () => {
         })
       );
     } catch (err) {
-      errorDev(err);
+      errorDev('❌ Error saving purchases:', err);
       const errorMessage = getErrorMessage(err);
       if (isTokenExpiredError(err)) {
         toast.error('Сессия истекла. Пожалуйста, войдите заново.');

@@ -520,8 +520,9 @@ export const sheetsService = {
     // --- Purchases (Import) ---
     getPurchases: async (accessToken: string, useCache: boolean = true): Promise<Purchase[]> => {
         return cachedFetch('purchases', accessToken, async () => {
+            console.log('📥 Loading Purchases from Google Sheets...');
             const data = await fetchSheets(accessToken, 'Purchases!A2:K');
-            return (data.values || [])
+            const purchases = (data.values || [])
                 .filter(row => row[0] && row[0] !== 'ID')
                 .map(row => ({
                     id: row[0],
@@ -536,6 +537,8 @@ export const sheetsService = {
                     paymentStatus: (row[9] as any) || 'paid',
                     amountPaid: Number(row[10]) || Number(row[7]) // Default to full amount if missing
                 }));
+            console.log(`✅ Loaded ${purchases.length} purchases from Sheets`);
+            return purchases;
         }, useCache);
     },
 

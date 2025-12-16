@@ -1,5 +1,6 @@
 import React from 'react';
 import { FileText } from 'lucide-react';
+import { ExpenseCategory } from '../../types';
 
 interface ExpenseFormProps {
   expenseDesc: string;
@@ -17,6 +18,7 @@ interface ExpenseFormProps {
   expenseVatAmount: string;
   setExpenseVatAmount: (val: string) => void;
   onSubmit: () => void;
+  expenseCategories?: ExpenseCategory[];
 }
 
 export const ExpenseForm: React.FC<ExpenseFormProps> = ({
@@ -34,8 +36,13 @@ export const ExpenseForm: React.FC<ExpenseFormProps> = ({
   setWithVat,
   expenseVatAmount,
   setExpenseVatAmount,
-  onSubmit
+  onSubmit,
+  expenseCategories = []
 }) => {
+  // Group categories by PnL type
+  const adminCategories = expenseCategories.filter(c => c.pnlCategory === 'administrative');
+  const operationalCategories = expenseCategories.filter(c => c.pnlCategory === 'operational');
+  const commercialCategories = expenseCategories.filter(c => c.pnlCategory === 'commercial');
   return (
     <div className="flex-1 bg-slate-800 border border-slate-700 rounded-2xl p-6 overflow-y-auto">
       <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
@@ -151,18 +158,47 @@ export const ExpenseForm: React.FC<ExpenseFormProps> = ({
         )}
 
         <div>
-          <label className="block text-sm font-medium text-slate-400 mb-2">Категория</label>
+          <label className="block text-sm font-medium text-slate-400 mb-2">Категория расхода</label>
           <select
             value={expenseCategory}
             onChange={e => setExpenseCategory(e.target.value)}
             className="w-full bg-slate-900 border border-slate-600 rounded-xl px-4 py-3 text-white focus:border-red-500 outline-none"
           >
-            <option>Прочее</option>
-            <option>Аренда</option>
-            <option>Зарплата</option>
-            <option>Транспорт</option>
-            <option>Налоги</option>
-            <option>Маркетинг</option>
+            <option value="">— Выберите категорию —</option>
+            {expenseCategories.length > 0 ? (
+              <>
+                {adminCategories.length > 0 && (
+                  <optgroup label="📋 Административные">
+                    {adminCategories.map(cat => (
+                      <option key={cat.id} value={cat.name}>{cat.name}</option>
+                    ))}
+                  </optgroup>
+                )}
+                {operationalCategories.length > 0 && (
+                  <optgroup label="⚙️ Операционные">
+                    {operationalCategories.map(cat => (
+                      <option key={cat.id} value={cat.name}>{cat.name}</option>
+                    ))}
+                  </optgroup>
+                )}
+                {commercialCategories.length > 0 && (
+                  <optgroup label="💰 Коммерческие">
+                    {commercialCategories.map(cat => (
+                      <option key={cat.id} value={cat.name}>{cat.name}</option>
+                    ))}
+                  </optgroup>
+                )}
+              </>
+            ) : (
+              <>
+                <option value="Прочее">Прочее</option>
+                <option value="Аренда">Аренда</option>
+                <option value="Зарплата">Зарплата</option>
+                <option value="Транспорт">Транспорт</option>
+                <option value="Налоги">Налоги</option>
+                <option value="Маркетинг">Маркетинг</option>
+              </>
+            )}
           </select>
         </div>
 
