@@ -183,7 +183,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             errorDev("❌ Error signing in with Google:", error);
             
             // Если popup заблокирован, пробуем redirect
-            if (error.code === 'auth/popup-blocked' || error.code === 'auth/popup-closed-by-user') {
+            const errorCode = (error as { code?: string })?.code;
+            if (errorCode === 'auth/popup-blocked' || errorCode === 'auth/popup-closed-by-user') {
                 logDev('⚠️ Popup заблокирован, используем redirect');
                 try {
                     sessionStorage.setItem('auth_redirect_initiated', 'true');
