@@ -453,7 +453,12 @@ export const Workflow: React.FC<WorkflowProps> = ({
               ) : cart.map(it => (
                 <div key={it.productId} className="bg-slate-900 border border-slate-700 rounded-xl p-3">
                   <div className="flex justify-between items-start">
-                    <div className="text-white text-sm font-semibold">{it.productName}</div>
+                    <div>
+                      <div className="text-white text-sm font-semibold">{it.productName}</div>
+                      {it.dimensions && it.dimensions !== '-' && (
+                        <div className="text-xs text-slate-400">{it.dimensions}</div>
+                      )}
+                    </div>
                     <button onClick={() => removeItem(it.productId)} className="text-slate-400 hover:text-red-400">
                       <Trash2 size={16} />
                     </button>
@@ -513,7 +518,11 @@ export const Workflow: React.FC<WorkflowProps> = ({
                 <div className="mt-3 space-y-1 text-sm">
                   {wf.items.slice(0, 4).map((it, idx) => (
                     <div key={idx} className="flex justify-between text-slate-300">
-                      <span className="truncate max-w-[220px]">{it.productName} × {it.quantity}</span>
+                      <span className="truncate max-w-[220px]">
+                        {it.productName}
+                        {it.dimensions && it.dimensions !== '-' && <span className="text-slate-500 ml-1">({it.dimensions})</span>}
+                        <span className="text-slate-400 ml-1">× {it.quantity}</span>
+                      </span>
                       <span className="font-mono text-slate-400">{toUZS(it.total).toLocaleString()} сум</span>
                     </div>
                   ))}

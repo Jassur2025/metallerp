@@ -859,14 +859,21 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                                                         <div className="text-sm text-slate-500">Нет недостачи</div>
                                                     ) : (
                                                         <div className="space-y-1 text-sm">
-                                                            {missing.slice(0, 8).map((m, idx) => (
-                                                                <div key={idx} className="flex justify-between text-slate-300">
-                                                                    <span className="truncate max-w-[280px]">{m.item.productName}</span>
-                                                                    <span className="font-mono text-amber-300">
-                                                                        {m.missingQty} / в наличии {m.available}
-                                                                    </span>
-                                                                </div>
-                                                            ))}
+                                                            {missing.slice(0, 8).map((m, idx) => {
+                                                                const prod = products.find(p => p.id === m.item.productId);
+                                                                const dims = prod?.dimensions || m.item.dimensions || '';
+                                                                return (
+                                                                    <div key={idx} className="flex justify-between text-slate-300">
+                                                                        <span className="truncate max-w-[280px]">
+                                                                            {m.item.productName}
+                                                                            {dims && dims !== '-' && <span className="text-slate-500 ml-1">({dims})</span>}
+                                                                        </span>
+                                                                        <span className="font-mono text-amber-300">
+                                                                            {m.missingQty} / в наличии {m.available}
+                                                                        </span>
+                                                                    </div>
+                                                                );
+                                                            })}
                                                             {missing.length > 8 && (
                                                                 <div className="text-xs text-slate-500">+ ещё {missing.length - 8} поз.</div>
                                                             )}

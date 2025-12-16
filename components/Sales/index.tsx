@@ -605,12 +605,20 @@ export const Sales: React.FC<SalesProps> = ({
                       </div>
 
                       <div className="mt-3 space-y-1 text-sm">
-                        {(wf.items || []).slice(0, 5).map((it: any, idx: number) => (
-                          <div key={idx} className="flex justify-between text-slate-300">
-                            <span className="truncate max-w-[260px]">{it.productName} × {it.quantity}</span>
-                            <span className="font-mono text-slate-400">{Math.round(Number(it.total || 0) * Number(wf.exchangeRate || exchangeRate)).toLocaleString()} сум</span>
-                          </div>
-                        ))}
+                        {(wf.items || []).slice(0, 5).map((it: OrderItem, idx: number) => {
+                          const prod = products.find(p => p.id === it.productId);
+                          const dims = prod?.dimensions || it.dimensions || '';
+                          return (
+                            <div key={idx} className="flex justify-between text-slate-300">
+                              <span className="truncate max-w-[260px]">
+                                {it.productName}
+                                {dims && dims !== '-' && <span className="text-slate-500 ml-1">({dims})</span>}
+                                <span className="text-slate-400 ml-1">× {it.quantity}</span>
+                              </span>
+                              <span className="font-mono text-slate-400">{Math.round(Number(it.total || 0) * Number(wf.exchangeRate || exchangeRate)).toLocaleString()} сум</span>
+                            </div>
+                          );
+                        })}
                         {(wf.items || []).length > 5 && <div className="text-xs text-slate-500">+ ещё {(wf.items || []).length - 5} поз.</div>}
                       </div>
 
