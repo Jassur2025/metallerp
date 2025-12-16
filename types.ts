@@ -232,6 +232,8 @@ export interface FixedAsset {
   accumulatedDepreciation: number; // USD
   depreciationRate: number; // Annual %
   lastDepreciationDate?: string;
+  paymentMethod?: 'cash' | 'bank' | 'card'; // Способ оплаты
+  paymentCurrency?: 'USD' | 'UZS'; // Валюта оплаты (для наличных)
 }
 
 // Staff Management & RBAC

@@ -21,6 +21,8 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({ assets, setAssets, onS
     const [purchaseDate, setPurchaseDate] = useState(new Date().toISOString().split('T')[0]);
     const [purchaseCost, setPurchaseCost] = useState('');
     const [revalValue, setRevalValue] = useState('');
+    const [paymentMethod, setPaymentMethod] = useState<'cash' | 'bank' | 'card'>('cash');
+    const [paymentCurrency, setPaymentCurrency] = useState<'USD' | 'UZS'>('UZS');
 
     const getDepreciationRate = (cat: FixedAssetCategory): number => {
         switch (cat) {
@@ -54,6 +56,8 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({ assets, setAssets, onS
             currentValue: cost,
             accumulatedDepreciation: 0,
             depreciationRate: rate,
+            paymentMethod,
+            paymentCurrency: paymentMethod === 'cash' ? paymentCurrency : 'UZS', // Безнал и карта только в сумах
         };
 
         const updatedAssets = [...assets, newAsset];
@@ -63,6 +67,7 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({ assets, setAssets, onS
         }
         setIsModalOpen(false);
         resetForm();
+        toast.success('Основное средство добавлено!');
     };
 
     const handleDelete = (id: string) => {
@@ -80,6 +85,8 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({ assets, setAssets, onS
         setCategory(FixedAssetCategory.COMPUTER);
         setPurchaseDate(new Date().toISOString().split('T')[0]);
         setPurchaseCost('');
+        setPaymentMethod('cash');
+        setPaymentCurrency('UZS');
     };
 
     const runMonthlyDepreciation = () => {
@@ -287,6 +294,65 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({ assets, setAssets, onS
                                     />
                                 </div>
                             </div>
+                            {/* Payment Method */}
+                            <div>
+                                <label className="block text-sm font-medium text-slate-400 mb-2">Способ оплаты</label>
+                                <div className="grid grid-cols-3 gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setPaymentMethod('cash')}
+                                        className={`py-2 rounded-xl text-sm font-medium border transition-all ${paymentMethod === 'cash' ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : 'bg-slate-900 border-slate-600 text-slate-400'}`}
+                                    >
+                                        Наличные
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setPaymentMethod('bank')}
+                                        className={`py-2 rounded-xl text-sm font-medium border transition-all ${paymentMethod === 'bank' ? 'bg-purple-500/20 border-purple-500 text-purple-400' : 'bg-slate-900 border-slate-600 text-slate-400'}`}
+                                    >
+                                        Р/С (Банк)
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setPaymentMethod('card')}
+                                        className={`py-2 rounded-xl text-sm font-medium border transition-all ${paymentMethod === 'card' ? 'bg-blue-500/20 border-blue-500 text-blue-400' : 'bg-slate-900 border-slate-600 text-slate-400'}`}
+                                    >
+                                        Карта
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Currency (only for cash) */}
+                            {paymentMethod === 'cash' && (
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-400 mb-2">Валюта оплаты</label>
+                                    <div className="flex bg-slate-900 rounded-xl p-1 border border-slate-600">
+                                        <button
+                                            type="button"
+                                            onClick={() => setPaymentCurrency('UZS')}
+                                            className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${paymentCurrency === 'UZS' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'}`}
+                                        >
+                                            Сум (UZS)
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setPaymentCurrency('USD')}
+                                            className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${paymentCurrency === 'USD' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'}`}
+                                        >
+                                            Доллар (USD)
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {paymentMethod !== 'cash' && (
+                                <div className="bg-slate-900/50 p-2 rounded-lg border border-slate-700">
+                                    <p className="text-xs text-slate-400">
+                                        {paymentMethod === 'bank' ? 'Р/С (Банк)' : 'Карта'} — оплата только в сумах (UZS)
+                                    </p>
+                                </div>
+                            )}
+
                             <div className="bg-indigo-500/10 p-3 rounded-lg border border-indigo-500/20">
                                 <p className="text-xs text-indigo-300">
                                     Норма амортизации для "{category}": <strong>{getDepreciationRate(category)}%</strong> в год.
