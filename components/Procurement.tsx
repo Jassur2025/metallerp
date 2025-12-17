@@ -1,38 +1,30 @@
 import React, { useState, useMemo } from 'react';
-import { Product, Purchase, PurchaseItem, PurchaseOverheads, Transaction, AppSettings, WorkflowOrder, OrderItem, ProductType, Unit } from '../types';
-import { Plus, Trash2, Save, Calculator, Container, DollarSign, AlertTriangle, Truck, Scale, FileText, History, Wallet, CheckCircle, Globe, MapPin, ClipboardList, Send, ChevronDown, ChevronRight } from 'lucide-react';
+import { Product, Purchase, PurchaseItem, PurchaseOverheads, Transaction, WorkflowOrder, OrderItem, ProductType, Unit } from '../types';
+import { Plus, DollarSign, Wallet } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
+
+import type { ProcurementProps, ProcurementTab, ProcurementType, PaymentMethod, PaymentCurrency, Totals } from './Procurement/types';
+import { TopBar } from './Procurement/TopBar';
+import { NewPurchaseView } from './Procurement/NewPurchaseView';
+import { WorkflowTab } from './Procurement/WorkflowTab';
+import { HistoryTab } from './Procurement/HistoryTab';
 
 const isDev = import.meta.env.DEV;
 const logDev = (...args: unknown[]) => { if (isDev) console.log(...args); };
 
-interface ProcurementProps {
-    products: Product[];
-    setProducts: (products: Product[]) => void;
-    settings: AppSettings;
-    purchases: Purchase[];
-    onSavePurchases: (purchases: Purchase[]) => void;
-    transactions: Transaction[];
-    setTransactions: (t: Transaction[]) => void;
-    workflowOrders: WorkflowOrder[];
-    onSaveWorkflowOrders: (workflowOrders: WorkflowOrder[]) => Promise<boolean | void>;
-    onSaveProducts?: (products: Product[]) => Promise<void>;
-    onSaveTransactions?: (transactions: Transaction[]) => Promise<boolean | void>;
-}
-
 export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts, settings, purchases, onSavePurchases, transactions, setTransactions, workflowOrders, onSaveWorkflowOrders, onSaveProducts, onSaveTransactions }) => {
     const toast = useToast();
-    const [activeTab, setActiveTab] = useState<'new' | 'history' | 'workflow'>(() => {
+    const [activeTab, setActiveTab] = useState<ProcurementTab>(() => {
         const saved = localStorage.getItem('procurement_active_tab');
         return (saved === 'workflow' || saved === 'history' || saved === 'new') ? saved : 'new';
     });
-    const [procurementType, setProcurementType] = useState<'local' | 'import'>('local'); // Main switch
+    const [procurementType, setProcurementType] = useState<ProcurementType>('local'); // Main switch
     const [supplierName, setSupplierName] = useState('');
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
 
     // Payment Logic
-    const [paymentMethod, setPaymentMethod] = useState<'cash' | 'bank' | 'debt'>('cash');
-    const [paymentCurrency, setPaymentCurrency] = useState<'USD' | 'UZS'>('USD'); // Currency for cash/bank payments
+    const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
+    const [paymentCurrency, setPaymentCurrency] = useState<PaymentCurrency>('USD'); // Currency for cash/bank payments
     const [amountPaid, setAmountPaid] = useState<number>(0);
 
     // Cart logic
@@ -225,7 +217,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
     };
 
     // --- Calculation Logic ---
-    const totals = useMemo(() => {
+    const totals: Totals = useMemo(() => {
         const totalInvoiceValue = cart.reduce((sum, item) => sum + (item.quantity * item.invoicePrice), 0);
 
         let totalOverheads = 0;
@@ -453,613 +445,57 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
 
     return (
         <div className="p-6 space-y-6 animate-fade-in h-[calc(100vh-2rem)] flex flex-col">
-            <div className="flex justify-between items-end">
-                <div>
-                    <h2 className="text-3xl font-bold text-white tracking-tight">Закуп и Импорт</h2>
-                    <p className="text-slate-400 mt-1">Управление поставками и расчетами</p>
-                </div>
-
-                {/* Main Mode Switcher */}
-                <div className="flex bg-slate-800 p-1 rounded-lg border border-slate-700 mr-auto ml-8">
-                    <button
-                        onClick={() => setProcurementType('local')}
-                        className={`px-4 py-2 rounded-md text-sm font-bold flex items-center gap-2 transition-all ${procurementType === 'local' ? 'bg-emerald-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
-                    >
-                        <MapPin size={16} /> Местный Закуп
-                    </button>
-                    <button
-                        onClick={() => setProcurementType('import')}
-                        className={`px-4 py-2 rounded-md text-sm font-bold flex items-center gap-2 transition-all ${procurementType === 'import' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
-                    >
-                        <Globe size={16} /> Импорт
-                    </button>
-                </div>
-
-                <div className="flex bg-slate-800 p-1 rounded-lg border border-slate-700">
-                    <button
-                        onClick={() => setActiveTab('new')}
-                        className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'new' ? 'bg-slate-700 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
-                    >
-                        Новая закупка
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('workflow')}
-                        className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'workflow' ? 'bg-slate-700 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
-                    >
-                        Workflow
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('history')}
-                        className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'history' ? 'bg-slate-700 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
-                    >
-                        История и Долги
-                    </button>
-                </div>
-            </div>
+            <TopBar
+                procurementType={procurementType}
+                setProcurementType={setProcurementType}
+                activeTab={activeTab}
+                setActiveTab={setActiveTab}
+            />
 
             {activeTab === 'new' ? (
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 overflow-hidden">
-                    {/* Left: Inputs & Overheads */}
-                    <div className="lg:col-span-1 space-y-6 overflow-y-auto pr-2 custom-scrollbar pb-20">
-                        {/* Document Info */}
-                        <div className="bg-slate-800 p-5 rounded-xl border border-slate-700 space-y-4 shadow-lg">
-                            <h3 className="text-white font-bold flex items-center gap-2">
-                                <FileText size={18} className="text-primary-500" /> Основное ({procurementType === 'local' ? 'Местный' : 'Импорт'})
-                            </h3>
-                            <div className="space-y-2">
-                                <label className="text-xs font-medium text-slate-400">Поставщик</label>
-                                <input
-                                    type="text"
-                                    className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-primary-500 outline-none"
-                                    placeholder="Название поставщика"
-                                    value={supplierName}
-                                    onChange={e => setSupplierName(e.target.value)}
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <label className="text-xs font-medium text-slate-400">Дата прихода</label>
-                                <input
-                                    type="date"
-                                    className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-primary-500 outline-none"
-                                    value={date}
-                                    onChange={e => setDate(e.target.value)}
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <label className="text-xs font-medium text-slate-400">Оплата</label>
-                                <div className="grid grid-cols-3 gap-2">
-                                    <button
-                                        onClick={() => {
-                                            setPaymentMethod('cash');
-                                            // Keep current currency for cash
-                                        }}
-                                        className={`px-2 py-2 rounded-lg text-xs font-bold border transition-all ${paymentMethod === 'cash' ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : 'bg-slate-900 border-slate-600 text-slate-400'}`}
-                                    >
-                                        Наличные
-                                    </button>
-                                    <button
-                                        onClick={() => {
-                                            setPaymentMethod('bank');
-                                            setPaymentCurrency('UZS'); // Bank transfers are always in UZS
-                                        }}
-                                        className={`px-2 py-2 rounded-lg text-xs font-bold border transition-all ${paymentMethod === 'bank' ? 'bg-blue-500/20 border-blue-500 text-blue-400' : 'bg-slate-900 border-slate-600 text-slate-400'}`}
-                                    >
-                                        Перечисление
-                                    </button>
-                                    <button
-                                        onClick={() => setPaymentMethod('debt')}
-                                        className={`px-2 py-2 rounded-lg text-xs font-bold border transition-all ${paymentMethod === 'debt' ? 'bg-red-500/20 border-red-500 text-red-400' : 'bg-slate-900 border-slate-600 text-slate-400'}`}
-                                    >
-                                        В долг
-                                    </button>
-                                </div>
-                                {/* Currency Selection - Only for cash, not for bank (always UZS) or debt */}
-                                {paymentMethod === 'cash' && (
-                                    <div className="mt-2">
-                                        <label className="text-xs font-medium text-slate-400 mb-1 block">Валюта оплаты</label>
-                                        <div className="grid grid-cols-2 gap-2">
-                                            <button
-                                                onClick={() => setPaymentCurrency('USD')}
-                                                className={`px-3 py-2 rounded-lg text-xs font-bold border transition-all ${paymentCurrency === 'USD' ? 'bg-indigo-500/20 border-indigo-500 text-indigo-400' : 'bg-slate-900 border-slate-600 text-slate-400'}`}
-                                            >
-                                                💵 USD
-                                            </button>
-                                            <button
-                                                onClick={() => setPaymentCurrency('UZS')}
-                                                className={`px-3 py-2 rounded-lg text-xs font-bold border transition-all ${paymentCurrency === 'UZS' ? 'bg-amber-500/20 border-amber-500 text-amber-400' : 'bg-slate-900 border-slate-600 text-slate-400'}`}
-                                            >
-                                                💰 UZS
-                                            </button>
-                                        </div>
-                                    </div>
-                                )}
-                                {/* Show currency info for bank (always UZS) */}
-                                {paymentMethod === 'bank' && (
-                                    <div className="mt-2 p-2 bg-blue-500/10 border border-blue-500/20 rounded-lg">
-                                        <p className="text-xs text-blue-400">💰 Перечисление всегда в UZS</p>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-
-                        {/* Add Item Form */}
-                        <div className="bg-slate-800 p-5 rounded-xl border border-slate-700 space-y-4 shadow-lg">
-                            <div className="flex items-center justify-between">
-                                <h3 className="text-white font-bold flex items-center gap-2">
-                                    <Plus size={18} className="text-emerald-500" /> Добавить товар
-                                </h3>
-                                <button
-                                    onClick={openNewProductModal}
-                                    className="px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition-colors"
-                                >
-                                    + Новый товар
-                                </button>
-                            </div>
-
-                            <div className="space-y-2">
-                                <label className="text-xs font-medium text-slate-400">Товар</label>
-                                <select
-                                    className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-emerald-500 outline-none"
-                                    value={selectedProductId}
-                                    onChange={e => setSelectedProductId(e.target.value)}
-                                >
-                                    <option value="">-- Выберите товар --</option>
-                                    {products.map(p => (
-                                        <option key={p.id} value={p.id}>
-                                            {p.name} ({p.dimensions})
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-3">
-                                <div className="space-y-2">
-                                    <label className="text-xs font-medium text-slate-400">Кол-во</label>
-                                    <input
-                                        type="number"
-                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-emerald-500 outline-none"
-                                        placeholder="0"
-                                        value={inputQty || ''}
-                                        onChange={e => setInputQty(Number(e.target.value))}
-                                    />
-                                </div>
-                                <div className="space-y-2">
-                                    <label className="text-xs font-medium text-slate-400">
-                                        {procurementType === 'import' ? 'Цена Invoice (USD)' : 'Цена закупки (USD)'}
-                                    </label>
-                                    <input
-                                        type="number"
-                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-emerald-500 outline-none"
-                                        placeholder="0.00"
-                                        value={inputPrice || ''}
-                                        onChange={e => setInputPrice(Number(e.target.value))}
-                                    />
-                                </div>
-                            </div>
-
-                            <button
-                                onClick={handleAddItem}
-                                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-2 rounded-lg font-medium transition-colors shadow-lg shadow-emerald-600/20"
-                            >
-                                Добавить в список
-                            </button>
-                        </div>
-
-                        {/* Overheads Form - ONLY FOR IMPORT */}
-                        {procurementType === 'import' && (
-                            <div className="bg-slate-800 p-5 rounded-xl border border-slate-700 space-y-4 shadow-lg relative overflow-hidden animate-fade-in">
-                                <div className="absolute -right-6 -top-6 text-slate-700 opacity-20">
-                                    <Container size={100} />
-                                </div>
-                                <h3 className="text-white font-bold flex items-center gap-2">
-                                    <Truck size={18} className="text-amber-500" /> Накладные расходы (USD)
-                                </h3>
-                                <p className="text-xs text-slate-500">Распределяются на себестоимость пропорционально сумме.</p>
-
-                                <div className="grid grid-cols-2 gap-3">
-                                    <div className="space-y-1">
-                                        <label className="text-xs text-slate-400">Логистика</label>
-                                        <input
-                                            type="number"
-                                            className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-amber-500 outline-none text-sm"
-                                            value={overheads.logistics || ''}
-                                            onChange={e => setOverheads({ ...overheads, logistics: Number(e.target.value) })}
-                                        />
-                                    </div>
-                                    <div className="space-y-1">
-                                        <label className="text-xs text-slate-400">Тамож. Пошлина</label>
-                                        <input
-                                            type="number"
-                                            className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-amber-500 outline-none text-sm"
-                                            value={overheads.customsDuty || ''}
-                                            onChange={e => setOverheads({ ...overheads, customsDuty: Number(e.target.value) })}
-                                        />
-                                    </div>
-                                    <div className="space-y-1">
-                                        <label className="text-xs text-slate-400">Тамож. НДС</label>
-                                        <input
-                                            type="number"
-                                            className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-amber-500 outline-none text-sm"
-                                            value={overheads.importVat || ''}
-                                            onChange={e => setOverheads({ ...overheads, importVat: Number(e.target.value) })}
-                                        />
-                                    </div>
-
-                                    <div className="space-y-1">
-                                        <label className="text-xs text-slate-400">Прочее</label>
-                                        <input
-                                            type="number"
-                                            className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-amber-500 outline-none text-sm"
-                                            value={overheads.other || ''}
-                                            onChange={e => setOverheads({ ...overheads, other: Number(e.target.value) })}
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Right: Items Table & Summary */}
-                    <div className="lg:col-span-2 flex flex-col h-full bg-slate-800 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden">
-                        <div className="p-4 bg-slate-900/50 border-b border-slate-700 flex justify-between items-center">
-                            <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                                <Scale className="text-blue-500" /> Список товаров к приходу
-                            </h3>
-                            <div className="bg-blue-500/10 px-3 py-1 rounded-lg border border-blue-500/20">
-                                <span className="text-xs text-blue-300">Позиций: </span>
-                                <span className="font-mono font-bold text-white">{cart.length}</span>
-                            </div>
-                        </div>
-
-                        <div className="flex-1 overflow-y-auto">
-                            <table className="w-full text-left text-sm">
-                                <thead className="bg-slate-900/50 text-xs uppercase text-slate-400 font-medium sticky top-0">
-                                    <tr>
-                                        <th className="px-4 py-3">Товар</th>
-                                        <th className="px-4 py-3 text-right">Кол-во</th>
-                                        <th className="px-4 py-3 text-right">Цена</th>
-                                        {procurementType === 'import' && (
-                                            <th className="px-4 py-3 text-right bg-amber-500/5 text-amber-200">Себест. (Landed)</th>
-                                        )}
-                                        <th className="px-4 py-3 text-right">Сумма</th>
-                                        <th className="px-4 py-3 text-center"></th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-700">
-                                    {totals.itemsWithLandedCost.map((item) => (
-                                        <tr key={item.productId} className="hover:bg-slate-700/30">
-                                            <td className="px-4 py-3 font-medium text-slate-200">{item.productName}</td>
-                                            <td className="px-4 py-3 text-right font-mono">{item.quantity} <span className="text-xs text-slate-500">{item.unit}</span></td>
-                                            <td className="px-4 py-3 text-right font-mono text-slate-400">${item.invoicePrice.toFixed(2)}</td>
-                                            {procurementType === 'import' && (
-                                                <td className="px-4 py-3 text-right font-mono font-bold text-amber-400 bg-amber-500/5">${item.landedCost.toFixed(2)}</td>
-                                            )}
-                                            <td className="px-4 py-3 text-right font-mono text-slate-200">${item.totalLineCost.toFixed(2)}</td>
-                                            <td className="px-4 py-3 text-center">
-                                                <button onClick={() => removeItem(item.productId)} className="text-slate-600 hover:text-red-400 transition-colors">
-                                                    <Trash2 size={16} />
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                    {cart.length === 0 && (
-                                        <tr>
-                                            <td colSpan={procurementType === 'import' ? 6 : 5} className="px-6 py-12 text-center text-slate-500">
-                                                Список пуст. Добавьте товары слева.
-                                            </td>
-                                        </tr>
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
-
-                        {/* Footer Summary */}
-                        <div className="bg-slate-900 p-6 border-t border-slate-700">
-                            <div className="grid grid-cols-3 gap-8 mb-6">
-                                <div>
-                                    <p className="text-xs text-slate-500 uppercase">Сумма закупки</p>
-                                    <p className="text-xl font-mono font-bold text-slate-300">${totals.totalInvoiceValue.toFixed(2)}</p>
-                                </div>
-                                {procurementType === 'import' && (
-                                    <div>
-                                        <p className="text-xs text-slate-500 uppercase">Накладные расходы</p>
-                                        <p className="text-xl font-mono font-bold text-amber-400">+${totals.totalOverheads.toFixed(2)}</p>
-                                    </div>
-                                )}
-                                <div>
-                                    <p className="text-xs text-slate-500 uppercase">Итого Себестоимость</p>
-                                    <p className="text-2xl font-mono font-bold text-white border-b-2 border-primary-500 inline-block">
-                                        ${totals.totalLandedValue.toFixed(2)}
-                                    </p>
-                                </div>
-                            </div>
-
-                            {/* Payment Info */}
-                            {paymentMethod !== 'debt' && (
-                                <div className="mb-4 p-3 bg-slate-800/50 border border-slate-700 rounded-lg">
-                                    <p className="text-xs text-slate-400 mb-1">Оплата будет списана:</p>
-                                    <p className="text-sm font-mono text-white">
-                                        {paymentMethod === 'cash' ? '💵 Касса' : '🏦 Расчетный счет'} - {
-                                            paymentCurrency === 'USD'
-                                                ? `$${totals.totalInvoiceValue.toFixed(2)}`
-                                                : `${(totals.totalInvoiceValue * settings.defaultExchangeRate).toLocaleString()} сўм`
-                                        }
-                                    </p>
-                                </div>
-                            )}
-
-                            {paymentMethod === 'debt' && (
-                                <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
-                                    <p className="text-xs text-red-400 mb-1">⚠️ Закупка будет оформлена в долг</p>
-                                    <p className="text-sm font-mono text-red-300">
-                                        Долг: ${totals.totalInvoiceValue.toFixed(2)} USD
-                                    </p>
-                                </div>
-                            )}
-
-                            <div className="flex items-center gap-4 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg mb-4">
-                                <AlertTriangle className="text-amber-500 shrink-0" size={20} />
-                                <p className="text-xs text-amber-200/80">
-                                    При проведении документа остатки товаров увеличатся, а их учетная цена (Cost Price) будет пересчитана по методу <strong>средневзвешенной</strong> стоимости.
-                                </p>
-                            </div>
-
-                            <button
-                                onClick={handleComplete}
-                                disabled={cart.length === 0 || !supplierName}
-                                className="w-full bg-primary-600 hover:bg-primary-500 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed text-white py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-3 transition-all shadow-lg shadow-primary-600/20"
-                            >
-                                <Save size={22} /> Провести закупку
-                            </button>
-                        </div>
-                    </div>
-                </div>
+                <NewPurchaseView
+                    procurementType={procurementType}
+                    supplierName={supplierName}
+                    setSupplierName={setSupplierName}
+                    date={date}
+                    setDate={setDate}
+                    paymentMethod={paymentMethod}
+                    setPaymentMethod={setPaymentMethod}
+                    paymentCurrency={paymentCurrency}
+                    setPaymentCurrency={setPaymentCurrency}
+                    products={products}
+                    selectedProductId={selectedProductId}
+                    setSelectedProductId={setSelectedProductId}
+                    inputQty={inputQty}
+                    setInputQty={setInputQty}
+                    inputPrice={inputPrice}
+                    setInputPrice={setInputPrice}
+                    openNewProductModal={openNewProductModal}
+                    handleAddItem={handleAddItem}
+                    removeItem={removeItem}
+                    overheads={overheads}
+                    setOverheads={setOverheads}
+                    totals={totals}
+                    cart={cart}
+                    settings={settings}
+                    handleComplete={handleComplete}
+                />
             ) : activeTab === 'workflow' ? (
-                <div className="flex-1 bg-slate-800 rounded-xl border border-slate-700 shadow-lg overflow-hidden flex flex-col">
-                    <div className="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-900/50">
-                        <h3 className="font-bold text-white flex items-center gap-2">
-                            <ClipboardList size={18} className="text-amber-400" /> Workflow заявки в закуп
-                        </h3>
-                        <div className="text-xs text-slate-400">
-                            {workflowQueue.length} заявок
-                        </div>
-                    </div>
-
-                    <div className="flex-1 overflow-y-auto custom-scrollbar">
-                        {workflowQueue.length === 0 ? (
-                            <div className="p-12 text-center text-slate-500">
-                                Заявок из Workflow нет.
-                            </div>
-                        ) : (
-                            <div className="divide-y divide-slate-700">
-                                {workflowQueue.map(wf => {
-                                    const missing = getMissingItems(wf.items);
-                                    const ready = missing.length === 0;
-                                    return (
-                                        <div key={wf.id} className="p-5 hover:bg-slate-700/30 transition-colors">
-                                            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-                                                <div>
-                                                    <div className="text-white font-bold">{wf.customerName}</div>
-                                                    <div className="text-xs text-slate-400 mt-1">
-                                                        {new Date(wf.date).toLocaleString('ru-RU')} • {wf.id}
-                                                    </div>
-                                                    <div className="text-xs text-slate-500 mt-1">
-                                                        Создал: {wf.createdBy}
-                                                    </div>
-                                                </div>
-                                                <div className="flex items-center gap-2">
-                                                    {ready ? (
-                                                        <span className="text-[11px] font-bold px-2 py-1 rounded border bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
-                                                            Всё в наличии
-                                                        </span>
-                                                    ) : (
-                                                        <span className="text-[11px] font-bold px-2 py-1 rounded border bg-amber-500/10 text-amber-400 border-amber-500/20">
-                                                            Не хватает: {missing.length}
-                                                        </span>
-                                                    )}
-                                                    <span className="text-sm font-mono text-emerald-300">
-                                                        {wf.totalAmountUZS.toLocaleString()} сум
-                                                    </span>
-                                                </div>
-                                            </div>
-
-                                            <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
-                                                <div className="bg-slate-900/40 border border-slate-700 rounded-xl p-4">
-                                                    <div className="text-xs text-slate-400 font-medium mb-2">Недостающие позиции</div>
-                                                    {missing.length === 0 ? (
-                                                        <div className="text-sm text-slate-500">Нет недостачи</div>
-                                                    ) : (
-                                                        <div className="space-y-1 text-sm">
-                                                            {missing.slice(0, 8).map((m, idx) => {
-                                                                const prod = products.find(p => p.id === m.item.productId);
-                                                                const dims = prod?.dimensions || m.item.dimensions || '';
-                                                                return (
-                                                                    <div key={idx} className="flex justify-between text-slate-300">
-                                                                        <span className="truncate max-w-[280px]">
-                                                                            {m.item.productName}
-                                                                            {dims && dims !== '-' && <span className="text-slate-500 ml-1">({dims})</span>}
-                                                                        </span>
-                                                                        <span className="font-mono text-amber-300">
-                                                                            {m.missingQty} / в наличии {m.available}
-                                                                        </span>
-                                                                    </div>
-                                                                );
-                                                            })}
-                                                            {missing.length > 8 && (
-                                                                <div className="text-xs text-slate-500">+ ещё {missing.length - 8} поз.</div>
-                                                            )}
-                                                        </div>
-                                                    )}
-                                                </div>
-
-                                                <div className="flex flex-col gap-2">
-                                                    <button
-                                                        onClick={() => createDraftPurchaseFromWorkflow(wf)}
-                                                        className="w-full bg-amber-600 hover:bg-amber-500 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2"
-                                                    >
-                                                        <Plus size={18} /> Создать черновик закупки (по недостаче)
-                                                    </button>
-                                                    <button
-                                                        onClick={() => sendWorkflowToCash(wf)}
-                                                        disabled={!ready}
-                                                        className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-900 disabled:text-slate-500 disabled:cursor-not-allowed text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2"
-                                                    >
-                                                        <Send size={18} /> Отправить в кассу
-                                                    </button>
-                                                    <div className="text-xs text-slate-500">
-                                                        “Отправить в кассу” доступно только когда все позиции есть в наличии.
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        )}
-                    </div>
-                </div>
+                <WorkflowTab
+                    workflowQueue={workflowQueue}
+                    products={products}
+                    getMissingItems={getMissingItems}
+                    createDraftPurchaseFromWorkflow={createDraftPurchaseFromWorkflow}
+                    sendWorkflowToCash={sendWorkflowToCash}
+                />
             ) : (
-                <div className="flex-1 bg-slate-800 rounded-xl border border-slate-700 shadow-lg overflow-hidden flex flex-col">
-                    <div className="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-900/50">
-                        <h3 className="font-bold text-white flex items-center gap-2">
-                            <History size={18} className="text-slate-400" /> История закупок и Долги
-                        </h3>
-                    </div>
-                    <div className="flex-1 overflow-y-auto">
-                        <table className="w-full text-left text-sm">
-                            <thead className="bg-slate-900 text-xs uppercase text-slate-400 font-medium sticky top-0">
-                                <tr>
-                                    <th className="px-6 py-4">Дата</th>
-                                    <th className="px-6 py-4">Поставщик</th>
-                                    <th className="px-6 py-4 text-right">Сумма (Inv.)</th>
-                                    <th className="px-6 py-4 text-center">Статус оплаты</th>
-                                    <th className="px-6 py-4 text-right">Оплачено</th>
-                                    <th className="px-6 py-4 text-right">Долг</th>
-                                    <th className="px-6 py-4"></th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-700">
-                                {purchases.slice().reverse().map(purchase => {
-                                    const debt = purchase.totalInvoiceAmount - purchase.amountPaid;
-                                    const isExpanded = expandedPurchaseIds.has(purchase.id);
-                                    return (
-                                        <React.Fragment key={purchase.id}>
-                                            <tr 
-                                                className="hover:bg-slate-700/30 transition-colors cursor-pointer"
-                                                onClick={() => togglePurchaseExpand(purchase.id)}
-                                            >
-                                                <td className="px-6 py-4 text-slate-300">
-                                                    <div className="flex items-center gap-2">
-                                                        {isExpanded ? <ChevronDown size={16} className="text-slate-400" /> : <ChevronRight size={16} className="text-slate-400" />}
-                                                        {new Date(purchase.date).toLocaleDateString()}
-                                                    </div>
-                                                </td>
-                                                <td className="px-6 py-4 font-medium text-white">
-                                                    {purchase.supplierName}
-                                                    <div className="text-xs text-slate-500">{purchase.items?.length || 0} поз.</div>
-                                                </td>
-                                                <td className="px-6 py-4 text-right font-mono text-slate-300">${purchase.totalInvoiceAmount.toLocaleString()}</td>
-                                                <td className="px-6 py-4 text-center">
-                                                    <span className={`px-2 py-1 rounded text-xs font-bold uppercase ${purchase.paymentStatus === 'paid' ? 'bg-emerald-500/20 text-emerald-400' :
-                                                        purchase.paymentStatus === 'partial' ? 'bg-amber-500/20 text-amber-400' :
-                                                            'bg-red-500/20 text-red-400'
-                                                        }`}>
-                                                        {purchase.paymentStatus === 'paid' ? 'Оплачено' :
-                                                            purchase.paymentStatus === 'partial' ? 'Частично' : 'Не оплачено'}
-                                                    </span>
-                                                </td>
-                                                <td className="px-6 py-4 text-right font-mono text-emerald-400">${purchase.amountPaid.toLocaleString()}</td>
-                                                <td className="px-6 py-4 text-right font-mono text-red-400 font-bold">
-                                                    {debt > 0 ? `$${debt.toLocaleString()}` : '-'}
-                                                </td>
-                                                <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
-                                                    {debt > 0 && (
-                                                        <button
-                                                            onClick={() => handleOpenRepayModal(purchase)}
-                                                            className="text-xs bg-slate-700 hover:bg-emerald-600 text-white px-3 py-1.5 rounded transition-colors flex items-center gap-1 ml-auto"
-                                                        >
-                                                            <Wallet size={14} /> Оплатить
-                                                        </button>
-                                                    )}
-                                                </td>
-                                            </tr>
-                                            {/* Expanded details row */}
-                                            {isExpanded && (
-                                                <tr className="bg-slate-900/50">
-                                                    <td colSpan={7} className="px-6 py-4">
-                                                        <div className="bg-slate-800/50 rounded-xl border border-slate-700 overflow-hidden">
-                                                            <div className="px-4 py-2 bg-slate-900/50 border-b border-slate-700 text-xs font-bold text-slate-400 uppercase">
-                                                                Товары в закупке #{purchase.id}
-                                                            </div>
-                                                            <table className="w-full text-sm">
-                                                                <thead className="bg-slate-900/30 text-xs text-slate-500">
-                                                                    <tr>
-                                                                        <th className="px-4 py-2 text-left">Наименование</th>
-                                                                        <th className="px-4 py-2 text-left">Размеры</th>
-                                                                        <th className="px-4 py-2 text-right">Кол-во</th>
-                                                                        <th className="px-4 py-2 text-right">Цена закупки</th>
-                                                                        <th className="px-4 py-2 text-right">Landed Cost</th>
-                                                                        <th className="px-4 py-2 text-right">Сумма</th>
-                                                                    </tr>
-                                                                </thead>
-                                                                <tbody className="divide-y divide-slate-700/50">
-                                                                    {(purchase.items || []).map((item, idx) => {
-                                                                        const prod = products.find(p => p.id === item.productId);
-                                                                        const dims = prod?.dimensions || '-';
-                                                                        return (
-                                                                            <tr key={idx} className="hover:bg-slate-700/20">
-                                                                                <td className="px-4 py-2 text-white font-medium">{item.productName}</td>
-                                                                                <td className="px-4 py-2 text-slate-400">{dims}</td>
-                                                                                <td className="px-4 py-2 text-right font-mono text-slate-300">
-                                                                                    {item.quantity} <span className="text-xs text-slate-500">{item.unit}</span>
-                                                                                </td>
-                                                                                <td className="px-4 py-2 text-right font-mono text-slate-300">
-                                                                                    ${item.invoicePrice?.toFixed(2) || '0.00'}
-                                                                                </td>
-                                                                                <td className="px-4 py-2 text-right font-mono text-amber-400">
-                                                                                    ${item.landedCost?.toFixed(2) || item.invoicePrice?.toFixed(2) || '0.00'}
-                                                                                </td>
-                                                                                <td className="px-4 py-2 text-right font-mono text-emerald-400 font-bold">
-                                                                                    ${(item.totalLineCost || item.quantity * (item.invoicePrice || 0)).toFixed(2)}
-                                                                                </td>
-                                                                            </tr>
-                                                                        );
-                                                                    })}
-                                                                    {(!purchase.items || purchase.items.length === 0) && (
-                                                                        <tr>
-                                                                            <td colSpan={6} className="px-4 py-4 text-center text-slate-500">
-                                                                                Нет данных о товарах
-                                                                            </td>
-                                                                        </tr>
-                                                                    )}
-                                                                </tbody>
-                                                                <tfoot className="bg-slate-900/30 border-t border-slate-700">
-                                                                    <tr>
-                                                                        <td colSpan={3} className="px-4 py-2 text-right text-xs text-slate-400">Итого по накладной:</td>
-                                                                        <td className="px-4 py-2 text-right font-mono text-slate-300">${purchase.totalInvoiceAmount?.toFixed(2)}</td>
-                                                                        <td className="px-4 py-2 text-right font-mono text-amber-400">${purchase.totalLandedAmount?.toFixed(2) || purchase.totalInvoiceAmount?.toFixed(2)}</td>
-                                                                        <td className="px-4 py-2"></td>
-                                                                    </tr>
-                                                                </tfoot>
-                                                            </table>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            )}
-                                        </React.Fragment>
-                                    );
-                                })}
-                                {purchases.length === 0 && (
-                                    <tr>
-                                        <td colSpan={7} className="px-6 py-12 text-center text-slate-500">
-                                            История закупок пуста.
-                                        </td>
-                                    </tr>
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
+                <HistoryTab
+                    purchases={purchases}
+                    products={products}
+                    expandedPurchaseIds={expandedPurchaseIds}
+                    togglePurchaseExpand={togglePurchaseExpand}
+                    handleOpenRepayModal={handleOpenRepayModal}
+                />
             )}
 
             {/* Repayment Modal */}

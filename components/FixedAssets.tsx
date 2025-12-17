@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FixedAsset, FixedAssetCategory } from '../types';
+import { FixedAsset, FixedAssetCategory, Transaction } from '../types';
 import { Plus, Trash2, RefreshCw, Landmark, Calendar, DollarSign, TrendingDown, Edit2 } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 
@@ -7,9 +7,17 @@ interface FixedAssetsProps {
     assets: FixedAsset[];
     setAssets: (assets: FixedAsset[]) => void;
     onSaveAssets?: (assets: FixedAsset[]) => Promise<void>;
+    transactions?: Transaction[];
+    setTransactions?: (t: Transaction[]) => void;
+    onSaveTransactions?: (t: Transaction[]) => Promise<boolean | void>;
+    defaultExchangeRate?: number;
 }
 
-export const FixedAssets: React.FC<FixedAssetsProps> = ({ assets, setAssets, onSaveAssets }) => {
+export const FixedAssets: React.FC<FixedAssetsProps> = ({ 
+    assets, setAssets, onSaveAssets, 
+    transactions = [], setTransactions, onSaveTransactions,
+    defaultExchangeRate = 12800 
+}) => {
     const toast = useToast();
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isRevalModalOpen, setIsRevalModalOpen] = useState(false);
@@ -41,14 +49,16 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({ assets, setAssets, onS
         }
     };
 
-    const handleAddAsset = () => {
+    const handleAddAsset = async () => {
         if (!name || !purchaseCost) return;
 
         const cost = parseFloat(purchaseCost);
         const rate = getDepreciationRate(category);
+        const assetId = `FA-${Date.now()}`;
+        const currency = paymentMethod === 'cash' ? paymentCurrency : 'UZS';
 
         const newAsset: FixedAsset = {
-            id: `FA-${Date.now()}`,
+            id: assetId,
             name,
             category,
             purchaseDate,
@@ -57,17 +67,41 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({ assets, setAssets, onS
             accumulatedDepreciation: 0,
             depreciationRate: rate,
             paymentMethod,
-            paymentCurrency: paymentMethod === 'cash' ? paymentCurrency : 'UZS', // Безнал и карта только в сумах
+            paymentCurrency: currency,
         };
 
         const updatedAssets = [...assets, newAsset];
         setAssets(updatedAssets);
         if (onSaveAssets) {
-            onSaveAssets(updatedAssets);
+            await onSaveAssets(updatedAssets);
         }
+
+        // Создаём транзакцию расхода для кассового учёта
+        if (setTransactions && onSaveTransactions) {
+            // Рассчитываем сумму в валюте оплаты
+            const transactionAmount = currency === 'UZS' ? cost * defaultExchangeRate : cost;
+            
+            const newTransaction: Transaction = {
+                id: `TRX-${Date.now()}`,
+                date: purchaseDate,
+                type: 'expense',
+                amount: transactionAmount,
+                currency: currency,
+                exchangeRate: currency === 'UZS' ? defaultExchangeRate : undefined,
+                method: paymentMethod,
+                description: `Покупка ОС: ${name} (${category})`,
+                category: 'Основные средства',
+                relatedId: assetId
+            };
+
+            const updatedTransactions = [...transactions, newTransaction];
+            setTransactions(updatedTransactions);
+            await onSaveTransactions(updatedTransactions);
+        }
+
         setIsModalOpen(false);
         resetForm();
-        toast.success('Основное средство добавлено!');
+        toast.success('Основное средство добавлено и списано из кассы!');
     };
 
     const handleDelete = (id: string) => {

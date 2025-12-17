@@ -60,3 +60,4 @@ export const BalanceBar: React.FC<BalanceBarProps> = ({ balances }) => {
   );
 };
 
+

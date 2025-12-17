@@ -519,6 +519,47 @@ export const Sales: React.FC<SalesProps> = ({
     setMode('sale'); setReturnClientName(''); setReturnProductName(''); setReturnQuantity('');
   };
 
+  // --- Money Return Logic ---
+  const handleMoneyReturn = async (data: { clientName: string; amount: number; method: 'cash' | 'bank' | 'card'; currency: 'USD' | 'UZS'; reason: string }) => {
+    const client = clients.find(c => c.name.toLowerCase() === data.clientName.toLowerCase());
+    
+    // Create refund transaction (negative expense = money going out)
+    const newTransaction: Transaction = {
+      id: `TRX-${Date.now()}`,
+      date: new Date().toISOString(),
+      type: 'client_refund',
+      amount: data.amount,
+      currency: data.currency,
+      exchangeRate: data.currency === 'UZS' ? settings.defaultExchangeRate : undefined,
+      method: data.method,
+      description: `Возврат денег: ${data.reason}${client ? ` (клиент: ${client.name})` : ''}`,
+      relatedId: client?.id
+    };
+
+    const updatedTransactions = [...transactions, newTransaction];
+    setTransactions(updatedTransactions);
+    await onSaveTransactions?.(updatedTransactions);
+
+    // Update client debt if exists
+    if (client) {
+      const amountInUSD = data.currency === 'USD' ? data.amount : data.amount / settings.defaultExchangeRate;
+      const updatedClients = clients.map(c => 
+        c.id === client.id 
+          ? { ...c, totalDebt: Math.max(0, (c.totalDebt || 0) - amountInUSD) } 
+          : c
+      );
+      await onSaveClients(updatedClients);
+    }
+
+    const formattedAmount = data.currency === 'UZS' 
+      ? `${data.amount.toLocaleString()} сум` 
+      : `$${data.amount.toFixed(2)}`;
+    
+    toast.success(`Возврат денег оформлен!\nСумма: ${formattedAmount}\nСпособ: ${data.method === 'cash' ? 'Наличные' : data.method === 'bank' ? 'Р/С' : 'Карта'}`);
+    setMode('sale');
+    setReturnClientName('');
+  };
+
   // --- Client Save ---
   const handleSaveClient = () => {
     if (!newClientData.name || !newClientData.phone) { toast.warning('Имя и Телефон обязательны!'); return; }
@@ -700,7 +741,10 @@ export const Sales: React.FC<SalesProps> = ({
           returnProductName={returnProductName} setReturnProductName={setReturnProductName}
           returnQuantity={returnQuantity} setReturnQuantity={setReturnQuantity}
           returnMethod={returnMethod} setReturnMethod={setReturnMethod}
-          clients={clients} products={products} onSubmit={handleReturnSubmit} onClose={() => setMode('sale')} />
+          clients={clients} products={products} 
+          onSubmit={handleReturnSubmit} 
+          onSubmitMoneyReturn={handleMoneyReturn}
+          onClose={() => setMode('sale')} />
       )}
 
       {/* Receipt Modal */}

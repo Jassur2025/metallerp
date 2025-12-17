@@ -192,3 +192,4 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, onPrint, onCl
   );
 };
 
+

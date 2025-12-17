@@ -928,7 +928,15 @@ const AppContent: React.FC = () => {
       case 'reports':
         return renderLazyComponent(<Reports orders={orders} expenses={expenses} products={products} purchases={purchases} settings={settings} transactions={transactions} onAddExpense={handleAddExpense} />);
       case 'fixedAssets':
-        return renderLazyComponent(<FixedAssets assets={fixedAssets} setAssets={setFixedAssets} onSaveAssets={handleSaveFixedAssets} />);
+        return renderLazyComponent(<FixedAssets 
+          assets={fixedAssets} 
+          setAssets={setFixedAssets} 
+          onSaveAssets={handleSaveFixedAssets}
+          transactions={transactions}
+          setTransactions={setTransactions}
+          onSaveTransactions={handleSaveTransactions}
+          defaultExchangeRate={settings.defaultExchangeRate}
+        />);
       case 'crm':
         return renderLazyComponent(<CRM
           clients={clients}
