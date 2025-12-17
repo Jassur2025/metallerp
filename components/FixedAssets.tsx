@@ -13,10 +13,10 @@ interface FixedAssetsProps {
     defaultExchangeRate?: number;
 }
 
-export const FixedAssets: React.FC<FixedAssetsProps> = ({ 
-    assets, setAssets, onSaveAssets, 
+export const FixedAssets: React.FC<FixedAssetsProps> = ({
+    assets, setAssets, onSaveAssets,
     transactions = [], setTransactions, onSaveTransactions,
-    defaultExchangeRate = 12800 
+    defaultExchangeRate = 12800
 }) => {
     const toast = useToast();
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -31,6 +31,7 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
     const [revalValue, setRevalValue] = useState('');
     const [paymentMethod, setPaymentMethod] = useState<'cash' | 'bank' | 'card'>('cash');
     const [paymentCurrency, setPaymentCurrency] = useState<'USD' | 'UZS'>('UZS');
+    const [customExchangeRate, setCustomExchangeRate] = useState(defaultExchangeRate.toString());
 
     const getDepreciationRate = (cat: FixedAssetCategory): number => {
         switch (cat) {
@@ -53,7 +54,8 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
         if (!name || !purchaseCost) return;
 
         const cost = parseFloat(purchaseCost);
-        const rate = getDepreciationRate(category);
+        const rate = parseFloat(customExchangeRate) || defaultExchangeRate;
+        const depreciationRate = getDepreciationRate(category);
         const assetId = `FA-${Date.now()}`;
         const currency = paymentMethod === 'cash' ? paymentCurrency : 'UZS';
 
@@ -65,7 +67,7 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
             purchaseCost: cost,
             currentValue: cost,
             accumulatedDepreciation: 0,
-            depreciationRate: rate,
+            depreciationRate: depreciationRate,
             paymentMethod,
             paymentCurrency: currency,
         };
@@ -79,18 +81,17 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
         // Создаём транзакцию расхода для кассового учёта
         if (setTransactions && onSaveTransactions) {
             // Рассчитываем сумму в валюте оплаты
-            const transactionAmount = currency === 'UZS' ? cost * defaultExchangeRate : cost;
-            
+            const transactionAmount = currency === 'UZS' ? cost * rate : cost;
+
             const newTransaction: Transaction = {
                 id: `TRX-${Date.now()}`,
                 date: purchaseDate,
                 type: 'expense',
                 amount: transactionAmount,
                 currency: currency,
-                exchangeRate: currency === 'UZS' ? defaultExchangeRate : undefined,
+                exchangeRate: currency === 'UZS' ? rate : undefined,
                 method: paymentMethod,
                 description: `Покупка ОС: ${name} (${category})`,
-                category: 'Основные средства',
                 relatedId: assetId
             };
 
@@ -121,6 +122,7 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
         setPurchaseCost('');
         setPaymentMethod('cash');
         setPaymentCurrency('UZS');
+        setCustomExchangeRate(defaultExchangeRate.toString());
     };
 
     const runMonthlyDepreciation = () => {
@@ -376,6 +378,18 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
                                             Доллар (USD)
                                         </button>
                                     </div>
+
+                                    {paymentCurrency === 'UZS' && (
+                                        <div className="mt-2">
+                                            <label className="block text-xs font-medium text-slate-400 mb-1">Курс обмена (для пересчета)</label>
+                                            <input
+                                                type="number"
+                                                className="w-full bg-slate-900 border border-slate-600 rounded-xl px-4 py-2 text-white outline-none focus:border-indigo-500"
+                                                value={customExchangeRate}
+                                                onChange={e => setCustomExchangeRate(e.target.value)}
+                                            />
+                                        </div>
+                                    )}
                                 </div>
                             )}
 

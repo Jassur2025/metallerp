@@ -201,7 +201,7 @@ export interface Purchase {
 export interface Transaction {
   id: string;
   date: string;
-  type: 'client_payment' | 'supplier_payment' | 'client_return' | 'debt_obligation' | 'client_refund';
+  type: 'client_payment' | 'supplier_payment' | 'client_return' | 'debt_obligation' | 'client_refund' | 'expense';
   amount: number; // Amount in the specified currency
   currency: 'USD' | 'UZS';
   exchangeRate?: number; // Required if currency is UZS
