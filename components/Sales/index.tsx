@@ -3,6 +3,8 @@ import { Product, Order, OrderItem, Expense, Client, Transaction, JournalEvent, 
 import { ShoppingCart, ArrowDownRight, ArrowUpRight, RefreshCw, FileText, ClipboardList, BadgeCheck, AlertTriangle } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import { SUPER_ADMIN_EMAILS, IS_DEV_MODE } from '../../constants';
+import { useAuth } from '../../contexts/AuthContext';
+
 
 // Sub-components
 import { SalesProps, Balances, FlyingItem, SalesMode, PaymentMethod, Currency } from './types';
@@ -15,6 +17,8 @@ import { ExpenseForm } from './ExpenseForm';
 import { ReturnModal } from './ReturnModal';
 import { ReceiptModal } from './ReceiptModal';
 import { ClientModal } from './ClientModal';
+import { generateInvoicePDF, generateWaybillPDF } from '../../utils/DocumentTemplates';
+
 const isDev = import.meta.env.DEV;
 const errorDev = (...args: unknown[]) => { if (isDev) console.error(...args); };
 
@@ -24,7 +28,9 @@ export const Sales: React.FC<SalesProps> = ({
   workflowOrders, onSaveWorkflowOrders, currentUserEmail, onNavigateToProcurement,
   onSaveOrders, onSaveTransactions, onSaveProducts, onSaveExpenses, onAddJournalEvent
 }) => {
+  const { user } = useAuth();
   const toast = useToast();
+
 
   const currentEmployee = React.useMemo(
     () => employees.find(e => e.email?.toLowerCase() === (currentUserEmail || '').toLowerCase()),
@@ -522,7 +528,7 @@ export const Sales: React.FC<SalesProps> = ({
   // --- Money Return Logic ---
   const handleMoneyReturn = async (data: { clientName: string; amount: number; method: 'cash' | 'bank' | 'card'; currency: 'USD' | 'UZS'; reason: string }) => {
     const client = clients.find(c => c.name.toLowerCase() === data.clientName.toLowerCase());
-    
+
     // Create refund transaction (negative expense = money going out)
     const newTransaction: Transaction = {
       id: `TRX-${Date.now()}`,
@@ -543,18 +549,18 @@ export const Sales: React.FC<SalesProps> = ({
     // Update client debt if exists
     if (client) {
       const amountInUSD = data.currency === 'USD' ? data.amount : data.amount / settings.defaultExchangeRate;
-      const updatedClients = clients.map(c => 
-        c.id === client.id 
-          ? { ...c, totalDebt: Math.max(0, (c.totalDebt || 0) - amountInUSD) } 
+      const updatedClients = clients.map(c =>
+        c.id === client.id
+          ? { ...c, totalDebt: Math.max(0, (c.totalDebt || 0) - amountInUSD) }
           : c
       );
       await onSaveClients(updatedClients);
     }
 
-    const formattedAmount = data.currency === 'UZS' 
-      ? `${data.amount.toLocaleString()} сум` 
+    const formattedAmount = data.currency === 'UZS'
+      ? `${data.amount.toLocaleString()} сум`
       : `$${data.amount.toFixed(2)}`;
-    
+
     toast.success(`Возврат денег оформлен!\nСумма: ${formattedAmount}\nСпособ: ${data.method === 'cash' ? 'Наличные' : data.method === 'bank' ? 'Р/С' : 'Карта'}`);
     setMode('sale');
     setReturnClientName('');
@@ -608,9 +614,12 @@ export const Sales: React.FC<SalesProps> = ({
             <button onClick={() => setMode('expense')} className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${mode === 'expense' ? 'bg-red-600 text-white shadow-lg shadow-red-900/20' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
               <ArrowUpRight size={20} /> Новый Расход
             </button>
-            <button onClick={() => setMode('return')} className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${mode === 'return' ? 'bg-amber-600 text-white shadow-lg shadow-amber-900/20' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
-              <RefreshCw size={20} /> Возврат
-            </button>
+            {(user?.permissions?.canProcessReturns !== false) && (
+              <button onClick={() => setMode('return')} className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${mode === 'return' ? 'bg-amber-600 text-white shadow-lg shadow-amber-900/20' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
+                <RefreshCw size={20} /> Возврат
+              </button>
+            )}
+
             {isCashier && (
               <button onClick={() => setMode('workflow')} className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${mode === 'workflow' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
                 <ClipboardList size={20} /> Workflow
@@ -731,7 +740,11 @@ export const Sales: React.FC<SalesProps> = ({
             toUZS={toUZS} onCompleteOrder={completeOrder} onOpenClientModal={() => setIsClientModalOpen(true)}
             onNavigateToStaff={onNavigateToStaff} lastOrder={lastOrder}
             onShowReceipt={(order) => { setSelectedOrderForReceipt(order); setShowReceiptModal(true); }}
-            onPrintReceipt={handlePrintReceipt} flyingItems={flyingItems} />
+            onPrintReceipt={handlePrintReceipt}
+            onPrintInvoice={(order) => generateInvoicePDF(order, settings)}
+            onPrintWaybill={(order) => generateWaybillPDF(order, settings)}
+            flyingItems={flyingItems} />
+
         )}
       </div>
 
@@ -741,8 +754,8 @@ export const Sales: React.FC<SalesProps> = ({
           returnProductName={returnProductName} setReturnProductName={setReturnProductName}
           returnQuantity={returnQuantity} setReturnQuantity={setReturnQuantity}
           returnMethod={returnMethod} setReturnMethod={setReturnMethod}
-          clients={clients} products={products} 
-          onSubmit={handleReturnSubmit} 
+          clients={clients} products={products}
+          onSubmit={handleReturnSubmit}
           onSubmitMoneyReturn={handleMoneyReturn}
           onClose={() => setMode('sale')} />
       )}
@@ -750,6 +763,8 @@ export const Sales: React.FC<SalesProps> = ({
       {/* Receipt Modal */}
       {showReceiptModal && selectedOrderForReceipt && (
         <ReceiptModal order={selectedOrderForReceipt} onPrint={handlePrintReceipt}
+          onPrintInvoice={(order) => generateInvoicePDF(order, settings)}
+          onPrintWaybill={(order) => generateWaybillPDF(order, settings)}
           onClose={() => { setShowReceiptModal(false); setSelectedOrderForReceipt(null); }} />
       )}
 

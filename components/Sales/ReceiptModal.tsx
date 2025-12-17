@@ -8,7 +8,10 @@ interface ReceiptModalProps {
   onClose: () => void;
 }
 
-export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, onPrint, onClose }) => {
+export const ReceiptModal: React.FC<ReceiptModalProps & {
+  onPrintInvoice?: (order: Order) => void;
+  onPrintWaybill?: (order: Order) => void;
+}> = ({ order, onPrint, onClose, onPrintInvoice, onPrintWaybill }) => {
   const handleBrowserPrint = () => {
     const printContent = document.getElementById('receipt-preview');
     if (printContent) {
@@ -146,10 +149,9 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, onPrint, onCl
               </div>
               <div className="flex justify-between">
                 <span>Статус:</span>
-                <span className={`font-medium ${
-                  order.paymentStatus === 'paid' ? 'text-emerald-600' :
-                  order.paymentStatus === 'unpaid' ? 'text-red-600' : 'text-amber-600'
-                }`}>
+                <span className={`font-medium ${order.paymentStatus === 'paid' ? 'text-emerald-600' :
+                    order.paymentStatus === 'unpaid' ? 'text-red-600' : 'text-amber-600'
+                  }`}>
                   {order.paymentStatus === 'paid' ? 'Оплачено' :
                     order.paymentStatus === 'unpaid' ? 'Не оплачено' : 'Частично оплачено'}
                 </span>
@@ -180,6 +182,24 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, onPrint, onCl
             <Printer size={18} />
             Печать
           </button>
+        </div>
+        <div className="px-6 pb-6 pt-0 bg-gradient-to-r from-gray-50 to-blue-50 flex flex-col sm:flex-row gap-3">
+          {onPrintInvoice && (
+            <button
+              onClick={() => onPrintInvoice(order)}
+              className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-indigo-600/30 hover:shadow-xl hover:scale-105"
+            >
+              <FileText size={18} /> Счет на оплату
+            </button>
+          )}
+          {onPrintWaybill && (
+            <button
+              onClick={() => onPrintWaybill(order)}
+              className="flex-1 bg-purple-600 hover:bg-purple-500 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-purple-600/30 hover:shadow-xl hover:scale-105"
+            >
+              <FileText size={18} /> Накладная
+            </button>
+          )}
           <button
             onClick={onClose}
             className="px-6 bg-gray-200 hover:bg-gray-300 text-gray-700 py-3 rounded-xl font-semibold transition-all hover:scale-105"

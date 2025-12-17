@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { Employee, UserRole } from '../types';
 import { useToast } from '../contexts/ToastContext';
-import { Plus, Search, Edit2, Phone, Mail, Briefcase, Calendar, DollarSign, User, Shield, CheckCircle, XCircle } from 'lucide-react';
+import { Plus, Search, Edit2, Phone, Mail, Briefcase, Calendar, DollarSign, User, Shield, CheckCircle, XCircle, Trash2 } from 'lucide-react';
+
 
 interface StaffProps {
     employees: Employee[];
@@ -97,6 +98,15 @@ export const Staff: React.FC<StaffProps> = ({ employees, onSave }) => {
         await onSave(updatedEmployees);
         setIsModalOpen(false);
     };
+
+    const handleDelete = async (employeeId: string) => {
+        if (!window.confirm('Вы уверены, что хотите удалить этого сотрудника?')) return;
+
+        const updatedEmployees = employees.filter(e => e.id !== employeeId);
+        await onSave(updatedEmployees);
+        toast.success('Сотрудник удален');
+    };
+
 
     // Filter employees
     const filteredEmployees = useMemo(() => {
@@ -207,13 +217,24 @@ export const Staff: React.FC<StaffProps> = ({ employees, onSave }) => {
                                     <p className="text-slate-400 text-sm">{employee.position}</p>
                                 </div>
                             </div>
-                            <button
-                                onClick={() => handleOpenModal(employee)}
-                                className="p-2 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-white transition-colors"
-                            >
-                                <Edit2 size={16} />
-                            </button>
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={() => handleOpenModal(employee)}
+                                    className="p-2 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-white transition-colors"
+                                    title="Редактировать"
+                                >
+                                    <Edit2 size={16} />
+                                </button>
+                                <button
+                                    onClick={() => handleDelete(employee.id)}
+                                    className="p-2 hover:bg-red-500/20 rounded-lg text-red-400 hover:text-red-300 transition-colors"
+                                    title="Удалить"
+                                >
+                                    <Trash2 size={16} />
+                                </button>
+                            </div>
                         </div>
+
 
                         <div className="space-y-2 mb-4">
                             <div className="flex items-center gap-2 text-sm text-slate-400">
@@ -416,6 +437,45 @@ export const Staff: React.FC<StaffProps> = ({ employees, onSave }) => {
                                 </p>
                             </div>
                         </div>
+
+                        {/* Granular Permissions */}
+                        <div className="border-t border-slate-700 pt-4">
+                            <label className="block text-sm font-medium text-slate-400 mb-3">Специальные права (Actions)</label>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                {[
+                                    { key: 'canViewCostPrice', label: 'Видеть себестоимость (Inventory)' },
+                                    { key: 'canProcessReturns', label: 'Оформлять возвраты (Sales)' },
+                                    { key: 'canEditProducts', label: 'Редактировать товары (Inventory)' },
+                                    { key: 'canDeleteOrders', label: 'Удалять заказы (History)' },
+                                    { key: 'canManageUsers', label: 'Управлять сотрудниками (Admin)' }
+                                ].map(perm => (
+                                    <label key={perm.key} className="flex items-center gap-2 cursor-pointer group">
+                                        <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${formData.permissions?.[perm.key as keyof typeof formData.permissions] === true
+                                            ? 'bg-amber-600 border-amber-600'
+                                            : 'border-slate-600 group-hover:border-slate-500'
+                                            }`}>
+                                            {formData.permissions?.[perm.key as keyof typeof formData.permissions] === true && (
+                                                <CheckCircle size={12} className="text-white" />
+                                            )}
+                                        </div>
+                                        <input
+                                            type="checkbox"
+                                            className="hidden"
+                                            checked={formData.permissions?.[perm.key as keyof typeof formData.permissions] === true}
+                                            onChange={(e) => {
+                                                const newPermissions: Record<string, boolean> = { ...(formData.permissions || {}) };
+                                                newPermissions[perm.key] = e.target.checked;
+                                                setFormData({ ...formData, permissions: newPermissions });
+                                            }}
+                                        />
+                                        <span className={`text-sm ${formData.permissions?.[perm.key as keyof typeof formData.permissions] === true ? 'text-white' : 'text-slate-500'}`}>
+                                            {perm.label}
+                                        </span>
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+
 
                         <div className="p-6 border-t border-slate-700 flex justify-end gap-3 bg-slate-900/50">
                             <button

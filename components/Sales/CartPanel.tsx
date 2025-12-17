@@ -29,6 +29,8 @@ interface CartPanelProps {
   lastOrder: Order | null;
   onShowReceipt: (order: Order) => void;
   onPrintReceipt: (order: Order) => void;
+  onPrintInvoice: (order: Order) => void;
+  onPrintWaybill: (order: Order) => void;
   flyingItems: FlyingItem[];
 }
 
@@ -58,6 +60,8 @@ export const CartPanel: React.FC<CartPanelProps> = ({
   lastOrder,
   onShowReceipt,
   onPrintReceipt,
+  onPrintInvoice,
+  onPrintWaybill,
   flyingItems
 }) => {
   return (
@@ -249,11 +253,18 @@ export const CartPanel: React.FC<CartPanelProps> = ({
               Просмотр чека
             </button>
             <button
-              onClick={() => onPrintReceipt(lastOrder)}
+              onClick={() => onPrintInvoice(lastOrder)}
               className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white py-2 rounded-xl font-medium text-sm flex items-center justify-center gap-2 transition-all shadow-lg shadow-indigo-600/20"
             >
-              <Printer size={16} />
-              PDF
+              <FileText size={16} />
+              Счет
+            </button>
+            <button
+              onClick={() => onPrintWaybill(lastOrder)}
+              className="flex-1 bg-purple-600 hover:bg-purple-500 text-white py-2 rounded-xl font-medium text-sm flex items-center justify-center gap-2 transition-all shadow-lg shadow-purple-600/20"
+            >
+              <FileText size={16} />
+              Накладная
             </button>
           </div>
         )}

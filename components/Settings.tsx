@@ -184,7 +184,7 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
     };
 
     return (
-        <div className="p-6 space-y-8 animate-fade-in max-w-4xl mx-auto">
+        <div className="h-full overflow-y-auto custom-scrollbar p-6 space-y-8 animate-fade-in max-w-4xl mx-auto">
             <div className="border-b border-slate-700 pb-6">
                 <h2 className="text-3xl font-bold text-white tracking-tight flex items-center gap-3">
                     <SettingsIcon size={32} className="text-primary-500" />
@@ -197,22 +197,20 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
             <div className="flex gap-2 mb-6">
                 <button
                     onClick={() => setActiveTab('general')}
-                    className={`px-6 py-3 rounded-xl font-medium transition-all ${
-                        activeTab === 'general'
-                            ? 'bg-primary-600 text-white shadow-lg shadow-primary-600/20'
-                            : 'bg-slate-800 text-slate-400 hover:text-white border border-slate-700'
-                    }`}
+                    className={`px-6 py-3 rounded-xl font-medium transition-all ${activeTab === 'general'
+                        ? 'bg-primary-600 text-white shadow-lg shadow-primary-600/20'
+                        : 'bg-slate-800 text-slate-400 hover:text-white border border-slate-700'
+                        }`}
                 >
                     <SettingsIcon size={18} className="inline mr-2" />
                     Основные настройки
                 </button>
                 <button
                     onClick={() => setActiveTab('expenses')}
-                    className={`px-6 py-3 rounded-xl font-medium transition-all ${
-                        activeTab === 'expenses'
-                            ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20'
-                            : 'bg-slate-800 text-slate-400 hover:text-white border border-slate-700'
-                    }`}
+                    className={`px-6 py-3 rounded-xl font-medium transition-all ${activeTab === 'expenses'
+                        ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20'
+                        : 'bg-slate-800 text-slate-400 hover:text-white border border-slate-700'
+                        }`}
                 >
                     <Receipt size={18} className="inline mr-2" />
                     Категории расходов
@@ -221,317 +219,401 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
 
             {/* Tab: General Settings */}
             {activeTab === 'general' && (
-            <div className="bg-slate-800 rounded-2xl border border-slate-700 p-8 shadow-lg space-y-8">
+                <div className="bg-slate-800 rounded-2xl border border-slate-700 p-8 shadow-lg space-y-8">
 
-                {/* Google Sheets Connection */}
-                <div className="space-y-6">
-                    <h3 className="text-xl font-bold text-white border-l-4 border-blue-500 pl-4 flex items-center gap-2">
-                        <Database size={24} className="text-blue-500" />
-                        Подключение к Google Sheets
-                    </h3>
-
-                    <div className="space-y-2">
-                        <label className="block text-sm font-medium text-slate-300">
-                            ID Таблицы (Spreadsheet ID)
-                        </label>
-                        <div className="flex gap-2">
-                            <input
-                                type={isSheetFromEnv ? 'password' : 'text'}
-                                className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm disabled:opacity-60"
-                                value={isSheetFromEnv ? '••••••••••••••••' : spreadsheetId}
-                                readOnly={isSheetFromEnv}
-                                onChange={(e) => setSpreadsheetId(e.target.value)}
-                                placeholder="1Sz3dpCAJqgY5oF-d0K50TlItj7gySubJ-iNhPFS5RzE"
-                            />
-                            <button
-                                onClick={handleSaveId}
-                                disabled={isSheetFromEnv}
-                                className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-lg font-medium transition-colors"
-                            >
-                                Сохранить
-                            </button>
-                        </div>
-
-                        <div className="flex items-center justify-between mt-2">
-                            <button
-                                onClick={handleTestConnection}
-                                disabled={connectionStatus === 'loading' || !spreadsheetId}
-                                className="text-sm text-blue-400 hover:text-blue-300 underline underline-offset-4 disabled:opacity-50 disabled:no-underline"
-                            >
-                                Проверить соединение
-                            </button>
-
-                            {connectionStatus !== 'idle' && (
-                                <div className={`text-sm flex items-center gap-2 ${connectionStatus === 'success' ? 'text-emerald-400' :
-                                    connectionStatus === 'error' ? 'text-red-400' : 'text-slate-400'
-                                    }`}>
-                                    {connectionStatus === 'loading' && <Loader2 size={16} className="animate-spin" />}
-                                    {connectionStatus === 'success' && <CheckCircle size={16} />}
-                                    {connectionStatus === 'error' && <XCircle size={16} />}
-                                    {connectionMessage}
-                                </div>
-                            )}
-                        </div>
-
-                        <p className="text-xs text-slate-500">
-                            {isSheetFromEnv
-                                ? 'ID таблицы задается через env и скрыт для безопасности.'
-                                : 'Вставьте ID вашей Google Таблицы. Приложение будет автоматически сохранять туда товары и заказы.'}
-                        </p>
-                    </div>
-                </div>
-
-                <div className="border-t border-slate-700 my-6"></div>
-
-                {/* Financial Settings */}
-                <div className="space-y-6">
-                    <h3 className="text-xl font-bold text-white border-l-4 border-primary-500 pl-4">
-                        Финансы и Налоги
-                    </h3>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                        <div className="space-y-2">
-                            <label className="block text-sm font-medium text-slate-300">
-                                Ставка НДС (%)
-                            </label>
-                            <p className="text-xs text-slate-500 mb-2">
-                                Налог на добавленную стоимость, применяемый к продажам.
-                            </p>
-                            <div className="relative">
-                                <input
-                                    type="number"
-                                    className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-primary-500 outline-none"
-                                    value={formData.vatRate}
-                                    onChange={(e) => setFormData({ ...formData, vatRate: Number(e.target.value) })}
-                                />
-                                <span className="absolute right-4 top-3 text-slate-500">%</span>
-                            </div>
-                        </div>
+                    {/* Google Sheets Connection */}
+                    <div className="space-y-6">
+                        <h3 className="text-xl font-bold text-white border-l-4 border-blue-500 pl-4 flex items-center gap-2">
+                            <Database size={24} className="text-blue-500" />
+                            Подключение к Google Sheets
+                        </h3>
 
                         <div className="space-y-2">
                             <label className="block text-sm font-medium text-slate-300">
-                                Курс валют по умолчанию (USD → UZS)
+                                ID Таблицы (Spreadsheet ID)
                             </label>
-                            <p className="text-xs text-slate-500 mb-2">
-                                Базовый курс, используемый при инициализации продажи.
-                            </p>
-                            <div className="relative">
-                                <input
-                                    type="number"
-                                    className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-primary-500 outline-none"
-                                    value={formData.defaultExchangeRate}
-                                    onChange={(e) => setFormData({ ...formData, defaultExchangeRate: Number(e.target.value) })}
-                                />
-                                <span className="absolute right-4 top-3 text-slate-500">UZS</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-
-
-
-
-                <div className="border-t border-slate-700 my-6"></div>
-
-                {/* Telegram Settings */}
-                <div className="space-y-6">
-                    <h3 className="text-xl font-bold text-white border-l-4 border-blue-400 pl-4 flex items-center gap-2">
-                        <Send size={24} className="text-blue-400" />
-                        Интеграция с Telegram
-                    </h3>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                        <div className="space-y-2">
-                            <label className="block text-sm font-medium text-slate-300">
-                                Bot Token
-                            </label>
-                            <p className="text-xs text-slate-500 mb-2">
-                                Токен от @BotFather
-                            </p>
-                            <input
-                                type="password"
-                                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm disabled:opacity-60"
-                                value={isBotFromEnv ? '••••••••••••••••' : (formData.telegramBotToken || '')}
-                                readOnly={isBotFromEnv}
-                                onChange={(e) => setFormData({ ...formData, telegramBotToken: e.target.value })}
-                                placeholder="123456789:ABCdef..."
-                            />
-                            {isBotFromEnv && (
-                                <p className="text-xs text-slate-500">
-                                    Bot Token задан через env и скрыт.
-                                </p>
-                            )}
-                        </div>
-
-                        <div className="space-y-2">
-                            <label className="block text-sm font-medium text-slate-300">
-                                Chat ID
-                            </label>
-                            <p className="text-xs text-slate-500 mb-2">
-                                ID вашего чата (можно узнать через @userinfobot)
-                            </p>
                             <div className="flex gap-2">
                                 <input
-                                    type={isChatFromEnv ? 'password' : 'text'}
-                                    className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm disabled:opacity-60"
-                                    value={isChatFromEnv ? '••••••••••' : (formData.telegramChatId || '')}
-                                    readOnly={isChatFromEnv}
-                                    onChange={(e) => setFormData({ ...formData, telegramChatId: e.target.value })}
-                                    placeholder="123456789"
+                                    type={isSheetFromEnv ? 'password' : 'text'}
+                                    className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm disabled:opacity-60"
+                                    value={isSheetFromEnv ? '••••••••••••••••' : spreadsheetId}
+                                    readOnly={isSheetFromEnv}
+                                    onChange={(e) => setSpreadsheetId(e.target.value)}
+                                    placeholder="1Sz3dpCAJqgY5oF-d0K50TlItj7gySubJ-iNhPFS5RzE"
                                 />
                                 <button
-                                    onClick={handleTestTelegram}
-                                    className="bg-slate-700 hover:bg-slate-600 text-white px-4 rounded-lg transition-colors"
-                                    title="Отправить тестовое сообщение"
+                                    onClick={handleSaveId}
+                                    disabled={isSheetFromEnv}
+                                    className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-lg font-medium transition-colors"
                                 >
-                                    <Send size={18} />
+                                    Сохранить
                                 </button>
                             </div>
-                            {isChatFromEnv && (
-                                <p className="text-xs text-slate-500">
-                                    Chat ID задан через env и скрыт.
-                                </p>
-                            )}
+
+                            <div className="flex items-center justify-between mt-2">
+                                <button
+                                    onClick={handleTestConnection}
+                                    disabled={connectionStatus === 'loading' || !spreadsheetId}
+                                    className="text-sm text-blue-400 hover:text-blue-300 underline underline-offset-4 disabled:opacity-50 disabled:no-underline"
+                                >
+                                    Проверить соединение
+                                </button>
+
+                                {connectionStatus !== 'idle' && (
+                                    <div className={`text-sm flex items-center gap-2 ${connectionStatus === 'success' ? 'text-emerald-400' :
+                                        connectionStatus === 'error' ? 'text-red-400' : 'text-slate-400'
+                                        }`}>
+                                        {connectionStatus === 'loading' && <Loader2 size={16} className="animate-spin" />}
+                                        {connectionStatus === 'success' && <CheckCircle size={16} />}
+                                        {connectionStatus === 'error' && <XCircle size={16} />}
+                                        {connectionMessage}
+                                    </div>
+                                )}
+                            </div>
+
+                            <p className="text-xs text-slate-500">
+                                {isSheetFromEnv
+                                    ? 'ID таблицы задается через env и скрыт для безопасности.'
+                                    : 'Вставьте ID вашей Google Таблицы. Приложение будет автоматически сохранять туда товары и заказы.'}
+                            </p>
                         </div>
                     </div>
-                </div>
 
-                <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 flex items-start gap-3">
-                    <AlertCircle className="text-amber-500 shrink-0 mt-1" size={20} />
-                    <div className="text-sm text-amber-200/80">
-                        <span className="font-bold text-amber-400">Внимание:</span> Изменение ставки НДС повлияет только на будущие заказы. История существующих заказов останется неизменной для сохранения точности финансового учета.
+                    <div className="border-t border-slate-700 my-6"></div>
+
+                    {/* Financial Settings */}
+                    <div className="space-y-6">
+                        <h3 className="text-xl font-bold text-white border-l-4 border-primary-500 pl-4">
+                            Финансы и Налоги
+                        </h3>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                            <div className="space-y-2">
+                                <label className="block text-sm font-medium text-slate-300">
+                                    Ставка НДС (%)
+                                </label>
+                                <p className="text-xs text-slate-500 mb-2">
+                                    Налог на добавленную стоимость, применяемый к продажам.
+                                </p>
+                                <div className="relative">
+                                    <input
+                                        type="number"
+                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-primary-500 outline-none"
+                                        value={formData.vatRate}
+                                        onChange={(e) => setFormData({ ...formData, vatRate: Number(e.target.value) })}
+                                    />
+                                    <span className="absolute right-4 top-3 text-slate-500">%</span>
+                                </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="block text-sm font-medium text-slate-300">
+                                    Курс валют по умолчанию (USD → UZS)
+                                </label>
+                                <p className="text-xs text-slate-500 mb-2">
+                                    Базовый курс, используемый при инициализации продажи.
+                                </p>
+                                <div className="relative">
+                                    <input
+                                        type="number"
+                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-primary-500 outline-none"
+                                        value={formData.defaultExchangeRate}
+                                        onChange={(e) => setFormData({ ...formData, defaultExchangeRate: Number(e.target.value) })}
+                                    />
+                                    <span className="absolute right-4 top-3 text-slate-500">UZS</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+
+
+
+
+                    <div className="border-t border-slate-700 my-6"></div>
+
+                    {/* Company Status */}
+                    <div className="space-y-6">
+                        <h3 className="text-xl font-bold text-white border-l-4 border-indigo-500 pl-4 flex items-center gap-2">
+                            <div className="i-lucide-building-2 text-indigo-500" />
+                            Реквизиты Компании
+                        </h3>
+                        <p className="text-sm text-slate-400">Эти данные будут отображаться в счетах на оплату и накладных.</p>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="space-y-2">
+                                <label className="block text-sm font-medium text-slate-300">Название компании</label>
+                                <input type="text" className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                                    value={formData.companyDetails?.name || ''}
+                                    onChange={(e) => setFormData({ ...formData, companyDetails: { ...formData.companyDetails, name: e.target.value } as any })}
+                                    placeholder="ООО 'METAL MASTER'"
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <label className="block text-sm font-medium text-slate-300">Телефон</label>
+                                <input type="text" className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                                    value={formData.companyDetails?.phone || ''}
+                                    onChange={(e) => setFormData({ ...formData, companyDetails: { ...formData.companyDetails, phone: e.target.value } as any })}
+                                    placeholder="+998 90 123 45 67"
+                                />
+                            </div>
+                            <div className="col-span-full space-y-2">
+                                <label className="block text-sm font-medium text-slate-300">Юридический адрес</label>
+                                <input type="text" className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                                    value={formData.companyDetails?.address || ''}
+                                    onChange={(e) => setFormData({ ...formData, companyDetails: { ...formData.companyDetails, address: e.target.value } as any })}
+                                    placeholder="г. Ташкент, ул. Примерная, 1"
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <label className="block text-sm font-medium text-slate-300">ИНН (STIR)</label>
+                                <input type="text" className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                                    value={formData.companyDetails?.inn || ''}
+                                    onChange={(e) => setFormData({ ...formData, companyDetails: { ...formData.companyDetails, inn: e.target.value } as any })}
+                                    placeholder="123456789"
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <label className="block text-sm font-medium text-slate-300">МФО (MFO)</label>
+                                <input type="text" className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                                    value={formData.companyDetails?.mfo || ''}
+                                    onChange={(e) => setFormData({ ...formData, companyDetails: { ...formData.companyDetails, mfo: e.target.value } as any })}
+                                    placeholder="00123"
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <label className="block text-sm font-medium text-slate-300">Название Банка</label>
+                                <input type="text" className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                                    value={formData.companyDetails?.bankName || ''}
+                                    onChange={(e) => setFormData({ ...formData, companyDetails: { ...formData.companyDetails, bankName: e.target.value } as any })}
+                                    placeholder="АКБ 'Kapitalbank'"
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <label className="block text-sm font-medium text-slate-300">Расчетный счет</label>
+                                <input type="text" className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-indigo-500 outline-none font-mono"
+                                    value={formData.companyDetails?.accountNumber || ''}
+                                    onChange={(e) => setFormData({ ...formData, companyDetails: { ...formData.companyDetails, accountNumber: e.target.value } as any })}
+                                    placeholder="2020 8000 ..."
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <label className="block text-sm font-medium text-slate-300">Директор</label>
+                                <input type="text" className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                                    value={formData.companyDetails?.director || ''}
+                                    onChange={(e) => setFormData({ ...formData, companyDetails: { ...formData.companyDetails, director: e.target.value } as any })}
+                                    placeholder="Иванов И.И."
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <label className="block text-sm font-medium text-slate-300">Главный бухгалтер</label>
+                                <input type="text" className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                                    value={formData.companyDetails?.accountant || ''}
+                                    onChange={(e) => setFormData({ ...formData, companyDetails: { ...formData.companyDetails, accountant: e.target.value } as any })}
+                                    placeholder="Петрова А.А."
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Telegram Settings */}
+                    <div className="space-y-6">
+                        <h3 className="text-xl font-bold text-white border-l-4 border-blue-400 pl-4 flex items-center gap-2">
+                            <Send size={24} className="text-blue-400" />
+                            Интеграция с Telegram
+                        </h3>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                            <div className="space-y-2">
+                                <label className="block text-sm font-medium text-slate-300">
+                                    Bot Token
+                                </label>
+                                <p className="text-xs text-slate-500 mb-2">
+                                    Токен от @BotFather
+                                </p>
+                                <input
+                                    type="password"
+                                    className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm disabled:opacity-60"
+                                    value={isBotFromEnv ? '••••••••••••••••' : (formData.telegramBotToken || '')}
+                                    readOnly={isBotFromEnv}
+                                    onChange={(e) => setFormData({ ...formData, telegramBotToken: e.target.value })}
+                                    placeholder="123456789:ABCdef..."
+                                />
+                                {isBotFromEnv && (
+                                    <p className="text-xs text-slate-500">
+                                        Bot Token задан через env и скрыт.
+                                    </p>
+                                )}
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="block text-sm font-medium text-slate-300">
+                                    Chat ID
+                                </label>
+                                <p className="text-xs text-slate-500 mb-2">
+                                    ID вашего чата (можно узнать через @userinfobot)
+                                </p>
+                                <div className="flex gap-2">
+                                    <input
+                                        type={isChatFromEnv ? 'password' : 'text'}
+                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm disabled:opacity-60"
+                                        value={isChatFromEnv ? '••••••••••' : (formData.telegramChatId || '')}
+                                        readOnly={isChatFromEnv}
+                                        onChange={(e) => setFormData({ ...formData, telegramChatId: e.target.value })}
+                                        placeholder="123456789"
+                                    />
+                                    <button
+                                        onClick={handleTestTelegram}
+                                        className="bg-slate-700 hover:bg-slate-600 text-white px-4 rounded-lg transition-colors"
+                                        title="Отправить тестовое сообщение"
+                                    >
+                                        <Send size={18} />
+                                    </button>
+                                </div>
+                                {isChatFromEnv && (
+                                    <p className="text-xs text-slate-500">
+                                        Chat ID задан через env и скрыт.
+                                    </p>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 flex items-start gap-3">
+                        <AlertCircle className="text-amber-500 shrink-0 mt-1" size={20} />
+                        <div className="text-sm text-amber-200/80">
+                            <span className="font-bold text-amber-400">Внимание:</span> Изменение ставки НДС повлияет только на будущие заказы. История существующих заказов останется неизменной для сохранения точности финансового учета.
+                        </div>
+                    </div>
+
+                    <div className="pt-6 flex items-center justify-between border-t border-slate-700">
+                        <span className={`text-emerald-400 text-sm transition-opacity ${message ? 'opacity-100' : 'opacity-0'}`}>
+                            {message}
+                        </span>
+                        <button
+                            onClick={handleSave}
+                            className="bg-primary-600 hover:bg-primary-500 text-white px-8 py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-primary-600/20 transition-all active:scale-95"
+                        >
+                            <Save size={20} />
+                            Сохранить настройки
+                        </button>
                     </div>
                 </div>
-
-                <div className="pt-6 flex items-center justify-between border-t border-slate-700">
-                    <span className={`text-emerald-400 text-sm transition-opacity ${message ? 'opacity-100' : 'opacity-0'}`}>
-                        {message}
-                    </span>
-                    <button
-                        onClick={handleSave}
-                        className="bg-primary-600 hover:bg-primary-500 text-white px-8 py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-primary-600/20 transition-all active:scale-95"
-                    >
-                        <Save size={20} />
-                        Сохранить настройки
-                    </button>
-                </div>
-            </div>
             )}
 
             {/* Tab: Expense Categories */}
             {activeTab === 'expenses' && (
-            <div className="bg-slate-800 rounded-2xl border border-slate-700 shadow-lg overflow-hidden h-[calc(100vh-280px)] max-h-[600px] flex flex-col">
-                <div className="p-6 border-b border-slate-700 bg-slate-900/50">
-                    <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                        <Receipt size={24} className="text-purple-400" />
-                        Категории расходов (для PnL)
-                    </h3>
-                    <p className="text-sm text-slate-400 mt-1">Настройте категории расходов и их классификацию для отчёта о прибылях и убытках</p>
-                </div>
+                <div className="bg-slate-800 rounded-2xl border border-slate-700 shadow-lg overflow-hidden h-[calc(100vh-280px)] max-h-[600px] flex flex-col">
+                    <div className="p-6 border-b border-slate-700 bg-slate-900/50">
+                        <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                            <Receipt size={24} className="text-purple-400" />
+                            Категории расходов (для PnL)
+                        </h3>
+                        <p className="text-sm text-slate-400 mt-1">Настройте категории расходов и их классификацию для отчёта о прибылях и убытках</p>
+                    </div>
 
-                {/* Add new category */}
-                <div className="p-4 border-b border-slate-700 bg-slate-800/50">
-                    <div className="flex gap-3 items-end">
-                        <div className="flex-1">
-                            <label className="block text-xs text-slate-400 mb-1">Название расхода</label>
-                            <input
-                                type="text"
-                                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm"
-                                value={newCategoryName}
-                                onChange={(e) => setNewCategoryName(e.target.value)}
-                                placeholder="Например: Аренда офиса"
-                                onKeyDown={(e) => e.key === 'Enter' && addExpenseCategory()}
-                            />
-                        </div>
-                        <div className="w-48">
-                            <label className="block text-xs text-slate-400 mb-1">Классификация PnL</label>
-                            <select
-                                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm"
-                                value={newCategoryPnL}
-                                onChange={(e) => setNewCategoryPnL(e.target.value as ExpensePnLCategory)}
+                    {/* Add new category */}
+                    <div className="p-4 border-b border-slate-700 bg-slate-800/50">
+                        <div className="flex gap-3 items-end">
+                            <div className="flex-1">
+                                <label className="block text-xs text-slate-400 mb-1">Название расхода</label>
+                                <input
+                                    type="text"
+                                    className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm"
+                                    value={newCategoryName}
+                                    onChange={(e) => setNewCategoryName(e.target.value)}
+                                    placeholder="Например: Аренда офиса"
+                                    onKeyDown={(e) => e.key === 'Enter' && addExpenseCategory()}
+                                />
+                            </div>
+                            <div className="w-48">
+                                <label className="block text-xs text-slate-400 mb-1">Классификация PnL</label>
+                                <select
+                                    className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm"
+                                    value={newCategoryPnL}
+                                    onChange={(e) => setNewCategoryPnL(e.target.value as ExpensePnLCategory)}
+                                >
+                                    <option value="administrative">Административные</option>
+                                    <option value="operational">Операционные</option>
+                                    <option value="commercial">Коммерческие</option>
+                                </select>
+                            </div>
+                            <button
+                                onClick={addExpenseCategory}
+                                className="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium"
                             >
-                                <option value="administrative">Административные</option>
-                                <option value="operational">Операционные</option>
-                                <option value="commercial">Коммерческие</option>
-                            </select>
+                                <Plus size={16} /> Добавить
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Categories list - scrollable */}
+                    <div className="flex-1 overflow-y-auto">
+                        <table className="w-full text-sm">
+                            <thead className="bg-slate-900 text-xs text-slate-400 uppercase sticky top-0">
+                                <tr>
+                                    <th className="px-4 py-3 text-left">Расход</th>
+                                    <th className="px-4 py-3 text-left w-48">Классификация для PnL</th>
+                                    <th className="px-4 py-3 w-16"></th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-700/50">
+                                {(formData.expenseCategories || []).map((cat) => (
+                                    <tr key={cat.id} className="hover:bg-slate-700/30">
+                                        <td className="px-4 py-2 text-white">{cat.name}</td>
+                                        <td className="px-4 py-2">
+                                            <select
+                                                className={`px-2 py-1 rounded-lg text-xs font-medium border ${pnlCategoryColor(cat.pnlCategory)} bg-transparent cursor-pointer`}
+                                                value={cat.pnlCategory}
+                                                onChange={(e) => updateCategoryPnL(cat.id, e.target.value as ExpensePnLCategory)}
+                                            >
+                                                <option value="administrative" className="bg-slate-800">Административные</option>
+                                                <option value="operational" className="bg-slate-800">Операционные</option>
+                                                <option value="commercial" className="bg-slate-800">Коммерческие</option>
+                                            </select>
+                                        </td>
+                                        <td className="px-4 py-2 text-center">
+                                            <button
+                                                onClick={() => removeExpenseCategory(cat.id)}
+                                                className="text-slate-500 hover:text-red-400 transition-colors p-1"
+                                                title="Удалить"
+                                            >
+                                                <Trash2 size={16} />
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))}
+                                {(!formData.expenseCategories || formData.expenseCategories.length === 0) && (
+                                    <tr>
+                                        <td colSpan={3} className="px-4 py-8 text-center text-slate-500">
+                                            Нет категорий. Добавьте первую категорию расходов.
+                                        </td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {/* Footer with stats and save button */}
+                    <div className="p-4 border-t border-slate-700 bg-slate-900/50 flex items-center justify-between">
+                        <div className="text-xs text-slate-400">
+                            Всего: <span className="text-white font-medium">{(formData.expenseCategories || []).length}</span>
+                            <span className="mx-2">•</span>
+                            <span className="text-blue-400">Адм.: {(formData.expenseCategories || []).filter(c => c.pnlCategory === 'administrative').length}</span>
+                            <span className="mx-2">•</span>
+                            <span className="text-amber-400">Опер.: {(formData.expenseCategories || []).filter(c => c.pnlCategory === 'operational').length}</span>
+                            <span className="mx-2">•</span>
+                            <span className="text-emerald-400">Комм.: {(formData.expenseCategories || []).filter(c => c.pnlCategory === 'commercial').length}</span>
                         </div>
                         <button
-                            onClick={addExpenseCategory}
-                            className="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium"
+                            onClick={handleSave}
+                            className="bg-purple-600 hover:bg-purple-500 text-white px-6 py-2 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-purple-600/20 transition-all active:scale-95"
                         >
-                            <Plus size={16} /> Добавить
+                            <Save size={18} />
+                            Сохранить категории
                         </button>
                     </div>
                 </div>
-
-                {/* Categories list - scrollable */}
-                <div className="flex-1 overflow-y-auto">
-                    <table className="w-full text-sm">
-                        <thead className="bg-slate-900 text-xs text-slate-400 uppercase sticky top-0">
-                            <tr>
-                                <th className="px-4 py-3 text-left">Расход</th>
-                                <th className="px-4 py-3 text-left w-48">Классификация для PnL</th>
-                                <th className="px-4 py-3 w-16"></th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-700/50">
-                            {(formData.expenseCategories || []).map((cat) => (
-                                <tr key={cat.id} className="hover:bg-slate-700/30">
-                                    <td className="px-4 py-2 text-white">{cat.name}</td>
-                                    <td className="px-4 py-2">
-                                        <select
-                                            className={`px-2 py-1 rounded-lg text-xs font-medium border ${pnlCategoryColor(cat.pnlCategory)} bg-transparent cursor-pointer`}
-                                            value={cat.pnlCategory}
-                                            onChange={(e) => updateCategoryPnL(cat.id, e.target.value as ExpensePnLCategory)}
-                                        >
-                                            <option value="administrative" className="bg-slate-800">Административные</option>
-                                            <option value="operational" className="bg-slate-800">Операционные</option>
-                                            <option value="commercial" className="bg-slate-800">Коммерческие</option>
-                                        </select>
-                                    </td>
-                                    <td className="px-4 py-2 text-center">
-                                        <button
-                                            onClick={() => removeExpenseCategory(cat.id)}
-                                            className="text-slate-500 hover:text-red-400 transition-colors p-1"
-                                            title="Удалить"
-                                        >
-                                            <Trash2 size={16} />
-                                        </button>
-                                    </td>
-                                </tr>
-                            ))}
-                            {(!formData.expenseCategories || formData.expenseCategories.length === 0) && (
-                                <tr>
-                                    <td colSpan={3} className="px-4 py-8 text-center text-slate-500">
-                                        Нет категорий. Добавьте первую категорию расходов.
-                                    </td>
-                                </tr>
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-
-                {/* Footer with stats and save button */}
-                <div className="p-4 border-t border-slate-700 bg-slate-900/50 flex items-center justify-between">
-                    <div className="text-xs text-slate-400">
-                        Всего: <span className="text-white font-medium">{(formData.expenseCategories || []).length}</span>
-                        <span className="mx-2">•</span>
-                        <span className="text-blue-400">Адм.: {(formData.expenseCategories || []).filter(c => c.pnlCategory === 'administrative').length}</span>
-                        <span className="mx-2">•</span>
-                        <span className="text-amber-400">Опер.: {(formData.expenseCategories || []).filter(c => c.pnlCategory === 'operational').length}</span>
-                        <span className="mx-2">•</span>
-                        <span className="text-emerald-400">Комм.: {(formData.expenseCategories || []).filter(c => c.pnlCategory === 'commercial').length}</span>
-                    </div>
-                    <button
-                        onClick={handleSave}
-                        className="bg-purple-600 hover:bg-purple-500 text-white px-6 py-2 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-purple-600/20 transition-all active:scale-95"
-                    >
-                        <Save size={18} />
-                        Сохранить категории
-                    </button>
-                </div>
-            </div>
             )}
         </div>
     );

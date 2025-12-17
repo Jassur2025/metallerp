@@ -21,9 +21,23 @@ export interface ExpenseCategory {
   pnlCategory: ExpensePnLCategory;
 }
 
+export interface CompanyDetails {
+  name: string;
+  address: string;
+  phone: string;
+  inn: string;
+  mfo: string;
+  bankName: string;
+  accountNumber: string;
+  director?: string;
+  accountant?: string;
+  website?: string;
+}
+
 export interface AppSettings {
   vatRate: number; // Percentage (e.g. 12)
   defaultExchangeRate: number;
+  companyDetails?: CompanyDetails; // Added company details for documents
   telegramBotToken?: string;
   telegramChatId?: string;
   expenseCategories?: ExpenseCategory[];
@@ -187,7 +201,7 @@ export interface Purchase {
 export interface Transaction {
   id: string;
   date: string;
-  type: 'client_payment' | 'supplier_payment' | 'client_return' | 'debt_obligation';
+  type: 'client_payment' | 'supplier_payment' | 'client_return' | 'debt_obligation' | 'client_refund';
   amount: number; // Amount in the specified currency
   currency: 'USD' | 'UZS';
   exchangeRate?: number; // Required if currency is UZS
@@ -261,6 +275,12 @@ export interface Employee {
     crm?: boolean;
     staff?: boolean;
     journal?: boolean;
+    // Granular permissions
+    canViewCostPrice?: boolean;
+    canProcessReturns?: boolean;
+    canEditProducts?: boolean;
+    canDeleteOrders?: boolean;
+    canManageUsers?: boolean;
   };
 }
 
