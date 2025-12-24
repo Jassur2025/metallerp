@@ -1,10 +1,11 @@
 import React, { useMemo, useState } from 'react';
-import { Order, Product } from '../types';
-import { Table, Search, Download, Filter, Calendar, User, ShoppingCart, Package } from 'lucide-react';
+import { Order, Product, Transaction } from '../types';
+import { Table, Search, Download, Filter, Calendar, User, ShoppingCart, Package, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface SalesStatisticsProps {
   orders: Order[];
   products: Product[];
+  transactions: Transaction[];
 }
 
 interface SalesRow {
@@ -20,9 +21,12 @@ interface SalesRow {
   total: number;
   paymentMethod: string;
   paymentStatus: string;
+  paymentCurrency: string;
+  totalAmountUZS: number;
 }
 
-export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, products }) => {
+export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, products, transactions }) => {
+  const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCustomer, setFilterCustomer] = useState('');
   const [filterSeller, setFilterSeller] = useState('');
@@ -41,15 +45,15 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
   // Transform orders into detailed rows
   const salesRows = useMemo(() => {
     const rows: SalesRow[] = [];
-    
+
     orders.forEach(order => {
       if (!order.items || !Array.isArray(order.items)) return;
-      
+
       order.items.forEach((item) => {
         // Найти размер товара по productId
         const product = products.find(p => p.id === item.productId);
         const dimensions = product?.dimensions || '-';
-        
+
         rows.push({
           orderId: order.id,
           date: order.date,
@@ -62,39 +66,41 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
           priceAtSale: safeNumber(item.priceAtSale),
           total: safeNumber(item.total),
           paymentMethod: order.paymentMethod,
-          paymentStatus: order.paymentStatus
+          paymentStatus: order.paymentStatus,
+          paymentCurrency: order.paymentCurrency || (order.paymentMethod === 'cash' ? 'USD' : (order.paymentMethod === 'debt' ? 'USD' : 'UZS')),
+          totalAmountUZS: safeNumber(order.totalAmountUZS)
         });
       });
     });
-    
+
     return rows;
   }, [orders, products]);
 
   // Filter and sort rows
   const filteredRows = useMemo(() => {
     let filtered = salesRows.filter(row => {
-      const matchesSearch = 
+      const matchesSearch =
         row.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         row.productName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         row.sellerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         row.orderId.toLowerCase().includes(searchTerm.toLowerCase());
-      
+
       const matchesCustomer = !filterCustomer || row.customerName === filterCustomer;
       const matchesSeller = !filterSeller || row.sellerName === filterSeller;
       const matchesProduct = !filterProduct || row.productName === filterProduct;
       const matchesPaymentMethod = !filterPaymentMethod || row.paymentMethod === filterPaymentMethod;
-      
+
       const matchesDateFrom = !dateFrom || new Date(row.date) >= new Date(dateFrom);
       const matchesDateTo = !dateTo || new Date(row.date) <= new Date(dateTo + 'T23:59:59');
-      
-      return matchesSearch && matchesCustomer && matchesSeller && matchesProduct && 
-             matchesPaymentMethod && matchesDateFrom && matchesDateTo;
+
+      return matchesSearch && matchesCustomer && matchesSeller && matchesProduct &&
+        matchesPaymentMethod && matchesDateFrom && matchesDateTo;
     });
 
     // Sort
     filtered.sort((a, b) => {
       let aVal: number, bVal: number;
-      
+
       switch (sortBy) {
         case 'date':
           aVal = new Date(a.date).getTime();
@@ -119,7 +125,7 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
         default:
           return 0;
       }
-      
+
       if (aVal < bVal) return sortOrder === 'asc' ? -1 : 1;
       if (aVal > bVal) return sortOrder === 'asc' ? 1 : -1;
       return 0;
@@ -173,9 +179,14 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
     return methods[method] || method;
   };
 
+  const formatCurrency = (row: SalesRow) => {
+    if (row.paymentMethod === 'debt') return 'USD';
+    return row.paymentCurrency || 'USD';
+  };
+
   // Export to CSV
   const exportToCSV = () => {
-    const headers = ['ID заказа', 'Дата', 'Клиент', 'Продавец', 'Размер', 'Товар', 'Количество', 'Ед.', 'Цена', 'Сумма', 'Метод оплаты', 'Статус оплаты'];
+    const headers = ['ID заказа', 'Дата', 'Клиент', 'Продавец', 'Размер', 'Товар', 'Количество', 'Ед.', 'Цена', 'Сумма', 'Валюта', 'Метод оплаты', 'Статус оплаты'];
     const csvRows = [
       headers.join(','),
       ...filteredRows.map(row => [
@@ -189,11 +200,12 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
         row.unit,
         safeNumber(row.priceAtSale).toFixed(2),
         safeNumber(row.total).toFixed(2),
+        formatCurrency(row),
         formatPaymentMethod(row.paymentMethod),
         row.paymentStatus === 'paid' ? 'Оплачено' : row.paymentStatus === 'unpaid' ? 'Не оплачено' : 'Частично'
       ].join(','))
     ];
-    
+
     const csvContent = csvRows.join('\n');
     const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
@@ -213,6 +225,20 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
       setSortBy(field);
       setSortOrder('desc');
     }
+  };
+
+  const toggleExpand = (orderId: string) => {
+    const next = new Set(expandedOrders);
+    if (next.has(orderId)) next.delete(orderId);
+    else next.add(orderId);
+    setExpandedOrders(next);
+  };
+
+  const getOrderTransactions = (orderId: string) => {
+    return transactions.filter(t =>
+      t.type === 'client_payment' &&
+      (t.description || '').includes(orderId)
+    );
   };
 
   return (
@@ -272,7 +298,7 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
           <Filter size={18} />
           <span className="font-medium">Фильтры</span>
         </div>
-        
+
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Search */}
           <div className="relative">
@@ -367,7 +393,7 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
           <table className="w-full">
             <thead className="bg-slate-900/50">
               <tr>
-                <th 
+                <th
                   className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase cursor-pointer hover:bg-slate-700/50 transition-colors"
                   onClick={() => handleSort('date')}
                 >
@@ -376,7 +402,7 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
                     {sortBy === 'date' && (sortOrder === 'asc' ? '↑' : '↓')}
                   </div>
                 </th>
-                <th 
+                <th
                   className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase cursor-pointer hover:bg-slate-700/50 transition-colors"
                   onClick={() => handleSort('customer')}
                 >
@@ -385,7 +411,7 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
                     {sortBy === 'customer' && (sortOrder === 'asc' ? '↑' : '↓')}
                   </div>
                 </th>
-                <th 
+                <th
                   className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase cursor-pointer hover:bg-slate-700/50 transition-colors"
                   onClick={() => handleSort('seller')}
                 >
@@ -398,7 +424,7 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
                 <th className="px-4 py-3 text-center text-xs font-medium text-slate-400 uppercase">
                   Размер
                 </th>
-                <th 
+                <th
                   className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase cursor-pointer hover:bg-slate-700/50 transition-colors"
                   onClick={() => handleSort('product')}
                 >
@@ -409,7 +435,7 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
                 </th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-slate-400 uppercase">Кол-во</th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-slate-400 uppercase">Цена</th>
-                <th 
+                <th
                   className="px-4 py-3 text-right text-xs font-medium text-slate-400 uppercase cursor-pointer hover:bg-slate-700/50 transition-colors"
                   onClick={() => handleSort('total')}
                 >
@@ -418,6 +444,7 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
                     {sortBy === 'total' && (sortOrder === 'asc' ? '↑' : '↓')}
                   </div>
                 </th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-slate-400 uppercase">Валюта</th>
                 <th className="px-4 py-3 text-center text-xs font-medium text-slate-400 uppercase">Оплата</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">ID заказа</th>
               </tr>
@@ -425,54 +452,107 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
             <tbody className="divide-y divide-slate-700">
               {filteredRows.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="px-4 py-12 text-center text-slate-500">
+                  <td colSpan={11} className="px-4 py-12 text-center text-slate-500">
                     <Package className="w-12 h-12 mx-auto mb-3 opacity-20" />
                     <p>Нет данных для отображения</p>
                   </td>
                 </tr>
               ) : (
-                filteredRows.map((row, index) => (
-                  <tr key={`${row.orderId}-${index}`} className="hover:bg-slate-700/30 transition-colors">
-                    <td className="px-4 py-3 text-sm text-slate-300 font-mono">
-                      {formatDate(row.date)}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-white font-medium">
-                      {row.customerName}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-slate-300">
-                      {row.sellerName}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-center text-slate-400 font-mono">
-                      {row.dimensions}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-slate-200">
-                      {row.productName}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-right text-slate-300 font-mono">
-                      {safeNumber(row.quantity)} <span className="text-xs text-slate-500">{row.unit}</span>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-right text-slate-300 font-mono">
-                      ${safeNumber(row.priceAtSale).toFixed(2)}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-right font-mono font-bold text-emerald-400">
-                      ${safeNumber(row.total).toFixed(2)}
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        row.paymentMethod === 'debt' 
-                          ? 'bg-red-500/20 text-red-400' 
-                          : row.paymentMethod === 'cash'
-                          ? 'bg-green-500/20 text-green-400'
-                          : 'bg-blue-500/20 text-blue-400'
-                      }`}>
-                        {formatPaymentMethod(row.paymentMethod)}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-xs text-slate-500 font-mono">
-                      {row.orderId}
-                    </td>
-                  </tr>
-                ))
+                filteredRows.map((row, index) => {
+                  const isMixed = row.paymentMethod === 'mixed';
+                  const isExpanded = expandedOrders.has(row.orderId);
+                  const orderTrx = isMixed && isExpanded ? getOrderTransactions(row.orderId) : [];
+
+                  return (
+                    <React.Fragment key={`${row.orderId}-${index}`}>
+                      <tr className="hover:bg-slate-700/30 transition-colors">
+                        <td className="px-4 py-3 text-sm text-slate-300 font-mono">
+                          {formatDate(row.date)}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-white font-medium">
+                          {row.customerName}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-slate-300">
+                          {row.sellerName}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-center text-slate-400 font-mono">
+                          {row.dimensions}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-slate-200">
+                          {row.productName}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-right text-slate-300 font-mono">
+                          {safeNumber(row.quantity)} <span className="text-xs text-slate-500">{row.unit}</span>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-right text-slate-300 font-mono">
+                          ${safeNumber(row.priceAtSale).toFixed(2)}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-right font-mono font-bold text-emerald-400">
+                          <div>${safeNumber(row.total).toFixed(2)}</div>
+                          {row.paymentCurrency === 'UZS' && (
+                            <div className="text-[10px] text-slate-500 font-normal">
+                              {safeNumber(row.totalAmountUZS).toLocaleString()} сум
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${formatCurrency(row) === 'USD'
+                            ? 'border-emerald-500/30 text-emerald-400 bg-emerald-500/5'
+                            : 'border-blue-500/30 text-blue-400 bg-blue-500/5'
+                            }`}>
+                            {formatCurrency(row)}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <button
+                            disabled={!isMixed}
+                            onClick={() => isMixed && toggleExpand(row.orderId)}
+                            className={`flex items-center gap-1 mx-auto px-2 py-1 rounded-full text-xs font-medium border transition-all ${row.paymentMethod === 'debt'
+                              ? 'bg-red-500/20 text-red-400 border-red-500/30'
+                              : row.paymentMethod === 'mixed'
+                                ? 'bg-amber-500/20 text-amber-400 border-amber-500/30 hover:bg-amber-500/30 cursor-pointer'
+                                : row.paymentMethod === 'cash'
+                                  ? 'bg-green-500/20 text-green-400 border-green-500/30'
+                                  : 'bg-blue-500/20 text-blue-400 border-blue-500/30'
+                              }`}
+                          >
+                            {formatPaymentMethod(row.paymentMethod)}
+                            {isMixed && (
+                              isExpanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />
+                            )}
+                          </button>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-slate-500 font-mono">
+                          {row.orderId}
+                        </td>
+                      </tr>
+                      {/* Mixed details row */}
+                      {isExpanded && isMixed && (
+                        <tr className="bg-slate-800/50">
+                          <td colSpan={11} className="px-4 py-3">
+                            <div className="bg-slate-900/50 rounded-lg p-3 border border-slate-700 ml-10 max-w-2xl">
+                              <div className="text-xs font-bold text-slate-400 mb-2 uppercase">Детализация оплаты (ID: {row.orderId})</div>
+                              {orderTrx.length === 0 ? (
+                                <div className="text-xs text-red-400">Транзакции оплаты не найдены</div>
+                              ) : (
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                  {orderTrx.map(t => (
+                                    <div key={t.id} className="bg-slate-800 p-2 rounded-lg border border-slate-700">
+                                      <div className="text-[10px] text-slate-500 uppercase">{formatPaymentMethod(t.method)}</div>
+                                      <div className={`text-sm font-mono font-bold ${t.method === 'cash' && t.currency === 'USD' ? 'text-emerald-400' : 'text-blue-400'}`}>
+                                        {t.currency === 'UZS' ? `${t.amount.toLocaleString()} UZS` : `$${t.amount.toFixed(2)}`}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })
               )}
             </tbody>
             {filteredRows.length > 0 && (

@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Product, Order, Client, Transaction, AppSettings } from '../types';
 import { geminiService } from '../services/geminiService';
-import { 
-  BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid 
+import {
+  BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid
 } from 'recharts';
-import { 
-  Activity, TrendingUp, Package, AlertTriangle, Sparkles, RefreshCw, BrainCircuit, 
+import {
+  Activity, TrendingUp, Package, AlertTriangle, Sparkles, RefreshCw, BrainCircuit,
   DollarSign, Users, ShoppingCart, Calendar, ArrowUp, ArrowDown, TrendingDown,
   Award, Target, BarChart3, Clock
 } from 'lucide-react';
@@ -53,15 +53,31 @@ export const Dashboard: React.FC<DashboardProps> = ({ products, orders, clients 
   }, [orders, timeRange]);
 
   // Calculate Stats
-  const totalRevenue = filteredOrders.reduce((sum, o) => sum + o.totalAmount, 0);
-  const totalRevenueUZS = filteredOrders.reduce((sum, o) => sum + o.totalAmountUZS, 0);
+  const num = (v: any): number => {
+    if (typeof v === 'number') return isFinite(v) ? v : 0;
+    if (typeof v === 'string') {
+      const p = parseFloat(v.replace(/[^\d.-]/g, ''));
+      return isFinite(p) ? p : 0;
+    }
+    return 0;
+  };
+
+  const totalRevenue = filteredOrders.reduce((sum, o) => {
+    let amt = num(o.totalAmount);
+    if (amt === 0 && o.items && o.items.length > 0) {
+      amt = o.items.reduce((s, it) => s + num(it.total), 0);
+    }
+    return sum + amt;
+  }, 0);
+
+  const totalRevenueUZS = filteredOrders.reduce((sum, o) => sum + num(o.totalAmountUZS), 0);
   const totalOrders = filteredOrders.length;
-  const lowStockCount = products.filter(p => p.quantity <= p.minStockLevel).length;
-  const inventoryValue = products.reduce((sum, p) => sum + (p.quantity * p.pricePerUnit), 0);
-  
+  const lowStockCount = products.filter(p => num(p.quantity) <= num(p.minStockLevel)).length;
+  const inventoryValue = products.reduce((sum, p) => sum + (num(p.quantity) * num(p.pricePerUnit)), 0);
+
   // Average order value
   const avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
-  
+
   // Total clients
   const totalClients = clients.length;
   const activeClients = useMemo(() => {
@@ -78,7 +94,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products, orders, clients 
     const daysToShow = timeRange === 'today' ? 1 : timeRange === 'week' ? 7 : timeRange === 'month' ? 30 : 90;
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - daysToShow);
-    
+
     filteredOrders.forEach(order => {
       const date = new Date(order.date).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
       if (!days[date]) {
@@ -102,7 +118,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products, orders, clients 
   // Top products by sales
   const topProducts = useMemo(() => {
     const productSales: Record<string, { name: string; revenue: number; quantity: number }> = {};
-    
+
     filteredOrders.forEach(order => {
       order.items.forEach(item => {
         if (!productSales[item.productName]) {
@@ -121,7 +137,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products, orders, clients 
   // Top clients by revenue
   const topClients = useMemo(() => {
     const clientSales: Record<string, { name: string; revenue: number; orders: number }> = {};
-    
+
     filteredOrders.forEach(order => {
       const clientName = order.customerName || 'Неизвестный';
       if (!clientSales[clientName]) {
@@ -139,7 +155,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products, orders, clients 
   // Sales by seller
   const salesBySeller = useMemo(() => {
     const sellerSales: Record<string, { name: string; revenue: number; orders: number }> = {};
-    
+
     filteredOrders.forEach(order => {
       const sellerName = order.sellerName || 'Не указан';
       if (!sellerSales[sellerName]) {
@@ -158,8 +174,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ products, orders, clients 
     const methods: Record<string, number> = {};
     filteredOrders.forEach(order => {
       const method = order.paymentMethod === 'cash' ? 'Наличные' :
-                    order.paymentMethod === 'bank' ? 'Перечисление' :
-                    order.paymentMethod === 'card' ? 'Карта' : 'Долг';
+        order.paymentMethod === 'bank' ? 'Перечисление' :
+          order.paymentMethod === 'card' ? 'Карта' : 'Долг';
       methods[method] = (methods[method] || 0) + order.totalAmount;
     });
     return Object.entries(methods).map(([name, value]) => ({ name, value }));
@@ -170,7 +186,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products, orders, clients 
     const now = new Date();
     let startDate: Date;
     let endDate: Date;
-    
+
     switch (timeRange) {
       case 'today':
         startDate = new Date(now);
@@ -206,8 +222,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ products, orders, clients 
     };
   }, [orders, timeRange]);
 
-  const revenueChange = previousPeriodStats.revenue > 0 
-    ? ((totalRevenue - previousPeriodStats.revenue) / previousPeriodStats.revenue) * 100 
+  const revenueChange = previousPeriodStats.revenue > 0
+    ? ((totalRevenue - previousPeriodStats.revenue) / previousPeriodStats.revenue) * 100
     : 0;
   const ordersChange = previousPeriodStats.orders > 0
     ? ((totalOrders - previousPeriodStats.orders) / previousPeriodStats.orders) * 100
@@ -229,7 +245,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products, orders, clients 
     'Карта': '#8b5cf6',         // Purple
     'Долг': '#f59e0b'           // Amber/Orange
   };
-  
+
   const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
   const fetchInsight = async () => {
@@ -260,23 +276,22 @@ export const Dashboard: React.FC<DashboardProps> = ({ products, orders, clients 
           <h2 className="text-3xl font-bold text-white tracking-tight">Обзор (Финансы USD)</h2>
           <p className="text-slate-400 mt-1">Аналитика и показатели бизнеса</p>
         </div>
-        
+
         {/* Time Range Selector */}
         <div className="flex items-center gap-2 bg-slate-800 rounded-xl p-1 border border-slate-700">
           {(['today', 'week', 'month', 'year', 'all'] as TimeRange[]).map((range) => (
             <button
               key={range}
               onClick={() => setTimeRange(range)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                timeRange === range
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${timeRange === range
                   ? 'bg-blue-600 text-white shadow-lg'
                   : 'text-slate-400 hover:text-white hover:bg-slate-700'
-              }`}
+                }`}
             >
-              {range === 'today' ? 'Сегодня' : 
-               range === 'week' ? 'Неделя' : 
-               range === 'month' ? 'Месяц' : 
-               range === 'year' ? 'Год' : 'Все'}
+              {range === 'today' ? 'Сегодня' :
+                range === 'week' ? 'Неделя' :
+                  range === 'month' ? 'Месяц' :
+                    range === 'year' ? 'Год' : 'Все'}
             </button>
           ))}
         </div>
@@ -293,9 +308,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ products, orders, clients 
               <DollarSign size={20} className="text-emerald-400" />
             </div>
             {revenueChange !== 0 && (
-              <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
-                revenueChange > 0 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'
-              }`}>
+              <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${revenueChange > 0 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'
+                }`}>
                 {revenueChange > 0 ? <ArrowUp size={12} /> : <ArrowDown size={12} />}
                 {Math.abs(revenueChange).toFixed(1)}%
               </div>
@@ -320,9 +334,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ products, orders, clients 
               <ShoppingCart size={20} className="text-blue-400" />
             </div>
             {ordersChange !== 0 && (
-              <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
-                ordersChange > 0 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'
-              }`}>
+              <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${ordersChange > 0 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'
+                }`}>
                 {ordersChange > 0 ? <ArrowUp size={12} /> : <ArrowDown size={12} />}
                 {Math.abs(ordersChange).toFixed(1)}%
               </div>
@@ -414,8 +427,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ products, orders, clients 
                   paddingAngle={2}
                 >
                   {paymentMethods.map((entry) => (
-                    <Cell 
-                      key={`cell-${entry.name}`} 
+                    <Cell
+                      key={`cell-${entry.name}`}
                       fill={PAYMENT_COLORS[entry.name] || COLORS[0]}
                       stroke="#1e293b"
                       strokeWidth={2}
@@ -423,24 +436,24 @@ export const Dashboard: React.FC<DashboardProps> = ({ products, orders, clients 
                   ))}
                 </Pie>
                 <Tooltip
-                  contentStyle={{ 
-                    backgroundColor: '#1e293b', 
-                    borderColor: '#475569', 
+                  contentStyle={{
+                    backgroundColor: '#1e293b',
+                    borderColor: '#475569',
                     borderRadius: '8px',
                     padding: '12px',
                     boxShadow: '0 4px 6px rgba(0, 0, 0, 0.3)',
                     color: '#f1f5f9'
                   }}
-                  itemStyle={{ 
-                    color: '#60a5fa', 
-                    fontSize: '14px', 
+                  itemStyle={{
+                    color: '#60a5fa',
+                    fontSize: '14px',
                     fontWeight: 'bold',
                     padding: '4px 0'
                   }}
-                  labelStyle={{ 
-                    color: '#f1f5f9', 
-                    fontSize: '14px', 
-                    fontWeight: 'bold', 
+                  labelStyle={{
+                    color: '#f1f5f9',
+                    fontSize: '14px',
+                    fontWeight: 'bold',
                     marginBottom: '6px'
                   }}
                   formatter={(value: number) => [`$${value.toFixed(2)}`, 'Сумма']}
@@ -467,7 +480,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products, orders, clients 
               const percent = total > 0 ? (method.value / total * 100) : 0;
               return (
                 <div key={method.name} className="flex items-center gap-2 p-2 bg-slate-900/50 rounded-lg">
-                  <div 
+                  <div
                     className="w-4 h-4 rounded-full shadow-sm"
                     style={{ backgroundColor: PAYMENT_COLORS[method.name] || COLORS[0] }}
                   />
@@ -498,17 +511,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ products, orders, clients 
           <div className="space-y-3">
             {topProducts.length > 0 ? (
               topProducts.map((product, index) => (
-                <div 
-                  key={product.name} 
+                <div
+                  key={product.name}
                   className="group flex items-center justify-between p-4 bg-gradient-to-r from-slate-900/50 to-slate-800/30 rounded-xl border border-slate-700/50 hover:border-slate-600 transition-all hover:shadow-lg"
                 >
                   <div className="flex items-center gap-4 flex-1 min-w-0">
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold shadow-lg flex-shrink-0 ${
-                      index === 0 ? 'bg-gradient-to-br from-amber-500/20 to-amber-600/10 text-amber-400 border border-amber-500/20' :
-                      index === 1 ? 'bg-gradient-to-br from-slate-500/20 to-slate-600/10 text-slate-300 border border-slate-500/20' :
-                      index === 2 ? 'bg-gradient-to-br from-orange-500/20 to-orange-600/10 text-orange-400 border border-orange-500/20' :
-                      'bg-gradient-to-br from-slate-700/20 to-slate-800/10 text-slate-400 border border-slate-700/20'
-                    }`}>
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold shadow-lg flex-shrink-0 ${index === 0 ? 'bg-gradient-to-br from-amber-500/20 to-amber-600/10 text-amber-400 border border-amber-500/20' :
+                        index === 1 ? 'bg-gradient-to-br from-slate-500/20 to-slate-600/10 text-slate-300 border border-slate-500/20' :
+                          index === 2 ? 'bg-gradient-to-br from-orange-500/20 to-orange-600/10 text-orange-400 border border-orange-500/20' :
+                            'bg-gradient-to-br from-slate-700/20 to-slate-800/10 text-slate-400 border border-slate-700/20'
+                      }`}>
                       {index + 1}
                     </div>
                     <div className="flex-1 min-w-0">
@@ -543,17 +555,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ products, orders, clients 
           <div className="space-y-3">
             {topClients.length > 0 ? (
               topClients.map((client, index) => (
-                <div 
-                  key={client.name} 
+                <div
+                  key={client.name}
                   className="group flex items-center justify-between p-4 bg-gradient-to-r from-slate-900/50 to-slate-800/30 rounded-xl border border-slate-700/50 hover:border-slate-600 transition-all hover:shadow-lg"
                 >
                   <div className="flex items-center gap-4 flex-1 min-w-0">
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold shadow-lg flex-shrink-0 ${
-                      index === 0 ? 'bg-gradient-to-br from-indigo-500/20 to-indigo-600/10 text-indigo-400 border border-indigo-500/20' :
-                      index === 1 ? 'bg-gradient-to-br from-purple-500/20 to-purple-600/10 text-purple-400 border border-purple-500/20' :
-                      index === 2 ? 'bg-gradient-to-br from-pink-500/20 to-pink-600/10 text-pink-400 border border-pink-500/20' :
-                      'bg-gradient-to-br from-slate-700/20 to-slate-800/10 text-slate-400 border border-slate-700/20'
-                    }`}>
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold shadow-lg flex-shrink-0 ${index === 0 ? 'bg-gradient-to-br from-indigo-500/20 to-indigo-600/10 text-indigo-400 border border-indigo-500/20' :
+                        index === 1 ? 'bg-gradient-to-br from-purple-500/20 to-purple-600/10 text-purple-400 border border-purple-500/20' :
+                          index === 2 ? 'bg-gradient-to-br from-pink-500/20 to-pink-600/10 text-pink-400 border border-pink-500/20' :
+                            'bg-gradient-to-br from-slate-700/20 to-slate-800/10 text-slate-400 border border-slate-700/20'
+                      }`}>
                       {index + 1}
                     </div>
                     <div className="flex-1 min-w-0">
@@ -592,8 +603,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ products, orders, clients 
                 const maxRevenue = salesBySeller[0]?.revenue || 1;
                 const percentage = (seller.revenue / maxRevenue) * 100;
                 return (
-                  <div 
-                    key={seller.name} 
+                  <div
+                    key={seller.name}
                     className="group p-4 bg-gradient-to-r from-slate-900/50 to-slate-800/30 rounded-xl border border-slate-700/50 hover:border-slate-600 transition-all hover:shadow-lg"
                   >
                     <div className="flex items-center justify-between mb-3">
@@ -612,7 +623,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products, orders, clients 
                       </div>
                     </div>
                     <div className="relative w-full bg-slate-700/50 rounded-full h-2 overflow-hidden">
-                      <div 
+                      <div
                         className="absolute top-0 left-0 h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full transition-all duration-500 shadow-lg shadow-emerald-500/20"
                         style={{ width: `${percentage}%` }}
                       />

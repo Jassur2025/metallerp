@@ -248,7 +248,7 @@ export const Reports: React.FC<ReportsProps> = ({ orders, expenses, products, pu
         {activeTab === 'pnl' && <PnL orders={orders} expenses={expenses} />}
         {activeTab === 'cashflow' && <CashFlow orders={orders} expenses={expenses} onAddExpense={onAddExpense} />}
         {activeTab === 'sales' && <SalesAnalytics orders={orders} />}
-        {activeTab === 'statistics' && <SalesStatistics orders={orders} products={products} />}
+        {activeTab === 'statistics' && <SalesStatistics orders={orders} products={products} transactions={transactions} />}
         {activeTab === 'vat' && <VatReport purchases={purchases} orders={orders} expenses={expenses} settings={settings} />}
       </div>
     </div>

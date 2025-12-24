@@ -16,7 +16,9 @@ import {
   FileText,
   UserCircle2,
   Shield,
-  BookOpen
+  BookOpen,
+  ClipboardList,
+  Book
 } from 'lucide-react';
 
 // Lazy load components for better performance
@@ -32,6 +34,7 @@ const JournalEventsView = lazy(() => import('./components/JournalEventsView').th
 const FixedAssets = lazy(() => import('./components/FixedAssets').then(m => ({ default: m.FixedAssets })));
 const SettingsComponent = lazy(() => import('./components/Settings').then(m => ({ default: m.Settings })));
 const Workflow = lazy(() => import('./components/Workflow').then(m => ({ default: m.Workflow })));
+const PriceList = lazy(() => import('./components/PriceList').then(m => ({ default: m.PriceList })));
 
 import { Login } from './components/Login';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -101,7 +104,8 @@ const defaultSettings: AppSettings = {
     fixedAssets: true,
     crm: true,
     staff: true,
-    journal: true
+    journal: true,
+    priceList: true
   }
 };
 
@@ -283,19 +287,19 @@ const AppContent: React.FC = () => {
             errorMessage.includes('401') ||
             errorMessage.includes('токен доступа истек');
 
-          errorDev(`❌ Ошибка загрузки ${name}:`, error);
+          errorDev(`❌ Ошибка загрузки ${name}: `, error);
 
           // При ошибке аутентификации НЕ заменяем данные на пустой массив
           // Это критично для защиты от потери данных при истечении токена
           if (isAuthError && current.length > 0) {
-            warnDev(`🔒 ${name}: ошибка аутентификации, сохраняем текущие данные (${current.length} записей)`);
+            warnDev(`🔒 ${name}: ошибка аутентификации, сохраняем текущие данные(${current.length} записей)`);
             return current;
           }
 
           // При других ошибках возвращаем текущие данные, если они есть
           // Это защищает от потери данных при временных проблемах с сетью
           if (current.length > 0) {
-            logDev(`📦 ${name}: используем текущие данные (${current.length} записей) из-за ошибки загрузки`);
+            logDev(`📦 ${name}: используем текущие данные(${current.length} записей) из - за ошибки загрузки`);
             return current;
           }
 
@@ -325,11 +329,11 @@ const AppContent: React.FC = () => {
           // Всегда используем успешно загруженные данные для синхронизации между устройствами
           return result.value;
         }
-        errorDev(`❌ Ошибка загрузки ${name}:`, result.reason);
+        errorDev(`❌ Ошибка загрузки ${name}: `, result.reason);
         // При ошибке используем текущие данные, если они есть
         // Это защищает от потери данных при временных проблемах
         if (current.length > 0) {
-          logDev(`📦 ${name}: используем текущие данные (${current.length} записей) из-за ошибки`);
+          logDev(`📦 ${name}: используем текущие данные(${current.length} записей) из - за ошибки`);
           return current;
         }
         // Если данных нет - возвращаем пустой массив
@@ -390,7 +394,7 @@ const AppContent: React.FC = () => {
       if (hasCurrentData) {
         toast.warning(`Не удалось обновить данные: ${errorMessage}. Используются локальные данные.`);
       } else {
-        toast.error(`Ошибка при загрузке данных: ${errorMessage}`);
+        toast.error(`Ошибка при загрузке данных: ${errorMessage} `);
       }
     } finally {
       setIsLoading(false);
@@ -431,11 +435,11 @@ const AppContent: React.FC = () => {
         } else {
           const errorMsg = getErrorMessage(result.reason);
           results.push({ success: false, name: names[index], error: errorMsg });
-          errorDev(`❌ Ошибка сохранения ${names[index]}:`, result.reason);
+          errorDev(`❌ Ошибка сохранения ${names[index]}: `, result.reason);
 
           // Если ошибка связана с токеном, предлагаем перелогиниться
           if (isTokenExpiredError(result.reason)) {
-            warnDev(`⚠️ Токен истек при сохранении ${names[index]}`);
+            warnDev(`⚠️ Токен истек при сохранении ${names[index]} `);
           }
         }
       });
@@ -449,13 +453,13 @@ const AppContent: React.FC = () => {
       if (hasTokenErrors) {
         toast.error('Сессия истекла. Пожалуйста, войдите заново и попробуйте сохранить снова.');
       } else if (failCount === 0) {
-        toast.success(`Все данные успешно сохранены в Google Sheets! (${successCount} модулей)`);
+        toast.success(`Все данные успешно сохранены в Google Sheets!(${successCount} модулей)`);
       } else if (successCount > 0) {
         const failedNames = results.filter(r => !r.success).map(r => r.name).join(', ');
-        toast.warning(`Сохранено ${successCount} из ${results.length} модулей. Ошибки: ${failedNames}`);
+        toast.warning(`Сохранено ${successCount} из ${results.length} модулей.Ошибки: ${failedNames} `);
       } else {
-        const errorMessages = results.filter(r => !r.success).map(r => `${r.name}: ${r.error}`).join('; ');
-        toast.error(`Не удалось сохранить данные: ${errorMessages}`);
+        const errorMessages = results.filter(r => !r.success).map(r => `${r.name}: ${r.error} `).join('; ');
+        toast.error(`Не удалось сохранить данные: ${errorMessages} `);
       }
     } catch (err) {
       errorDev('❌ Критическая ошибка при сохранении:', err);
@@ -464,7 +468,7 @@ const AppContent: React.FC = () => {
       if (isTokenExpiredError(err)) {
         toast.error('Сессия истекла. Пожалуйста, войдите заново.');
       } else {
-        toast.error(`Ошибка при сохранении данных: ${errorMessage}`);
+        toast.error(`Ошибка при сохранении данных: ${errorMessage} `);
       }
     } finally {
       setIsLoading(false);
@@ -485,7 +489,7 @@ const AppContent: React.FC = () => {
         if (isTokenExpiredError(err)) {
           toast.error('Сессия истекла. Пожалуйста, войдите заново.');
         } else {
-          toast.warning(`Расход добавлен локально, но не удалось сохранить в Google Sheets: ${errorMessage}`);
+          toast.warning(`Расход добавлен локально, но не удалось сохранить в Google Sheets: ${errorMessage} `);
         }
       }
     }
@@ -517,7 +521,7 @@ const AppContent: React.FC = () => {
       if (isTokenExpiredError(err)) {
         toast.error('Сессия истекла. Пожалуйста, войдите заново.');
       } else {
-        toast.error(`Ошибка при сохранении сотрудников: ${errorMessage}`);
+        toast.error(`Ошибка при сохранении сотрудников: ${errorMessage} `);
       }
     } finally {
       setIsLoading(false);
@@ -557,7 +561,7 @@ const AppContent: React.FC = () => {
       if (isTokenExpiredError(err)) {
         toast.error('Сессия истекла. Пожалуйста, войдите заново.');
       } else {
-        toast.error(`Ошибка при сохранении закупок: ${errorMessage}`);
+        toast.error(`Ошибка при сохранении закупок: ${errorMessage} `);
       }
     } finally {
       setIsLoading(false);
@@ -581,7 +585,7 @@ const AppContent: React.FC = () => {
       if (isTokenExpiredError(err)) {
         toast.error('Сессия истекла. Пожалуйста, войдите заново.');
       } else {
-        toast.error(`Ошибка при сохранении клиентов: ${errorMessage}`);
+        toast.error(`Ошибка при сохранении клиентов: ${errorMessage} `);
       }
     } finally {
       setIsLoading(false);
@@ -619,7 +623,7 @@ const AppContent: React.FC = () => {
       if (isTokenExpiredError(err)) {
         toast.error('Сессия истекла. Пожалуйста, войдите заново.');
       } else {
-        toast.error(`Ошибка при сохранении расходов: ${errorMessage}`);
+        toast.error(`Ошибка при сохранении расходов: ${errorMessage} `);
       }
     } finally {
       setIsLoading(false);
@@ -641,7 +645,7 @@ const AppContent: React.FC = () => {
       if (isTokenExpiredError(err)) {
         toast.error('Сессия истекла. Пожалуйста, войдите заново.');
       } else {
-        toast.error(`Ошибка при сохранении основных средств: ${errorMessage}`);
+        toast.error(`Ошибка при сохранении основных средств: ${errorMessage} `);
       }
     } finally {
       setIsLoading(false);
@@ -665,7 +669,7 @@ const AppContent: React.FC = () => {
       if (isTokenExpiredError(err)) {
         toast.error('Сессия истекла. Пожалуйста, войдите заново.');
       } else {
-        toast.error(`Ошибка при сохранении товаров: ${errorMessage}`);
+        toast.error(`Ошибка при сохранении товаров: ${errorMessage} `);
       }
     } finally {
       setIsLoading(false);
@@ -721,7 +725,7 @@ const AppContent: React.FC = () => {
           details: (() => {
             if (!o.items || !Array.isArray(o.items)) return undefined;
             const lines = o.items.slice(0, 3).map(it =>
-              `${it.productName}${it.dimensions ? ` (${it.dimensions})` : ''} × ${safeNumber(it.quantity)} ${it.unit}`
+              `${it.productName}${it.dimensions ? ` (${it.dimensions})` : ''} × ${safeNumber(it.quantity)} ${it.unit} `
             );
             const extra = o.items.length > 3 ? `, +${o.items.length - 3} поз.` : '';
             return lines.join(', ') + extra;
@@ -738,7 +742,7 @@ const AppContent: React.FC = () => {
         localStorage.removeItem('google_access_token');
         toast.error('Сессия истекла. Заказ сохранен локально. Пожалуйста, войдите заново для сохранения в Google Sheets.');
       } else {
-        toast.error(`Ошибка при сохранении заказов: ${errorMessage}`);
+        toast.error(`Ошибка при сохранении заказов: ${errorMessage} `);
       }
       return false; // Error
     } finally {
@@ -758,7 +762,7 @@ const AppContent: React.FC = () => {
       return true;
     } catch (err) {
       errorDev(err);
-      toast.error(`Ошибка при сохранении Workflow: ${getErrorMessage(err)}`);
+      toast.error(`Ошибка при сохранении Workflow: ${getErrorMessage(err)} `);
       return false;
     } finally {
       setIsLoading(false);
@@ -800,7 +804,7 @@ const AppContent: React.FC = () => {
       if (isTokenExpiredError(err)) {
         toast.error('Сессия истекла. Пожалуйста, войдите заново.');
       } else {
-        toast.error(`Ошибка при сохранении транзакций: ${errorMessage}`);
+        toast.error(`Ошибка при сохранении транзакций: ${errorMessage} `);
       }
       return false; // Error
     } finally {
@@ -928,9 +932,9 @@ const AppContent: React.FC = () => {
       case 'reports':
         return renderLazyComponent(<Reports orders={orders} expenses={expenses} products={products} purchases={purchases} settings={settings} transactions={transactions} onAddExpense={handleAddExpense} />);
       case 'fixedAssets':
-        return renderLazyComponent(<FixedAssets 
-          assets={fixedAssets} 
-          setAssets={setFixedAssets} 
+        return renderLazyComponent(<FixedAssets
+          assets={fixedAssets}
+          setAssets={setFixedAssets}
           onSaveAssets={handleSaveFixedAssets}
           transactions={transactions}
           setTransactions={setTransactions}
@@ -957,9 +961,13 @@ const AppContent: React.FC = () => {
           fixedAssets={fixedAssets}
           settings={settings}
           transactions={transactions}
+          clients={clients}
+          purchases={purchases}
         />);
       case 'settings':
         return renderLazyComponent(<SettingsComponent settings={settings} onSave={handleSaveSettings} />);
+      case 'priceList':
+        return renderLazyComponent(<PriceList products={products} onSaveProducts={handleSaveProducts} />);
       default:
         return renderLazyComponent(<Dashboard products={products} orders={orders} settings={settings} />);
     }
@@ -1032,16 +1040,14 @@ const AppContent: React.FC = () => {
               onMobileClose={() => setIsSidebarOpen(false)}
             />
           )}
-          {checkPermission('inventory') && (
-            <SidebarItem
-              icon={<Package size={20} />}
-              label="Склад"
-              active={activeTab === 'inventory'}
-              onClick={() => setActiveTab('inventory')}
-              isOpen={isSidebarOpen}
-              onMobileClose={() => setIsSidebarOpen(false)}
-            />
-          )}
+          <SidebarItem
+            icon={<Package size={20} />}
+            label="Склад"
+            active={activeTab === 'inventory'}
+            onClick={() => setActiveTab('inventory')}
+            isOpen={isSidebarOpen}
+            onMobileClose={() => setIsSidebarOpen(false)}
+          />
           {checkPermission('import') && (
             <SidebarItem
               icon={<Container size={20} />}
@@ -1124,7 +1130,7 @@ const AppContent: React.FC = () => {
           )}
           {checkPermission('journal') && (
             <SidebarItem
-              icon={<BookOpen size={20} />}
+              icon={<Book size={20} />}
               label="Журнал"
               active={activeTab === 'journal'}
               onClick={() => setActiveTab('journal')}
@@ -1132,6 +1138,14 @@ const AppContent: React.FC = () => {
               onMobileClose={() => setIsSidebarOpen(false)}
             />
           )}
+          <SidebarItem
+            icon={<FileText size={20} />}
+            label="Прайс"
+            active={activeTab === 'priceList'}
+            onClick={() => setActiveTab('priceList')}
+            isOpen={isSidebarOpen}
+            onMobileClose={() => setIsSidebarOpen(false)}
+          />
           <div className="my-4 border-t border-slate-700 mx-4"></div>
           <SidebarItem
             icon={<Settings size={20} />}
@@ -1202,16 +1216,20 @@ const AppContent: React.FC = () => {
             {activeTab !== 'settings' && (
               <button
                 onClick={handleSaveAll}
-                disabled={isLoading}
+                disabled={isLoading || !accessToken}
                 className={`flex items-center gap-1 lg:gap-2 px-2 lg:px-4 py-2 rounded-lg font-medium transition-all text-sm lg:text-base ${isLoading
                   ? 'bg-slate-700 text-slate-400 cursor-wait'
-                  : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/20'
+                  : !accessToken
+                    ? 'bg-slate-600 text-slate-300 cursor-not-allowed opacity-60'
+                    : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/20'
                   }`}
-                title="Сохранить в Google Sheets"
+                title={!accessToken ? 'Войдите в систему для сохранения в Google Sheets' : 'Сохранить в Google Sheets'}
               >
                 <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
-                <span className="hidden sm:inline">{isLoading ? 'Сохранение...' : 'Сохранить в Google Sheets'}</span>
-                <span className="sm:hidden">{isLoading ? '...' : '💾'}</span>
+                <span className="hidden sm:inline">
+                  {isLoading ? 'Сохранение...' : !accessToken ? 'Требуется вход' : 'Сохранить в Google Sheets'}
+                </span>
+                <span className="sm:hidden">{isLoading ? '...' : !accessToken ? '🔒' : '💾'}</span>
               </button>
             )}
           </div>
@@ -1253,7 +1271,7 @@ const SidebarItem = ({ icon, label, active, onClick, isOpen, onMobileClose }: Si
         }`}
       title={!isOpen ? label : ''}
     >
-      <div className={`${active ? 'text-indigo-400' : ''}`}>{icon}</div>
+      <div className={`${active ? 'text-indigo-400' : ''} `}>{icon}</div>
       {isOpen && <span className="font-medium">{label}</span>}
       {!isOpen && (
         <div className="absolute left-16 bg-slate-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50 border border-slate-700 shadow-xl">

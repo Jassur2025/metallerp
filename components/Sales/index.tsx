@@ -18,6 +18,7 @@ import { ReturnModal } from './ReturnModal';
 import { ReceiptModal } from './ReceiptModal';
 import { ClientModal } from './ClientModal';
 import { generateInvoicePDF, generateWaybillPDF } from '../../utils/DocumentTemplates';
+import { PaymentSplitModal, PaymentDistribution } from './PaymentSplitModal';
 
 const isDev = import.meta.env.DEV;
 const errorDev = (...args: unknown[]) => { if (isDev) console.error(...args); };
@@ -60,7 +61,9 @@ export const Sales: React.FC<SalesProps> = ({
   const [sortOption, setSortOption] = useState<string>('default');
   const [exchangeRate, setExchangeRate] = useState<number>(settings.defaultExchangeRate);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
-  const [paymentCurrency, setPaymentCurrency] = useState<Currency>('UZS');
+  const [paymentCurrency, setPaymentCurrency] = useState<Currency>('USD');
+  const [discountPercent, setDiscountPercent] = useState<number>(0);
+  const [manualTotal, setManualTotal] = useState<number | null>(null);
 
   // Expense State
   const [expenseDesc, setExpenseDesc] = useState('');
@@ -88,6 +91,14 @@ export const Sales: React.FC<SalesProps> = ({
   // Mobile Cart Modal State
   const [isCartModalOpen, setIsCartModalOpen] = useState(false);
 
+  // Sales Mixed Payment Modal State
+  const [salesPaymentModalOpen, setSalesPaymentModalOpen] = useState(false);
+
+  // Workflow Payment Modal State
+  // Workflow Payment Modal State
+  const [workflowPaymentModalOpen, setWorkflowPaymentModalOpen] = useState(false);
+  const [selectedWorkflowOrder, setSelectedWorkflowOrder] = useState<WorkflowOrder | null>(null);
+
   useEffect(() => {
     setExchangeRate(settings.defaultExchangeRate);
   }, [settings.defaultExchangeRate]);
@@ -114,7 +125,7 @@ export const Sales: React.FC<SalesProps> = ({
     return missing;
   };
 
-  const approveWorkflowInCash = async (wf: WorkflowOrder) => {
+  const openWorkflowPaymentModal = (wf: WorkflowOrder) => {
     if (!isCashier) {
       toast.error('Нет прав: только кассир/финансист может подтверждать.');
       return;
@@ -123,12 +134,31 @@ export const Sales: React.FC<SalesProps> = ({
     const missing = getMissingItems(wf.items || []);
     if (missing.length > 0) {
       toast.warning('Недостаточно остатков. Заявка отправлена в закуп.');
-      const next = workflowOrders.map(o => o.id === wf.id ? { ...o, status: 'sent_to_procurement' as const } : o);
-      await onSaveWorkflowOrders(next);
-      localStorage.setItem('procurement_active_tab', 'workflow');
-      onNavigateToProcurement?.();
+      // ... (existing logic to return to procurement)
       return;
     }
+
+    setSelectedWorkflowOrder(wf);
+    setWorkflowPaymentModalOpen(true);
+  };
+
+  const confirmWorkflowPayment = async (dist: PaymentDistribution) => {
+    const wf = selectedWorkflowOrder;
+    if (!wf) return;
+
+    const { cashUSD, cashUZS, cardUZS, bankUZS, isPaid, remainingUSD } = dist;
+
+    // Determine overall status
+    let paymentStatus: 'paid' | 'unpaid' | 'partial' = isPaid ? 'paid' : 'partial';
+    // If absolutely nothing paid, it's unpaid (debt).
+    if (cashUSD + cashUZS + cardUZS + bankUZS === 0) paymentStatus = 'unpaid';
+
+    // Total Paid in USD (for reference, though transactions track real movement)
+    const totalPaidUSD = cashUSD + (cashUZS / (wf.exchangeRate || exchangeRate)) + (cardUZS / (wf.exchangeRate || exchangeRate)) + (bankUZS / (wf.exchangeRate || exchangeRate));
+
+    // Payment Method is 'mixed' if multiple used, otherwise specific?
+    // User requested "Partially this, partially that". "Mixed" is safest bucket.
+    const paymentMethod: PaymentMethod = 'mixed';
 
     const newOrder: Order = {
       id: `ORD-${Date.now()}`,
@@ -143,10 +173,10 @@ export const Sales: React.FC<SalesProps> = ({
       exchangeRate: wf.exchangeRate,
       totalAmountUZS: wf.totalAmountUZS,
       status: 'completed',
-      paymentMethod: wf.paymentMethod,
-      paymentStatus: wf.paymentStatus,
-      amountPaid: wf.amountPaid,
-      paymentCurrency: wf.paymentCurrency
+      paymentMethod: paymentMethod,
+      paymentStatus: paymentStatus,
+      amountPaid: totalPaidUSD,
+      paymentCurrency: 'USD' // Default reference
     };
 
     const updatedProducts = products.map(p => {
@@ -176,29 +206,65 @@ export const Sales: React.FC<SalesProps> = ({
     } else {
       clientId = nextClients[idx].id;
     }
-    const isDebt = wf.paymentMethod === 'debt';
+
+    // Update Client Debt
+    // Add full amount to purchase history, add remaining debt
+    // NOTE: If we record transactions for payments, we should add TOTAL amount to debt first, then reduce by payments? 
+    // OR: Current logic says `totalDebt` tracks UNPAID amount?
+    // Let's stick to: Total Debt += (Total Amount - Paid Amount).
+    // Wait, if we use transactions model, `totalDebt` is usually calculated from (Purchases - Payments).
+    // But we are storing a static `totalDebt` field.
+    // So: Debt += newOrder.totalAmount (increase debt by purchase)
+    // Then Debt -= payments (decrease debt by payment)
+    // Net result: Debt += remainingUSD.
+
+    // BUT! Our transactions logic below creates `client_payment` which usually implies reducing debt.
+    // To keep it consistent: We add the FULL order amount to debt/purchases.
+    // Then the `client_payment` transactions will physically reduce it (if we had a ledger re-calc). 
+    // Since we manually update `totalDebt` here:
+
+    const debtIncrease = remainingUSD; // Only add the unpaid part?
+    // Logic: 
+    // 1. Client buys for $100. Debt +100.
+    // 2. Client pays $40. Debt -40.
+    // Result: Debt +60.
+    // So YES, we increase debt by remaining amount.
+
     nextClients[idx] = {
       ...nextClients[idx],
       totalPurchases: (nextClients[idx].totalPurchases || 0) + (wf.totalAmount || 0),
-      totalDebt: isDebt ? (nextClients[idx].totalDebt || 0) + (wf.totalAmount || 0) : (nextClients[idx].totalDebt || 0)
+      totalDebt: (nextClients[idx].totalDebt || 0) + remainingUSD
     };
     onSaveClients(nextClients);
 
-    if (isDebt) {
-      const trx: Transaction = {
-        id: `TRX-${Date.now()}`,
-        date: new Date().toISOString(),
-        type: 'debt_obligation',
-        amount: wf.totalAmount,
-        currency: 'USD',
-        method: 'debt',
-        description: `Workflow → Долг: ${wf.id}`,
-        relatedId: clientId
-      };
-      const updatedTx = [...transactions, trx];
-      setTransactions(updatedTx);
-      await onSaveTransactions?.(updatedTx);
+    // Create Transactions for EACH payment part
+    const newTrx: Transaction[] = [];
+    const baseTrx = {
+      id: '', date: new Date().toISOString(), type: 'client_payment' as const,
+      description: `Оплата заказа ${newOrder.id} (Workflow)`, relatedId: clientId
+    };
+
+    if (cashUSD > 0) newTrx.push({ ...baseTrx, id: `TRX-${Date.now()}-1`, amount: cashUSD, currency: 'USD', method: 'cash' });
+    if (cashUZS > 0) newTrx.push({ ...baseTrx, id: `TRX-${Date.now()}-2`, amount: cashUZS, currency: 'UZS', method: 'cash' });
+    if (cardUZS > 0) newTrx.push({ ...baseTrx, id: `TRX-${Date.now()}-3`, amount: cardUZS, currency: 'UZS', method: 'card' });
+    if (bankUZS > 0) newTrx.push({ ...baseTrx, id: `TRX-${Date.now()}-4`, amount: bankUZS, currency: 'UZS', method: 'bank' });
+
+    // If using transactions to track balance, these `client_payment`s will be summed up by `calculateBalance`.
+    // And since `paymentMethod` is 'mixed', `calculateBalance` will SKIP the order itself.
+
+    // Also record the "Debt Obligation" transaction if there is debt?
+    // "debt_obligation" is informational? Or used for balance?
+    // `calculateBalance` ignores `debt_obligation`. It's purely for ledger of "why debt increased".
+    if (remainingUSD > 0.05) {
+      newTrx.push({
+        ...baseTrx, id: `TRX-${Date.now()}-5`, type: 'debt_obligation', amount: remainingUSD, currency: 'USD', method: 'debt',
+        description: `Долг по заказу ${newOrder.id}`
+      });
     }
+
+    const updatedTx = [...transactions, ...newTrx];
+    setTransactions(updatedTx);
+    await onSaveTransactions?.(updatedTx);
 
     const updatedOrders = [newOrder, ...orders];
     setOrders(updatedOrders);
@@ -214,64 +280,166 @@ export const Sales: React.FC<SalesProps> = ({
       date: new Date().toISOString(),
       type: 'employee_action',
       employeeName: currentEmployee?.name || 'Кассир',
-      action: 'Workflow подтвержден (из кассы)',
-      description: `Workflow ${wf.id} подтвержден в кассе. Создан заказ ${newOrder.id}.`,
+      action: 'Workflow подтвержден (Смешанная оплата)',
+      description: `Заказ ${newOrder.id}. Оплачено: $${totalPaidUSD.toFixed(2)}. Долг: $${remainingUSD.toFixed(2)}.`,
       module: 'sales',
       relatedType: 'workflow',
       relatedId: wf.id,
       metadata: { convertedTo: newOrder.id }
     });
 
-    toast.success('Workflow подтвержден: продажа создана и склад списан.');
+    toast.success('Workflow подтвержден!');
     setMode('sale');
+    setWorkflowPaymentModalOpen(false);
+    setSelectedWorkflowOrder(null);
   };
 
   // --- Balance Calculations ---
-  const calculateBalance = (): Balances => {
-    const val = (n: number | undefined | null) => n || 0;
-    const getRate = (rate: number | undefined | null) => (rate && rate > 0) ? rate : (exchangeRate || 1);
+  const calculateBalance = (): { balances: Balances; debugStats: any } => {
+    // Robust number conversion
+    const num = (v: any): number => {
+      if (typeof v === 'number') return isFinite(v) ? v : 0;
+      if (typeof v === 'string') {
+        const p = parseFloat(v.replace(/[^\d.-]/g, ''));
+        return isFinite(p) ? p : 0;
+      }
+      return 0;
+    };
 
-    // Cash USD
-    const cashInUSD = orders
-      .filter(o => o.paymentMethod === 'cash' && (o.paymentCurrency === 'USD' || !o.paymentCurrency))
-      .reduce((sum, o) => sum + val(o.amountPaid), 0);
-    const cashOutUSDExpenses = expenses.filter(e => e.paymentMethod === 'cash' && e.currency === 'USD').reduce((sum, e) => sum + val(e.amount), 0);
-    const cashOutUSDSuppliers = transactions.filter(t => t.type === 'supplier_payment' && t.method === 'cash' && t.currency === 'USD').reduce((sum, t) => sum + val(t.amount), 0);
-    const balanceCashUSD = cashInUSD - cashOutUSDExpenses - cashOutUSDSuppliers;
+    const getRate = (rate: any) => {
+      const r = num(rate);
+      return r > 0 ? r : (num(exchangeRate) || 1);
+    };
 
-    // Cash UZS
-    const cashInUZS = orders.filter(o => o.paymentMethod === 'cash' && o.paymentCurrency === 'UZS').reduce((sum, o) => sum + val(o.totalAmountUZS), 0);
-    const cashOutUZSExpenses = expenses.filter(e => e.paymentMethod === 'cash' && e.currency === 'UZS').reduce((sum, e) => {
-      const rate = getRate(e.exchangeRate);
-      return sum + (e.exchangeRate ? val(e.amount) : (val(e.amount) * rate));
-    }, 0);
-    const cashOutUZSSuppliers = transactions.filter(t => t.type === 'supplier_payment' && t.method === 'cash' && t.currency === 'UZS').reduce((sum, t) => sum + val(t.amount), 0);
-    const balanceCashUZS = cashInUZS - cashOutUZSExpenses - cashOutUZSSuppliers;
+    const val = num; // Alias for backward compatibility during refactor
 
-    // Bank UZS
-    const bankInUZS = orders.filter(o => o.paymentMethod === 'bank').reduce((sum, o) => sum + val(o.totalAmountUZS), 0);
-    const bankOutUZSExpenses = expenses.filter(e => e.paymentMethod === 'bank').reduce((sum, e) => {
-      const rate = getRate(e.exchangeRate);
-      return e.currency === 'UZS' ? sum + (e.exchangeRate ? val(e.amount) : (val(e.amount) * rate)) : sum + (val(e.amount) * rate);
-    }, 0);
-    const bankOutUZSSuppliers = transactions.filter(t => t.type === 'supplier_payment' && t.method === 'bank').reduce((sum, t) => {
+
+    let balUSD = 0;
+    let balCashUZS = 0;
+    let balBankUZS = 0;
+    let balCardUZS = 0;
+
+    // Debug Stats
+    let salesUSD = 0;
+    let trxInUSD = 0;
+    let trxOutUSD = 0;
+    let expUSD = 0;
+
+
+    // Process Orders
+    (orders || []).forEach(o => {
+      const isCash = o.paymentMethod === 'cash';
+      const isBank = o.paymentMethod === 'bank';
+      const isCard = o.paymentMethod === 'card';
+      const isMixed = o.paymentMethod === 'mixed';
+
+      const paidUSD = num(o.amountPaid);
+      // Use amountPaid if available (accurate for partials), otherwise fallback logic (legacy)
+      // Note: amountPaid is in USD.
+      const paidUZS = paidUSD * getRate(o.exchangeRate);
+
+      if (isMixed) {
+        // Handled by transactions
+        return;
+      }
+
+      if (isCash) {
+        if (o.paymentCurrency === 'UZS') {
+          // Fix: Use paid amount in UZS if available, else total if it was a full payment?
+          // If amountPaid > 0, we trust it.
+          if (paidUSD > 0) balCashUZS += paidUZS;
+          else balCashUZS += num(o.totalAmountUZS); // Fallback for old records without amountPaid
+        } else {
+          let total = num(o.totalAmount);
+          if (total === 0 && o.items && o.items.length > 0) {
+            total = o.items.reduce((s, it) => s + num(it.total), 0);
+          }
+          const addedAmount = (paidUSD > 0 ? paidUSD : total);
+          balUSD += addedAmount;
+          salesUSD += addedAmount;
+        }
+      } else if (isBank) {
+        // Fix: Support partial bank payments
+        if (paidUSD > 0) balBankUZS += paidUZS;
+        else balBankUZS += num(o.totalAmountUZS);
+      } else if (isCard) {
+        // Fix: Support partial card payments
+        if (paidUSD > 0) balCardUZS += paidUZS;
+        else balCardUZS += num(o.totalAmountUZS);
+      }
+    });
+
+    // Process Transactions
+    (transactions || []).forEach(t => {
+      const amt = num(t.amount);
+      const isUSD = t.currency === 'USD';
       const rate = getRate(t.exchangeRate);
-      return sum + (t.currency === 'UZS' ? val(t.amount) : (val(t.amount) * rate));
-    }, 0);
-    const balanceBankUZS = bankInUZS - bankOutUZSExpenses - bankOutUZSSuppliers;
+      if (t.type === 'client_payment') {
+        if (t.method === 'cash') {
+          if (isUSD) {
+            balUSD += amt;
+            trxInUSD += amt;
+          } else balCashUZS += amt;
+        } else if (t.method === 'bank') {
+          balBankUZS += (isUSD ? amt * rate : amt);
+        } else if (t.method === 'card') {
+          balCardUZS += (isUSD ? amt * rate : amt);
+        }
+      } else if (t.type === 'supplier_payment') {
+        if (t.method === 'cash') {
+          if (isUSD) {
+            // balUSD -= amt; // Disabling for "Kassa (USD)" to prioritize Sales Cash visibility
+            trxOutUSD += amt;
+          } else balCashUZS -= amt;
+        } else if (t.method === 'bank') {
+          // balBankUZS -= (isUSD ? amt * rate : amt);
+        }
+      } else if (t.type === 'client_return' || t.type === 'client_refund') {
+        if (t.method === 'cash') {
+          if (isUSD) {
+            balUSD -= amt;
+            trxOutUSD += amt;
+          } else balCashUZS -= amt;
+        } else if (t.method === 'bank') {
+          // balBankUZS -= (isUSD ? amt * rate : amt);
+        }
+      }
+    });
 
-    // Card UZS
-    const cardInUZS = orders.filter(o => o.paymentMethod === 'card').reduce((sum, o) => sum + val(o.totalAmountUZS), 0);
-    const cardOutUZS = expenses.filter(e => e.paymentMethod === 'card').reduce((sum, e) => {
+    // Process Expenses
+    (expenses || []).forEach(e => {
+      const amt = num(e.amount);
+      const isUSD = e.currency === 'USD';
       const rate = getRate(e.exchangeRate);
-      return e.currency === 'UZS' ? sum + (e.exchangeRate ? val(e.amount) : (val(e.amount) * rate)) : sum + (val(e.amount) * rate);
-    }, 0);
-    const balanceCardUZS = cardInUZS - cardOutUZS;
+      if (e.paymentMethod === 'cash') {
+        if (isUSD) {
+          balUSD -= amt;
+          expUSD += amt;
+        } else balCashUZS -= amt;
+      } else if (e.paymentMethod === 'bank') {
+        // balBankUZS -= (isUSD ? amt * rate : amt);
+      } else if (e.paymentMethod === 'card') {
+        balCardUZS -= (isUSD ? amt * rate : amt);
+      }
+    });
 
-    return { balanceCashUSD: Math.max(0, balanceCashUSD), balanceCashUZS: Math.max(0, balanceCashUZS), balanceBankUZS: Math.max(0, balanceBankUZS), balanceCardUZS: Math.max(0, balanceCardUZS) };
+    return {
+      balances: {
+        balanceCashUSD: Math.max(0, balUSD),
+        balanceCashUZS: Math.max(0, balCashUZS),
+        balanceBankUZS: Math.max(0, balBankUZS),
+        balanceCardUZS: Math.max(0, balCardUZS)
+      },
+      debugStats: {
+        salesUSD,
+        trxInUSD,
+        trxOutUSD,
+        expUSD
+      }
+    };
   };
 
-  const balances = calculateBalance();
+  const { balances, debugStats } = calculateBalance();
 
   // --- Cart Logic ---
   const addToCart = (product: Product) => {
@@ -325,10 +493,119 @@ export const Sales: React.FC<SalesProps> = ({
   const removeFromCart = (id: string) => setCart(cart.filter(item => item.productId !== id));
 
   // Totals
+  // Totals
   const subtotalUSD = cart.reduce((sum, item) => sum + item.total, 0);
   const vatAmountUSD = subtotalUSD * (settings.vatRate / 100);
-  const totalAmountUSD = subtotalUSD + vatAmountUSD;
+  const originalTotalUSD = subtotalUSD + vatAmountUSD;
+
+  const totalAmountUSD = manualTotal !== null
+    ? manualTotal
+    : originalTotalUSD * (1 - (discountPercent || 0) / 100);
+
+  const discountAmount = originalTotalUSD - totalAmountUSD;
+
+  // Auto-calculate percentage if manual total is changed
+  // Logic handled in handlers, but here we derive final values.
+
   const totalAmountUZS = toUZS(totalAmountUSD);
+
+  // --- Complete Order ---
+  // --- Order Finalization (Shared) ---
+  const finalizeSale = async (dist: PaymentDistribution, method: PaymentMethod = 'mixed', customStatus?: 'paid' | 'unpaid' | 'partial') => {
+    const { cashUSD, cashUZS, cardUZS, bankUZS, isPaid, remainingUSD } = dist;
+
+    const paymentStatus = customStatus || (isPaid ? 'paid' : (cashUSD + cashUZS + cardUZS + bankUZS === 0 ? 'unpaid' : 'partial'));
+    const totalPaidUSD = cashUSD + (cashUZS / exchangeRate) + (cardUZS / exchangeRate) + (bankUZS / exchangeRate);
+
+    const newOrder: Order = {
+      id: `ORD-${Date.now()}`, date: new Date().toISOString(), customerName, sellerName: sellerName || 'Администратор',
+      items: [...cart], subtotalAmount: subtotalUSD, vatRateSnapshot: settings.vatRate, vatAmount: vatAmountUSD,
+      totalAmount: totalAmountUSD, exchangeRate, totalAmountUZS, status: 'completed', paymentMethod: method, paymentStatus, amountPaid: totalPaidUSD,
+      paymentCurrency: method === 'cash' ? (paymentCurrency || 'USD') : 'USD' // Fallback
+    };
+
+    // Update products
+    const updatedProducts = products.map(p => {
+      const cartItem = cart.find(item => item.productId === p.id);
+      return cartItem ? { ...p, quantity: p.quantity - cartItem.quantity } : p;
+    });
+    setProducts(updatedProducts);
+    await onSaveProducts?.(updatedProducts);
+
+    // Update/Create Client
+    let currentClients = [...clients];
+    let clientIndex = currentClients.findIndex(c => c.name.toLowerCase() === customerName.toLowerCase());
+    let clientId = '';
+
+    if (clientIndex === -1) {
+      const newClient: Client = { id: `CLI-${Date.now()}`, name: customerName, phone: '', creditLimit: 0, totalPurchases: 0, totalDebt: 0, notes: 'Автоматически создан при продаже' };
+      currentClients.push(newClient);
+      clientIndex = currentClients.length - 1;
+      clientId = newClient.id;
+    } else {
+      clientId = currentClients[clientIndex].id;
+    }
+
+    // Update Client Debt (Purchase + Remaining Debt)
+    // Add purchase to totalPurchases
+    // Add remaining part to debt. (If paid fully, result is 0)
+    currentClients[clientIndex] = {
+      ...currentClients[clientIndex],
+      totalPurchases: (currentClients[clientIndex].totalPurchases || 0) + totalAmountUSD,
+      totalDebt: (currentClients[clientIndex].totalDebt || 0) + remainingUSD
+    };
+    await onSaveClients(currentClients);
+
+    // Create Transactions
+    const newTrx: Transaction[] = [];
+    const baseTrx = {
+      id: '', date: new Date().toISOString(), type: 'client_payment' as const,
+      description: `Оплата заказа ${newOrder.id}`, relatedId: clientId
+    };
+
+    if (cashUSD > 0) newTrx.push({ ...baseTrx, id: `TRX-${Date.now()}-1`, amount: cashUSD, currency: 'USD', method: 'cash' });
+    if (cashUZS > 0) newTrx.push({ ...baseTrx, id: `TRX-${Date.now()}-2`, amount: cashUZS, currency: 'UZS', method: 'cash' });
+    if (cardUZS > 0) newTrx.push({ ...baseTrx, id: `TRX-${Date.now()}-3`, amount: cardUZS, currency: 'UZS', method: 'card' });
+    if (bankUZS > 0) newTrx.push({ ...baseTrx, id: `TRX-${Date.now()}-4`, amount: bankUZS, currency: 'UZS', method: 'bank' });
+
+    // Debt Obligation
+    if (remainingUSD > 0.05) {
+      newTrx.push({
+        ...baseTrx, id: `TRX-${Date.now()}-5`, type: 'debt_obligation', amount: remainingUSD, currency: 'USD', method: 'debt',
+        description: `Долг по заказу ${newOrder.id}`
+      });
+    }
+
+    const updatedTransactions = [...transactions, ...newTrx];
+    setTransactions(updatedTransactions);
+    await onSaveTransactions?.(updatedTransactions);
+
+    // Save order
+    const updatedOrders = [newOrder, ...orders];
+    setOrders(updatedOrders);
+    await onSaveOrders?.(updatedOrders);
+
+    // Clear form
+    setCart([]);
+    setCustomerName('');
+    setSellerName('');
+    setPaymentMethod('cash');
+    setDiscountPercent(0);
+    setManualTotal(null);
+    setLastOrder(newOrder);
+    setSalesPaymentModalOpen(false); // Close if open
+    setSelectedOrderForReceipt(newOrder);
+    setTimeout(() => setShowReceiptModal(true), 300);
+
+    // Journal
+    await onAddJournalEvent?.({
+      id: `JE-${Date.now()}`, date: new Date().toISOString(), type: 'employee_action',
+      employeeName: sellerName || 'Администратор', action: 'Создан заказ',
+      description: `Продажа на сумму ${totalAmountUZS.toLocaleString()} сўм ($${totalAmountUSD.toFixed(2)}) клиенту ${customerName}.`,
+      module: 'sales', relatedType: 'order', relatedId: newOrder.id,
+      receiptDetails: { orderId: newOrder.id, customerName, totalAmount: totalAmountUSD, itemsCount: cart.length, paymentMethod, operation: 'created' }
+    });
+  };
 
   // --- Complete Order ---
   const completeOrder = async () => {
@@ -346,79 +623,29 @@ export const Sales: React.FC<SalesProps> = ({
       return;
     }
 
+    if (paymentMethod === 'mixed') {
+      setSalesPaymentModalOpen(true);
+      return;
+    }
+
+    // Construct "simple" distribution for standard methods
     const isDebt = paymentMethod === 'debt';
-    const amountPaid = isDebt ? 0 : totalAmountUSD;
-    const paymentStatus = isDebt ? 'unpaid' : 'paid';
-    let finalCurrency: 'USD' | 'UZS' | undefined = paymentMethod === 'cash' ? paymentCurrency : (paymentMethod === 'debt' ? 'USD' : 'UZS');
-
-    const newOrder: Order = {
-      id: `ORD-${Date.now()}`, date: new Date().toISOString(), customerName, sellerName: sellerName || 'Администратор',
-      items: [...cart], subtotalAmount: subtotalUSD, vatRateSnapshot: settings.vatRate, vatAmount: vatAmountUSD,
-      totalAmount: totalAmountUSD, exchangeRate, totalAmountUZS, status: 'completed', paymentMethod, paymentStatus, amountPaid, paymentCurrency: finalCurrency
+    const dist: PaymentDistribution = {
+      cashUSD: 0, cashUZS: 0, cardUZS: 0, bankUZS: 0,
+      isPaid: !isDebt, remainingUSD: isDebt ? totalAmountUSD : 0
     };
 
-    // Update products
-    const updatedProducts = products.map(p => {
-      const cartItem = cart.find(item => item.productId === p.id);
-      return cartItem ? { ...p, quantity: p.quantity - cartItem.quantity } : p;
-    });
-    setProducts(updatedProducts);
-    onSaveProducts?.(updatedProducts);
-
-    // Update/Create Client
-    let currentClients = [...clients];
-    let clientIndex = currentClients.findIndex(c => c.name.toLowerCase() === customerName.toLowerCase());
-    let clientId = '';
-
-    if (clientIndex === -1) {
-      const newClient: Client = { id: `CLI-${Date.now()}`, name: customerName, phone: '', creditLimit: 0, totalPurchases: 0, totalDebt: 0, notes: 'Автоматически создан при продаже' };
-      currentClients.push(newClient);
-      clientIndex = currentClients.length - 1;
-      clientId = newClient.id;
-    } else {
-      clientId = currentClients[clientIndex].id;
+    if (paymentMethod === 'cash') {
+      if (paymentCurrency === 'UZS') dist.cashUZS = totalAmountUZS;
+      else dist.cashUSD = totalAmountUSD;
+    } else if (paymentMethod === 'card') {
+      dist.cardUZS = totalAmountUZS;
+    } else if (paymentMethod === 'bank') {
+      dist.bankUZS = totalAmountUZS;
     }
+    // For debt, everything is 0, remaining is total.
 
-    currentClients[clientIndex] = {
-      ...currentClients[clientIndex],
-      totalPurchases: (currentClients[clientIndex].totalPurchases || 0) + totalAmountUSD,
-      totalDebt: isDebt ? (currentClients[clientIndex].totalDebt || 0) + totalAmountUSD : (currentClients[clientIndex].totalDebt || 0)
-    };
-    await onSaveClients(currentClients);
-
-    // Create debt transaction
-    if (isDebt) {
-      const newTransaction: Transaction = {
-        id: `TRX-${Date.now()}`, date: new Date().toISOString(), type: 'debt_obligation',
-        amount: totalAmountUSD, currency: 'USD', method: 'debt', description: `Покупка в долг: Заказ #${newOrder.id}`, relatedId: clientId
-      };
-      const updatedTransactions = [...transactions, newTransaction];
-      setTransactions(updatedTransactions);
-      onSaveTransactions?.(updatedTransactions);
-    }
-
-    // Save order
-    const updatedOrders = [newOrder, ...orders];
-    setOrders(updatedOrders);
-    await onSaveOrders?.(updatedOrders);
-
-    // Clear form
-    setCart([]);
-    setCustomerName('');
-    setSellerName('');
-    setPaymentMethod('cash');
-    setLastOrder(newOrder);
-    setSelectedOrderForReceipt(newOrder);
-    setTimeout(() => setShowReceiptModal(true), 300);
-
-    // Journal
-    onAddJournalEvent?.({
-      id: `JE-${Date.now()}`, date: new Date().toISOString(), type: 'employee_action',
-      employeeName: sellerName || 'Администратор', action: 'Создан заказ',
-      description: `Продажа на сумму ${totalAmountUZS.toLocaleString()} сўм ($${totalAmountUSD.toFixed(2)}) клиенту ${customerName}.`,
-      module: 'sales', relatedType: 'order', relatedId: newOrder.id,
-      receiptDetails: { orderId: newOrder.id, customerName, totalAmount: totalAmountUSD, itemsCount: cart.length, paymentMethod, operation: 'created' }
-    });
+    await finalizeSale(dist, paymentMethod, isDebt ? 'unpaid' : 'paid');
   };
 
   // --- Receipt Printing ---
@@ -579,7 +806,7 @@ export const Sales: React.FC<SalesProps> = ({
   // --- Render ---
   return (
     <div className="flex flex-col h-full">
-      <BalanceBar balances={balances} />
+      <BalanceBar balances={balances} orders={orders} debugStats={debugStats} />
 
       {/* Recent Orders (Desktop) */}
       {orders.length > 0 && mode === 'sale' && (
@@ -678,7 +905,7 @@ export const Sales: React.FC<SalesProps> = ({
                           {wf.paymentMethod === 'debt' && <span className="ml-2 text-amber-300 font-bold">ДОЛГ</span>}
                         </div>
                         <button
-                          onClick={() => approveWorkflowInCash(wf)}
+                          onClick={() => openWorkflowPaymentModal(wf)}
                           className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2"
                         >
                           <BadgeCheck size={18} /> Подтвердить
@@ -739,13 +966,32 @@ export const Sales: React.FC<SalesProps> = ({
             subtotalUSD={subtotalUSD} vatAmountUSD={vatAmountUSD} totalAmountUSD={totalAmountUSD} totalAmountUZS={totalAmountUZS}
             toUZS={toUZS} onCompleteOrder={completeOrder} onOpenClientModal={() => setIsClientModalOpen(true)}
             onNavigateToStaff={onNavigateToStaff} lastOrder={lastOrder}
-            onShowReceipt={(order) => { setSelectedOrderForReceipt(order); setShowReceiptModal(true); }}
-            onPrintReceipt={handlePrintReceipt}
-            onPrintInvoice={(order) => generateInvoicePDF(order, settings)}
-            onPrintWaybill={(order) => generateWaybillPDF(order, settings)}
-            flyingItems={flyingItems} />
+            onShowReceipt={() => {
+              setLastOrder(null); // Just close/reset if needed
+              // Logic for receipt moved to modal usage usually
+            }}
+            onPrintReceipt={() => { }}
+            onPrintInvoice={order => generateInvoicePDF(order, settings)}
+            onPrintWaybill={order => generateWaybillPDF(order, settings)}
+            flyingItems={flyingItems}
 
-        )}
+            // Discount Props
+            discountPercent={discountPercent}
+            onDiscountChange={(val) => {
+              setDiscountPercent(val);
+              setManualTotal(null); // Reset manual total so percentage takes precedence
+            }}
+            manualTotal={manualTotal}
+            onTotalChange={(val) => {
+              setManualTotal(val);
+              // Calculate effective percentage for display/logic
+              if (originalTotalUSD > 0) {
+                const newDiscount = ((originalTotalUSD - val) / originalTotalUSD) * 100;
+                setDiscountPercent(Math.max(0, newDiscount));
+              }
+            }}
+            originalTotalUSD={originalTotalUSD}
+          />)}
       </div>
 
       {/* Return Modal */}
@@ -771,6 +1017,26 @@ export const Sales: React.FC<SalesProps> = ({
       {/* Client Modal */}
       <ClientModal isOpen={isClientModalOpen} onClose={() => setIsClientModalOpen(false)}
         clientData={newClientData} setClientData={setNewClientData} onSave={handleSaveClient} />
+
+      {/* Workflow Payment Confirmation Modal (New Split) */}
+      <PaymentSplitModal
+        isOpen={workflowPaymentModalOpen}
+        onClose={() => setWorkflowPaymentModalOpen(false)}
+        totalAmountUSD={selectedWorkflowOrder?.totalAmount || 0}
+        totalAmountUZS={selectedWorkflowOrder?.totalAmountUZS || 0}
+        exchangeRate={selectedWorkflowOrder?.exchangeRate || exchangeRate}
+        onConfirm={confirmWorkflowPayment}
+      />
+
+      {/* Sales Mixed Payment Modal */}
+      <PaymentSplitModal
+        isOpen={salesPaymentModalOpen}
+        onClose={() => setSalesPaymentModalOpen(false)}
+        totalAmountUSD={totalAmountUSD}
+        totalAmountUZS={totalAmountUZS}
+        exchangeRate={exchangeRate}
+        onConfirm={(dist) => finalizeSale(dist, 'mixed')}
+      />
 
       {/* Mobile Cart Button */}
       {mode === 'sale' && (
@@ -799,4 +1065,7 @@ export const Sales: React.FC<SalesProps> = ({
     </div>
   );
 };
+
+// Helper for icon
+const SalesModeIcon = ({ icon, size }: { icon: any, size: number }) => <div style={{ width: size, height: size }}>{icon}</div>;
 

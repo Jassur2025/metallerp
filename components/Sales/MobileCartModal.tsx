@@ -62,8 +62,8 @@ export const MobileCartModal: React.FC<MobileCartModalProps> = ({
 
   return (
     <div className="lg:hidden fixed inset-0 bg-black/50 z-50 flex items-end" onClick={onClose}>
-      <div 
-        className="bg-slate-800 w-full max-h-[90vh] rounded-t-2xl flex flex-col shadow-2xl border-t border-slate-700 animate-slide-up" 
+      <div
+        className="bg-slate-800 w-full max-h-[90vh] rounded-t-2xl flex flex-col shadow-2xl border-t border-slate-700 animate-slide-up"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Header */}
@@ -204,6 +204,12 @@ export const MobileCartModal: React.FC<MobileCartModalProps> = ({
               >
                 Долг (USD)
               </button>
+              <button
+                onClick={() => setPaymentMethod('mixed')}
+                className={`px-2 py-2 rounded-lg text-xs font-medium border transition-all col-span-2 ${paymentMethod === 'mixed' ? 'bg-amber-500/20 border-amber-500 text-amber-400' : 'bg-slate-800 border-slate-600 text-slate-400 hover:bg-slate-700'}`}
+              >
+                Смешанная оплата (Частично)
+              </button>
             </div>
 
             {/* Currency Selector for Cash */}
@@ -257,5 +263,10 @@ export const MobileCartModal: React.FC<MobileCartModalProps> = ({
     </div>
   );
 };
+
+
+
+
+
 
 

@@ -209,3 +209,8 @@ console.log('Тип:', token?.startsWith('ya29.') ? '✅ OAuth' : '❌ Не OAut
 
 
 
+
+
+
+
+

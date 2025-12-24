@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { Product, Purchase, PurchaseItem, PurchaseOverheads, Transaction, WorkflowOrder, OrderItem, ProductType, Unit } from '../types';
-import { Plus, DollarSign, Wallet } from 'lucide-react';
+import { Plus, DollarSign, Wallet, CreditCard, Building2, Banknote } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
+import { PaymentSplitModal, PaymentDistribution } from './Sales/PaymentSplitModal';
 
 import type { ProcurementProps, ProcurementTab, ProcurementType, PaymentMethod, PaymentCurrency, Totals } from './Procurement/types';
 import { TopBar } from './Procurement/TopBar';
@@ -24,6 +25,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
 
     // Payment Logic
     const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
+    const [isSplitModalOpen, setIsSplitModalOpen] = useState(false);
     const [paymentCurrency, setPaymentCurrency] = useState<PaymentCurrency>('USD'); // Currency for cash/bank payments
     const [amountPaid, setAmountPaid] = useState<number>(0);
 
@@ -46,6 +48,8 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
     const [isRepayModalOpen, setIsRepayModalOpen] = useState(false);
     const [selectedPurchaseForRepayment, setSelectedPurchaseForRepayment] = useState<Purchase | null>(null);
     const [repaymentAmount, setRepaymentAmount] = useState<number>(0);
+    const [repaymentMethod, setRepaymentMethod] = useState<PaymentMethod>('cash');
+    const [repaymentCurrency, setRepaymentCurrency] = useState<PaymentCurrency>('USD');
 
     // Expanded purchase rows in history
     const [expandedPurchaseIds, setExpandedPurchaseIds] = useState<Set<string>>(new Set());
@@ -268,8 +272,12 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
         }
     }, [totals.totalInvoiceValue, paymentMethod]);
 
-    const handleComplete = async () => {
+    const finalizeProcurement = async (distribution?: PaymentDistribution) => {
         if (!supplierName || cart.length === 0) return;
+
+        const totalToPayUSD = totals.totalInvoiceValue;
+        const paidUSD = distribution ? totalToPayUSD - distribution.remainingUSD : (paymentMethod === 'debt' ? 0 : totalToPayUSD);
+        const status = distribution ? (distribution.isPaid ? 'paid' : (paidUSD > 0 ? 'partial' : 'unpaid')) : (paymentMethod === 'debt' ? 'unpaid' : 'paid');
 
         const purchase: Purchase = {
             id: `PUR-${Date.now()}`,
@@ -280,72 +288,73 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
             overheads: procurementType === 'import' ? overheads : { logistics: 0, customsDuty: 0, importVat: 0, other: 0 },
             totalInvoiceAmount: totals.totalInvoiceValue,
             totalLandedAmount: totals.totalLandedValue,
-            paymentMethod,
-            paymentStatus: paymentMethod === 'debt' ? 'unpaid' : 'paid',
-            amountPaid: paymentMethod === 'debt' ? 0 : totals.totalInvoiceValue
+            paymentMethod: distribution ? 'mixed' : paymentMethod,
+            paymentStatus: status as 'paid' | 'unpaid' | 'partial',
+            amountPaid: paidUSD
         };
 
         // 1. Save Purchase
         onSavePurchases([...purchases, purchase]);
 
-        // 2. If paid immediately, record Transaction (Expense)
-        if (paymentMethod !== 'debt') {
-            // Calculate amount in the payment currency
-            // If paying in UZS, convert USD amount to UZS
+        // 2. Record Transactions
+        const newTransactions: Transaction[] = [];
+        const baseTrx = {
+            date: new Date().toISOString(),
+            type: 'supplier_payment' as const,
+            relatedId: purchase.id
+        };
+
+        if (distribution) {
+            if (distribution.cashUSD > 0) {
+                newTransactions.push({ ...baseTrx, id: `TRX-CUSD-${Date.now()}`, amount: distribution.cashUSD, currency: 'USD', method: 'cash', description: `Оплата поставщику (USD Cash): ${supplierName} (Закупка #${purchase.id})` });
+            }
+            if (distribution.cashUZS > 0) {
+                newTransactions.push({ ...baseTrx, id: `TRX-CUZS-${Date.now()}`, amount: distribution.cashUZS, currency: 'UZS', exchangeRate: settings.defaultExchangeRate, method: 'cash', description: `Оплата поставщику (UZS Cash): ${supplierName} (Закупка #${purchase.id})` });
+            }
+            if (distribution.cardUZS > 0) {
+                newTransactions.push({ ...baseTrx, id: `TRX-CARD-${Date.now()}`, amount: distribution.cardUZS, currency: 'UZS', exchangeRate: settings.defaultExchangeRate, method: 'card', description: `Оплата поставщику (UZS Card): ${supplierName} (Закупка #${purchase.id})` });
+            }
+            if (distribution.bankUZS > 0) {
+                newTransactions.push({ ...baseTrx, id: `TRX-BANK-${Date.now()}`, amount: distribution.bankUZS, currency: 'UZS', exchangeRate: settings.defaultExchangeRate, method: 'bank', description: `Оплата поставщику (UZS Bank): ${supplierName} (Закупка #${purchase.id})` });
+            }
+        } else if (paymentMethod !== 'debt') {
             const transactionAmount = paymentCurrency === 'UZS'
                 ? totals.totalInvoiceValue * settings.defaultExchangeRate
                 : totals.totalInvoiceValue;
 
-            const newTransaction: Transaction = {
+            newTransactions.push({
+                ...baseTrx,
                 id: `TRX-${Date.now()}`,
-                date: new Date().toISOString(),
-                type: 'supplier_payment',
                 amount: transactionAmount,
                 currency: paymentCurrency,
                 exchangeRate: paymentCurrency === 'UZS' ? settings.defaultExchangeRate : undefined,
                 method: paymentMethod as 'cash' | 'bank',
-                description: `Оплата поставщику (${procurementType === 'local' ? 'Местный' : 'Импорт'}): ${supplierName} (Закупка #${purchase.id})`,
-                relatedId: purchase.id
-            };
-            const updatedTransactions = [...transactions, newTransaction];
+                description: `Оплата поставщику (${procurementType === 'local' ? 'Местный' : 'Импорт'}): ${supplierName} (Закупка #${purchase.id})`
+            });
+        }
+
+        if (newTransactions.length > 0) {
+            const updatedTransactions = [...transactions, ...newTransactions];
             setTransactions(updatedTransactions);
-            if (onSaveTransactions) {
-                onSaveTransactions(updatedTransactions);
-            }
+            if (onSaveTransactions) await onSaveTransactions(updatedTransactions);
         }
 
         // 3. Update Product Stock & Cost
-        logDev('🔄 handleComplete: updating products. Current count:', products.length);
-        logDev('🛒 Cart items:', totals.itemsWithLandedCost.map(i => ({ id: i.productId, name: i.productName, qty: i.quantity })));
-        
-        const existingById = new Map(products.map(p => [p.id, p]));
-        const nextProducts: Product[] = [...products];
+        const nextProducts = [...products];
+        const existingById = new Map<string, Product>(products.map(p => [p.id, p]));
 
-        // Update existing products and auto-create missing ones
         totals.itemsWithLandedCost.forEach(item => {
             const existing = existingById.get(item.productId);
             if (existing) {
                 const newQuantity = (existing.quantity || 0) + item.quantity;
-                // Weighted Average Cost (safe)
                 const oldValue = (existing.quantity || 0) * (existing.costPrice || 0);
                 const newValue = item.quantity * (item.landedCost || 0);
                 const newCost = newQuantity > 0 ? (oldValue + newValue) / newQuantity : (existing.costPrice || 0);
 
-                logDev(`✅ Found product "${existing.name}" (${existing.id}): ${existing.quantity} + ${item.quantity} = ${newQuantity}`);
-                
-                const updated: Product = {
-                    ...existing,
-                    quantity: newQuantity,
-                    costPrice: newCost
-                };
                 const idx = nextProducts.findIndex(p => p.id === existing.id);
-                if (idx !== -1) nextProducts[idx] = updated;
-                existingById.set(updated.id, updated);
+                if (idx !== -1) nextProducts[idx] = { ...existing, quantity: newQuantity, costPrice: newCost };
             } else {
-                // Product missing from warehouse list — create it so закуп всегда связан со складом
-                logDev(`⚠️ Product NOT FOUND in warehouse: "${item.productName}" (${item.productId}). Creating new...`);
-                
-                const created: Product = {
+                nextProducts.push({
                     id: item.productId || Date.now().toString(),
                     name: item.productName || 'Новый товар',
                     type: ProductType.OTHER,
@@ -353,40 +362,16 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                     steelGrade: 'Ст3',
                     quantity: item.quantity,
                     unit: item.unit,
-                    pricePerUnit: item.invoicePrice || 0, // можно потом отредактировать в складе
+                    pricePerUnit: item.invoicePrice || 0,
                     costPrice: item.landedCost || item.invoicePrice || 0,
                     minStockLevel: 0,
                     origin: procurementType === 'import' ? 'import' : 'local'
-                };
-                nextProducts.push(created);
-                existingById.set(created.id, created);
+                });
             }
         });
 
-        const updatedProducts = nextProducts;
-        logDev('📦 Updated products count:', updatedProducts.length);
-        
-        setProducts(updatedProducts);
-        if (onSaveProducts) {
-            logDev('💾 Calling onSaveProducts...');
-            try {
-                await onSaveProducts(updatedProducts);
-                logDev('✅ onSaveProducts completed');
-                
-                // Показываем какие товары были обновлены
-                const updatedNames = totals.itemsWithLandedCost.map(i => {
-                    const p = updatedProducts.find(pr => pr.id === i.productId);
-                    return p ? `${p.name}: ${p.quantity} ${p.unit}` : i.productName;
-                }).join(', ');
-                toast.success(`Закупка проведена! Обновлены: ${updatedNames}`);
-            } catch (err) {
-                logDev('❌ onSaveProducts error:', err);
-                toast.error('Ошибка при сохранении товаров в базу!');
-            }
-        } else {
-            logDev('⚠️ onSaveProducts is not defined!');
-            toast.warning('Данные сохранены только локально (onSaveProducts не определён)');
-        }
+        setProducts(nextProducts);
+        if (onSaveProducts) await onSaveProducts(nextProducts);
 
         // Reset
         setCart([]);
@@ -394,6 +379,20 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
         setOverheads({ logistics: 0, customsDuty: 0, importVat: 0, other: 0 });
         setPaymentMethod('cash');
         setPaymentCurrency('USD');
+        toast.success(`Закупка проведена!`);
+    };
+
+    const handleComplete = async () => {
+        if (!supplierName || cart.length === 0) {
+            toast.warning('Заполните данные поставщика и добавьте товары');
+            return;
+        }
+
+        if (paymentMethod === 'mixed') {
+            setIsSplitModalOpen(true);
+        } else {
+            finalizeProcurement();
+        }
     };
 
     // ...
@@ -401,21 +400,37 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
     const handleOpenRepayModal = (purchase: Purchase) => {
         setSelectedPurchaseForRepayment(purchase);
         setRepaymentAmount(purchase.totalInvoiceAmount - purchase.amountPaid);
+        setRepaymentMethod('cash');
+        setRepaymentCurrency('USD');
         setIsRepayModalOpen(true);
     };
 
     const handleRepayDebt = () => {
         if (!selectedPurchaseForRepayment || repaymentAmount <= 0) return;
 
+        // Calculate USD Equivalent for Purchase update
+        let amountUSD = repaymentAmount;
+        if (repaymentCurrency === 'UZS') {
+            amountUSD = repaymentAmount / settings.defaultExchangeRate;
+        }
+
+        // Validate if trying to pay more than debt
+        const remainingDebt = selectedPurchaseForRepayment.totalInvoiceAmount - selectedPurchaseForRepayment.amountPaid;
+        // Allow small rounding error margin (0.01)
+        if (amountUSD > remainingDebt + 0.1) {
+            toast.warning(`Сумма превышает остаток долга! (Макс: $${remainingDebt.toFixed(2)})`);
+            return;
+        }
+
         // 1. Create Transaction
         const newTransaction: Transaction = {
             id: `TRX-${Date.now()}`,
             date: new Date().toISOString(),
             type: 'supplier_payment',
-            amount: repaymentAmount,
-            currency: 'USD',
-            exchangeRate: settings.defaultExchangeRate, // Store exchange rate for proper conversion
-            method: 'cash', // Default
+            amount: repaymentAmount, // Amount in ACTUAL currency
+            currency: repaymentCurrency,
+            exchangeRate: repaymentCurrency === 'UZS' ? settings.defaultExchangeRate : undefined,
+            method: repaymentMethod,
             description: `Погашение долга поставщику: ${selectedPurchaseForRepayment.supplierName} (Закупка #${selectedPurchaseForRepayment.id})`,
             relatedId: selectedPurchaseForRepayment.id
         };
@@ -425,14 +440,14 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
             onSaveTransactions(updatedTransactions);
         }
 
-        // 2. Update Purchase
+        // 2. Update Purchase (Always in USD)
         const updatedPurchases = purchases.map(p => {
             if (p.id === selectedPurchaseForRepayment.id) {
-                const newAmountPaid = p.amountPaid + repaymentAmount;
+                const newAmountPaid = p.amountPaid + amountUSD;
                 return {
                     ...p,
                     amountPaid: newAmountPaid,
-                    paymentStatus: newAmountPaid >= p.totalInvoiceAmount ? 'paid' : 'partial'
+                    paymentStatus: newAmountPaid >= p.totalInvoiceAmount - 0.1 ? 'paid' : 'partial'
                 } as Purchase;
             }
             return p;
@@ -440,7 +455,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
         onSavePurchases(updatedPurchases);
 
         setIsRepayModalOpen(false);
-        toast.success('Оплата поставщику проведена успешно!');
+        toast.success(`Оплата поставщику проведена: ${repaymentAmount.toLocaleString()} ${repaymentCurrency}`);
     };
 
     return (
@@ -492,6 +507,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                 <HistoryTab
                     purchases={purchases}
                     products={products}
+                    transactions={transactions}
                     expandedPurchaseIds={expandedPurchaseIds}
                     togglePurchaseExpand={togglePurchaseExpand}
                     handleOpenRepayModal={handleOpenRepayModal}
@@ -517,23 +533,126 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                                 <div className="mt-3 flex justify-between items-end">
                                     <span className="text-sm text-slate-500">Остаток долга:</span>
                                     <span className="text-xl font-mono font-bold text-red-400">
-                                        ${(selectedPurchaseForRepayment.totalInvoiceAmount - selectedPurchaseForRepayment.amountPaid).toLocaleString()}
+                                        ${(selectedPurchaseForRepayment.totalInvoiceAmount - selectedPurchaseForRepayment.amountPaid).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                     </span>
                                 </div>
                             </div>
 
+                            {/* Payment Method Selector */}
                             <div className="space-y-2">
-                                <label className="text-sm font-medium text-slate-400">Сумма оплаты ($)</label>
+                                <label className="text-sm font-medium text-slate-400">Способ оплаты</label>
+                                <div className="grid grid-cols-3 gap-2">
+                                    <button
+                                        onClick={() => {
+                                            setRepaymentMethod('cash');
+                                            // Cash supports USD and UZS, keeping current if valid, else default USD
+                                        }}
+                                        className={`p-3 rounded-xl border flex flex-col items-center gap-2 transition-all ${repaymentMethod === 'cash'
+                                            ? 'bg-emerald-600/20 border-emerald-500 text-emerald-400'
+                                            : 'bg-slate-800 border-slate-600 text-slate-400 hover:bg-slate-700'
+                                            }`}
+                                    >
+                                        <Banknote size={20} />
+                                        <span className="text-xs font-bold">Наличные</span>
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            setRepaymentMethod('card');
+                                            setRepaymentCurrency('UZS'); // Card - Only Sum
+                                        }}
+                                        className={`p-3 rounded-xl border flex flex-col items-center gap-2 transition-all ${repaymentMethod === 'card'
+                                            ? 'bg-indigo-600/20 border-indigo-500 text-indigo-400'
+                                            : 'bg-slate-800 border-slate-600 text-slate-400 hover:bg-slate-700'
+                                            }`}
+                                    >
+                                        <CreditCard size={20} />
+                                        <span className="text-xs font-bold">Карта</span>
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            setRepaymentMethod('bank');
+                                            setRepaymentCurrency('UZS'); // Cashless - Only Sum
+                                        }}
+                                        className={`p-3 rounded-xl border flex flex-col items-center gap-2 transition-all ${repaymentMethod === 'bank'
+                                            ? 'bg-blue-600/20 border-blue-500 text-blue-400'
+                                            : 'bg-slate-800 border-slate-600 text-slate-400 hover:bg-slate-700'
+                                            }`}
+                                    >
+                                        <Building2 size={20} />
+                                        <span className="text-xs font-bold">Безнал</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Currency Selector */}
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-slate-400">Валюта</label>
+                                <div className="flex bg-slate-900 rounded-lg p-1 border border-slate-700">
+                                    {repaymentMethod === 'cash' ? (
+                                        <>
+                                            <button
+                                                onClick={() => {
+                                                    setRepaymentCurrency('USD');
+                                                    // Auto-convert amount for convenience? Maybe cleaner to just reset or let user type.
+                                                    // Let's reset to full debt in USD for convenience
+                                                    setRepaymentAmount(selectedPurchaseForRepayment.totalInvoiceAmount - selectedPurchaseForRepayment.amountPaid);
+                                                }}
+                                                className={`flex-1 py-1.5 rounded-md text-sm font-bold transition-all ${repaymentCurrency === 'USD' ? 'bg-slate-700 text-white shadow' : 'text-slate-500 hover:text-slate-300'
+                                                    }`}
+                                            >
+                                                USD ($)
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    setRepaymentCurrency('UZS');
+                                                    // Auto-convert full debt to UZS
+                                                    const debtUSD = selectedPurchaseForRepayment.totalInvoiceAmount - selectedPurchaseForRepayment.amountPaid;
+                                                    setRepaymentAmount(Math.round(debtUSD * settings.defaultExchangeRate));
+                                                }}
+                                                className={`flex-1 py-1.5 rounded-md text-sm font-bold transition-all ${repaymentCurrency === 'UZS' ? 'bg-slate-700 text-white shadow' : 'text-slate-500 hover:text-slate-300'
+                                                    }`}
+                                            >
+                                                UZS (сум)
+                                            </button>
+                                        </>
+                                    ) : (
+                                        <button
+                                            className="flex-1 py-1.5 rounded-md text-sm font-bold bg-slate-700 text-white shadow cursor-not-allowed opacity-50"
+                                            disabled
+                                        >
+                                            UZS (сум) — Только сумы
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <div className="flex justify-between">
+                                    <label className="text-sm font-medium text-slate-400">Сумма оплаты ({repaymentCurrency})</label>
+                                    {repaymentCurrency === 'UZS' && (
+                                        <span className="text-xs text-slate-500 self-center">
+                                            Курс: {settings.defaultExchangeRate.toLocaleString()}
+                                        </span>
+                                    )}
+                                </div>
                                 <div className="relative">
-                                    <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                                    {repaymentCurrency === 'USD' ? (
+                                        <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                                    ) : (
+                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-bold text-xs">UZS</span>
+                                    )}
                                     <input
                                         type="number"
-                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg pl-10 pr-4 py-3 text-white text-lg font-mono focus:ring-2 focus:ring-emerald-500 outline-none"
+                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg pl-12 pr-4 py-3 text-white text-lg font-mono focus:ring-2 focus:ring-emerald-500 outline-none"
                                         value={repaymentAmount || ''}
                                         onChange={e => setRepaymentAmount(Number(e.target.value))}
-                                        max={selectedPurchaseForRepayment.totalInvoiceAmount - selectedPurchaseForRepayment.amountPaid}
                                     />
                                 </div>
+                                {repaymentCurrency === 'UZS' && repaymentAmount > 0 && (
+                                    <p className="text-xs text-right text-emerald-400">
+                                        ≈ ${(repaymentAmount / settings.defaultExchangeRate).toLocaleString(undefined, { maximumFractionDigits: 2 })} USD
+                                    </p>
+                                )}
                             </div>
 
                             <button
@@ -668,6 +787,15 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                     </div>
                 </div>
             )}
+            {/* Mixed Payment Modal */}
+            <PaymentSplitModal
+                isOpen={isSplitModalOpen}
+                onClose={() => setIsSplitModalOpen(false)}
+                totalAmountUSD={totals.totalInvoiceValue}
+                totalAmountUZS={totals.totalInvoiceValue * settings.defaultExchangeRate}
+                exchangeRate={settings.defaultExchangeRate}
+                onConfirm={finalizeProcurement}
+            />
         </div>
     );
 };

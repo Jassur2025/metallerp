@@ -244,6 +244,19 @@ export function mapEmployeeToRow(e: Employee): unknown[] {
 
 export function mapRowToPurchase(row: Row): Purchase {
   const overheads = parseJson<PurchaseOverheads>(row, 5, { logistics: 0, customsDuty: 0, importVat: 0, other: 0 });
+  const paymentStatus = pick(asString(row, 9), PAYMENT_STATUSES, 'paid');
+
+  // If status is 'unpaid', force amountPaid to 0 regardless of what's in the column
+  // If status is 'paid', we trust the column or default to totalInvoiceAmount if missing (Wait, previously I set default to 0. 
+  //   If it is 'paid' but amountPaid column is 0/empty, we should probably set it to totalInvoiceAmount? 
+  //   Actually, let's Stick to reading the column. If it's 0 and status is Paid, that's a data error)
+  //   User issue is specifically Unpaid showing as Paid.
+
+  let amountPaid = asNumber(row, 10, 0);
+  if (paymentStatus === 'unpaid') {
+    amountPaid = 0;
+  }
+
   return {
     id: asString(row, 0),
     date: asString(row, 1),
@@ -254,8 +267,8 @@ export function mapRowToPurchase(row: Row): Purchase {
     totalInvoiceAmount: asNumber(row, 6, 0),
     totalLandedAmount: asNumber(row, 7, 0),
     paymentMethod: pick(asString(row, 8), ['cash', 'bank', 'debt'] as const, 'cash'),
-    paymentStatus: pick(asString(row, 9), PAYMENT_STATUSES, 'paid'),
-    amountPaid: asNumber(row, 10, asNumber(row, 7, 0)),
+    paymentStatus,
+    amountPaid,
   };
 }
 

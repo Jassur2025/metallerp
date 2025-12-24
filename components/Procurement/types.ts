@@ -16,7 +16,7 @@ export interface ProcurementProps {
 
 export type ProcurementTab = 'new' | 'history' | 'workflow';
 export type ProcurementType = 'local' | 'import';
-export type PaymentMethod = 'cash' | 'bank' | 'debt';
+export type PaymentMethod = 'cash' | 'bank' | 'debt' | 'mixed';
 export type PaymentCurrency = 'USD' | 'UZS';
 
 export interface Totals {
@@ -31,6 +31,11 @@ export interface MissingItemRow {
   available: number;
   missingQty: number;
 }
+
+
+
+
+
 
 
 

@@ -53,15 +53,26 @@ export interface AppSettings {
     crm: boolean;
     staff: boolean;
     journal: boolean;
+    priceList: boolean;
   };
 }
 
 export interface Client {
   id: string;
   name: string;
+  type?: 'individual' | 'legal'; // Default to 'individual'
   phone: string;
   email?: string;
-  address?: string;
+  address?: string; // Physical address
+
+  // Legal Entity Details
+  companyName?: string;
+  inn?: string; // Tax ID
+  mfo?: string; // Bank Code
+  bankAccount?: string; // Checking Account
+  bankName?: string;
+  addressLegal?: string; // Legal Address
+
   creditLimit: number;
   notes?: string;
   totalPurchases?: number;
@@ -111,7 +122,7 @@ export interface Order {
   status: 'pending' | 'completed' | 'cancelled';
 
   // Payment Info
-  paymentMethod: 'cash' | 'bank' | 'card' | 'debt';
+  paymentMethod: 'cash' | 'bank' | 'card' | 'debt' | 'mixed';
   paymentStatus: 'paid' | 'unpaid' | 'partial';
   paymentCurrency?: 'USD' | 'UZS'; // New field for cash currency
   amountPaid: number; // Amount actually paid (USD)
@@ -139,7 +150,7 @@ export interface WorkflowOrder {
   status: 'draft' | 'confirmed' | 'sent_to_cash' | 'sent_to_procurement' | 'completed' | 'cancelled';
 
   // Payment intent (set by sales, verified by cashier)
-  paymentMethod: 'cash' | 'bank' | 'card' | 'debt';
+  paymentMethod: 'cash' | 'bank' | 'card' | 'debt' | 'mixed';
   paymentStatus: 'paid' | 'unpaid' | 'partial';
   paymentCurrency?: 'USD' | 'UZS';
   amountPaid: number; // USD
@@ -193,7 +204,7 @@ export interface Purchase {
   totalLandedAmount: number; // Sum of landed costs (Invoice + Overheads)
 
   // Payment Info
-  paymentMethod: 'cash' | 'bank' | 'debt';
+  paymentMethod: 'cash' | 'bank' | 'debt' | 'mixed';
   paymentStatus: 'paid' | 'unpaid' | 'partial';
   amountPaid: number; // Amount actually paid (USD)
 }
@@ -275,6 +286,7 @@ export interface Employee {
     crm?: boolean;
     staff?: boolean;
     journal?: boolean;
+    priceList?: boolean;
     // Granular permissions
     canViewCostPrice?: boolean;
     canProcessReturns?: boolean;
@@ -297,6 +309,7 @@ export interface RolePermissions {
     crm?: boolean;
     staff?: boolean;
     journal?: boolean;
+    priceList?: boolean;
   };
   canEdit: boolean; // Can edit data or view only
 }

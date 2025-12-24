@@ -41,6 +41,6 @@ export interface FlyingItem {
 }
 
 export type SalesMode = 'sale' | 'expense' | 'return' | 'workflow';
-export type PaymentMethod = 'cash' | 'bank' | 'card' | 'debt';
+export type PaymentMethod = 'cash' | 'bank' | 'card' | 'debt' | 'mixed';
 export type Currency = 'USD' | 'UZS';
 

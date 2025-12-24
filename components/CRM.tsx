@@ -547,6 +547,21 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
                                     </div>
 
                                     <div className="space-y-2 mb-4">
+                                        {client.type === 'legal' && client.companyName && (
+                                            <div className="mb-2 p-2 bg-blue-500/10 rounded-lg border border-blue-500/20">
+                                                <div className="text-xs text-blue-400 font-medium mb-1">Юридическое лицо</div>
+                                                <div className="text-sm text-white font-medium">{client.companyName}</div>
+                                                {client.inn && (
+                                                    <div className="text-xs text-slate-400 mt-1">ИНН: {client.inn}</div>
+                                                )}
+                                                {client.mfo && client.bankAccount && (
+                                                    <div className="text-xs text-slate-400">МФО: {client.mfo}, р/с: {client.bankAccount}</div>
+                                                )}
+                                                {client.bankName && (
+                                                    <div className="text-xs text-slate-400">Банк: {client.bankName}</div>
+                                                )}
+                                            </div>
+                                        )}
                                         {client.email && (
                                             <div className="flex items-center gap-2 text-slate-500 text-sm">
                                                 <Mail size={14} /> {client.email}
@@ -555,6 +570,11 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
                                         {client.address && (
                                             <div className="flex items-center gap-2 text-slate-500 text-sm">
                                                 <MapPin size={14} /> {client.address}
+                                            </div>
+                                        )}
+                                        {client.type === 'legal' && client.addressLegal && (
+                                            <div className="flex items-center gap-2 text-slate-500 text-sm">
+                                                <MapPin size={14} /> Юр. адрес: {client.addressLegal}
                                             </div>
                                         )}
                                     </div>

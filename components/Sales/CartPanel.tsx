@@ -193,6 +193,12 @@ export const CartPanel: React.FC<CartPanelProps> = ({
             >
               Долг (USD)
             </button>
+            <button
+              onClick={() => setPaymentMethod('mixed')}
+              className={`px-2 py-2 rounded-lg text-xs font-medium border transition-all col-span-2 ${paymentMethod === 'mixed' ? 'bg-amber-500/20 border-amber-500 text-amber-400' : 'bg-slate-800 border-slate-600 text-slate-400 hover:bg-slate-700'}`}
+            >
+              Смешанная оплата (Частично)
+            </button>
           </div>
 
           {/* Currency Selector for Cash */}
@@ -272,5 +278,10 @@ export const CartPanel: React.FC<CartPanelProps> = ({
     </div>
   );
 };
+
+
+
+
+
 
 

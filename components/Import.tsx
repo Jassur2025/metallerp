@@ -1,7 +1,11 @@
 import React, { useState, useMemo } from 'react';
-import { Product, Purchase, PurchaseItem, PurchaseOverheads, Transaction, AppSettings } from '../types';
-import { Plus, Trash2, Save, Calculator, Container, DollarSign, AlertTriangle, Truck, Scale, FileText, History, Wallet, CheckCircle } from 'lucide-react';
+import {
+    Purchase, Product, Transaction, ProductType, Unit,
+    PurchaseItem, PurchaseOverheads, AppSettings
+} from '../types';
+import { Plus, Trash2, Save, Calculator, Container, DollarSign, AlertTriangle, Truck, Scale, FileText, History, Wallet, CheckCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
+import { PaymentSplitModal, PaymentDistribution } from './Sales/PaymentSplitModal';
 
 interface ImportProps {
     products: Product[];
@@ -20,13 +24,16 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
 
     // Payment Logic
-    const [paymentMethod, setPaymentMethod] = useState<'cash' | 'bank' | 'debt'>('cash');
+    const [paymentMethod, setPaymentMethod] = useState<'cash' | 'bank' | 'debt' | 'mixed'>('cash');
+    const [isSplitModalOpen, setIsSplitModalOpen] = useState(false);
     const [amountPaid, setAmountPaid] = useState<number>(0);
 
     // Cart logic
     const [selectedProductId, setSelectedProductId] = useState('');
+    const [inputProductName, setInputProductName] = useState(''); // For manual product name input
     const [inputQty, setInputQty] = useState<number>(0);
     const [inputInvoicePrice, setInputInvoicePrice] = useState<number>(0);
+    const [inputUnit, setInputUnit] = useState<Unit>(Unit.PIECE); // Unit for new products
 
     const [cart, setCart] = useState<PurchaseItem[]>([]);
 
@@ -42,21 +49,63 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
     const [isRepayModalOpen, setIsRepayModalOpen] = useState(false);
     const [selectedPurchaseForRepayment, setSelectedPurchaseForRepayment] = useState<Purchase | null>(null);
     const [repaymentAmount, setRepaymentAmount] = useState<number>(0);
+    const [expandedPurchases, setExpandedPurchases] = useState<Set<string>>(new Set());
 
     // --- Logic to Add Item ---
     const handleAddItem = () => {
-        if (!selectedProductId || inputQty <= 0 || inputInvoicePrice <= 0) return;
+        // Check if we have product ID or product name
+        if ((!selectedProductId && !inputProductName.trim()) || inputQty <= 0 || inputInvoicePrice <= 0) {
+            toast.warning('Заполните название товара, количество и цену');
+            return;
+        }
 
-        const product = products.find(p => p.id === selectedProductId);
-        if (!product) return;
+        let product: Product | undefined;
+        let productId: string;
 
-        if (cart.some(i => i.productId === product.id)) {
+        // Try to find product by ID first
+        if (selectedProductId) {
+            product = products.find(p => p.id === selectedProductId);
+            productId = selectedProductId;
+        } else {
+            // Try to find by name
+            product = products.find(p => p.name.toLowerCase().trim() === inputProductName.toLowerCase().trim());
+            if (product) {
+                productId = product.id;
+            } else {
+                // Auto-create product if not found
+                const newProduct: Product = {
+                    id: `PROD-${Date.now()}`,
+                    name: inputProductName.trim(),
+                    type: ProductType.OTHER,
+                    dimensions: '-',
+                    steelGrade: 'Ст3',
+                    quantity: 0,
+                    unit: inputUnit,
+                    pricePerUnit: 0,
+                    costPrice: 0,
+                    minStockLevel: 0,
+                    origin: 'import'
+                };
+                setProducts([...products, newProduct]);
+                product = newProduct;
+                productId = newProduct.id;
+                toast.success(`Товар "${newProduct.name}" автоматически создан и добавлен в список`);
+            }
+        }
+
+        if (!product) {
+            toast.error('Ошибка при создании товара');
+            return;
+        }
+
+        // Check if product already in cart
+        if (cart.some(i => i.productId === productId)) {
             toast.warning('Этот товар уже добавлен в список. Удалите его, чтобы добавить заново с новыми параметрами.');
             return;
         }
 
         const newItem: PurchaseItem = {
-            productId: product.id,
+            productId: productId,
             productName: product.name,
             quantity: inputQty,
             unit: product.unit,
@@ -69,8 +118,10 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
 
         // Reset inputs
         setSelectedProductId('');
+        setInputProductName('');
         setInputQty(0);
         setInputInvoicePrice(0);
+        setInputUnit(Unit.PIECE);
     };
 
     const removeItem = (productId: string) => {
@@ -116,16 +167,20 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
 
     // Update amountPaid when totals change if method is not debt
     React.useEffect(() => {
-        if (paymentMethod !== 'debt') {
+        if (paymentMethod === 'cash' || paymentMethod === 'bank') {
             setAmountPaid(totals.totalInvoiceValue); // Usually we pay invoice amount to supplier
-        } else {
+        } else if (paymentMethod === 'debt') {
             setAmountPaid(0);
         }
     }, [totals.totalInvoiceValue, paymentMethod]);
 
 
-    const handleComplete = () => {
+    const finalizePurchase = (distribution?: PaymentDistribution) => {
         if (!supplierName || cart.length === 0) return;
+
+        const totalToPayUSD = totals.totalInvoiceValue;
+        const paidUSD = distribution ? totalToPayUSD - distribution.remainingUSD : (paymentMethod === 'debt' ? 0 : totalToPayUSD);
+        const status = distribution ? (distribution.isPaid ? 'paid' : (paidUSD > 0 ? 'partial' : 'unpaid')) : (paymentMethod === 'debt' ? 'unpaid' : 'paid');
 
         const purchase: Purchase = {
             id: `PUR-${Date.now()}`,
@@ -136,59 +191,132 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
             overheads,
             totalInvoiceAmount: totals.totalInvoiceValue,
             totalLandedAmount: totals.totalLandedValue,
-            paymentMethod,
-            paymentStatus: paymentMethod === 'debt' ? 'unpaid' : 'paid',
-            amountPaid: paymentMethod === 'debt' ? 0 : totals.totalInvoiceValue
+            paymentMethod: distribution ? 'mixed' : paymentMethod,
+            paymentStatus: status as 'paid' | 'unpaid' | 'partial',
+            amountPaid: paidUSD
         };
 
         // 1. Save Purchase
         onSavePurchases([...purchases, purchase]);
 
-        // 2. If paid immediately, record Transaction (Expense)
-        if (paymentMethod !== 'debt') {
-            const newTransaction: Transaction = {
+        // 2. Create Transactions
+        const newTransactions: Transaction[] = [];
+        const baseTrx = {
+            date: new Date().toISOString(),
+            type: 'supplier_payment' as const,
+            relatedId: purchase.id,
+        };
+
+        if (distribution) {
+            if (distribution.cashUSD > 0) {
+                newTransactions.push({
+                    ...baseTrx,
+                    id: `TRX-CUSD-${Date.now()}-1`,
+                    amount: distribution.cashUSD,
+                    currency: 'USD',
+                    method: 'cash',
+                    description: `Оплата поставщику (USD Cash): ${supplierName} (Закупка #${purchase.id})`
+                });
+            }
+            if (distribution.cashUZS > 0) {
+                newTransactions.push({
+                    ...baseTrx,
+                    id: `TRX-CUZS-${Date.now()}-2`,
+                    amount: distribution.cashUZS,
+                    currency: 'UZS',
+                    method: 'cash',
+                    description: `Оплата поставщику (UZS Cash): ${supplierName} (Закупка #${purchase.id})`
+                });
+            }
+            if (distribution.cardUZS > 0) {
+                newTransactions.push({
+                    ...baseTrx,
+                    id: `TRX-CARD-${Date.now()}-3`,
+                    amount: distribution.cardUZS,
+                    currency: 'UZS',
+                    method: 'card',
+                    description: `Оплата поставщику (UZS Card): ${supplierName} (Закупка #${purchase.id})`
+                });
+            }
+            if (distribution.bankUZS > 0) {
+                newTransactions.push({
+                    ...baseTrx,
+                    id: `TRX-BANK-${Date.now()}-4`,
+                    amount: distribution.bankUZS,
+                    currency: 'UZS',
+                    method: 'bank',
+                    description: `Оплата поставщику (UZS Bank): ${supplierName} (Закупка #${purchase.id})`
+                });
+            }
+        } else if (paymentMethod !== 'debt') {
+            newTransactions.push({
+                ...baseTrx,
                 id: `TRX-${Date.now()}`,
-                date: new Date().toISOString(),
-                type: 'supplier_payment',
                 amount: totals.totalInvoiceValue,
                 currency: 'USD',
                 method: paymentMethod as 'cash' | 'bank',
-                description: `Оплата поставщику: ${supplierName} (Закупка #${purchase.id})`,
-                relatedId: purchase.id
-            };
-            setTransactions([...transactions, newTransaction]);
+                description: `Оплата поставщику: ${supplierName} (Закупка #${purchase.id})`
+            });
         }
 
-        // 3. Update Product Stock & Cost (Simplified: just update local state, ideally should be robust)
-        // Note: In a real app, we should recalculate weighted average cost here.
-        // Current logic in App.tsx or backend should handle this. 
-        // For now, let's assume the user manually updates stock or we trust the system to reload.
-        // Actually, we should update `products` state here to reflect new stock immediately.
-        const updatedProducts = products.map(p => {
-            const item = totals.itemsWithLandedCost.find(i => i.productId === p.id);
-            if (item) {
-                const newQuantity = p.quantity + item.quantity;
-                // Weighted Average Cost: ((OldQty * OldCost) + (NewQty * NewCost)) / (OldQty + NewQty)
-                const oldValue = p.quantity * p.costPrice;
-                const newValue = item.quantity * item.landedCost;
-                const newCost = (oldValue + newValue) / newQuantity;
+        if (newTransactions.length > 0) {
+            setTransactions([...transactions, ...newTransactions]);
+        }
 
-                return {
-                    ...p,
-                    quantity: newQuantity,
-                    costPrice: newCost
-                };
+        // 3. Update Product Stock & Cost
+        const nextProducts = [...products];
+        const existingById = new Map<string, Product>(products.map(p => [p.id, p]));
+
+        totals.itemsWithLandedCost.forEach(item => {
+            const existing = existingById.get(item.productId);
+            if (existing) {
+                const newQuantity = existing.quantity + item.quantity;
+                const oldValue = existing.quantity * (existing.costPrice || 0);
+                const newValue = item.quantity * item.landedCost;
+                const newCost = newQuantity > 0 ? (oldValue + newValue) / newQuantity : item.landedCost;
+
+                const index = nextProducts.findIndex(p => p.id === existing.id);
+                if (index >= 0) {
+                    nextProducts[index] = { ...existing, quantity: newQuantity, costPrice: newCost };
+                }
+            } else {
+                nextProducts.push({
+                    id: item.productId,
+                    name: item.productName,
+                    type: ProductType.OTHER,
+                    dimensions: '-',
+                    steelGrade: 'Ст3',
+                    quantity: item.quantity,
+                    unit: item.unit,
+                    pricePerUnit: 0,
+                    costPrice: item.landedCost,
+                    minStockLevel: 0,
+                    origin: 'import'
+                });
             }
-            return p;
         });
-        setProducts(updatedProducts);
+
+        setProducts(nextProducts);
 
         // Reset
         setCart([]);
         setSupplierName('');
         setOverheads({ logistics: 0, customsDuty: 0, importVat: 0, other: 0 });
         setPaymentMethod('cash');
-        toast.success('Закупка успешно проведена! Остатки и себестоимость обновлены.');
+        toast.success('Закупка успешно проведена!');
+    };
+
+    const handleComplete = () => {
+        if (!supplierName || cart.length === 0) {
+            toast.warning('Заполните данные поставщика и добавьте товары');
+            return;
+        }
+
+        if (paymentMethod === 'mixed') {
+            setIsSplitModalOpen(true);
+        } else {
+            finalizePurchase();
+        }
     };
 
     const handleOpenRepayModal = (purchase: Purchase) => {
@@ -202,7 +330,7 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
 
         // 1. Create Transaction
         const newTransaction: Transaction = {
-            id: `TRX-${Date.now()}`,
+            id: `TRX - ${Date.now()} `,
             date: new Date().toISOString(),
             type: 'supplier_payment',
             amount: repaymentAmount,
@@ -231,8 +359,52 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
         toast.success('Оплата поставщику проведена успешно!');
     };
 
+    const toggleExpand = (purchaseId: string) => {
+        const next = new Set(expandedPurchases);
+        if (next.has(purchaseId)) next.delete(purchaseId);
+        else next.add(purchaseId);
+        setExpandedPurchases(next);
+    };
+
+    const getPurchaseTransactions = (purchaseId: string) => {
+        return transactions.filter(t => t.relatedId === purchaseId);
+    };
+
     // Filter unpaid purchases
     const unpaidPurchases = purchases.filter(p => p.paymentStatus !== 'paid');
+
+    // Quick Product Create State
+    const [isProductModalOpen, setIsProductModalOpen] = useState(false);
+    const [newProduct, setNewProduct] = useState<Partial<Product>>({
+        name: '', type: 'Прочее' as ProductType, unit: 'шт' as Unit, dimensions: '-', steelGrade: '-', origin: 'import'
+    });
+
+    const handleCreateProduct = () => {
+        if (!newProduct.name) {
+            toast.warning('Введите название товара');
+            return;
+        }
+
+        const product: Product = {
+            id: `PROD - ${Date.now()} `,
+            name: newProduct.name!,
+            type: newProduct.type || 'Прочее' as ProductType,
+            dimensions: newProduct.dimensions || '-',
+            steelGrade: newProduct.steelGrade || '-',
+            quantity: 0,
+            unit: newProduct.unit || 'шт' as Unit,
+            pricePerUnit: 0,
+            costPrice: 0,
+            minStockLevel: 10,
+            origin: newProduct.origin || 'import'
+        };
+
+        setProducts([...products, product]);
+        setSelectedProductId(product.id);
+        setIsProductModalOpen(false);
+        setNewProduct({ name: '', type: 'Прочее' as ProductType, unit: 'шт' as Unit, dimensions: '-', steelGrade: '-', origin: 'import' });
+        toast.success(`Товар "${product.name}" создан!`);
+    };
 
     return (
         <div className="p-6 space-y-6 animate-fade-in h-[calc(100vh-2rem)] flex flex-col">
@@ -244,13 +416,13 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
                 <div className="flex bg-slate-800 p-1 rounded-lg border border-slate-700">
                     <button
                         onClick={() => setActiveTab('new')}
-                        className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'new' ? 'bg-primary-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
+                        className={`px - 4 py - 2 rounded - md text - sm font - medium transition - all ${activeTab === 'new' ? 'bg-primary-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'} `}
                     >
                         Новая закупка
                     </button>
                     <button
                         onClick={() => setActiveTab('history')}
-                        className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'history' ? 'bg-primary-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
+                        className={`px - 4 py - 2 rounded - md text - sm font - medium transition - all ${activeTab === 'history' ? 'bg-primary-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'} `}
                     >
                         История и Долги
                     </button>
@@ -290,13 +462,13 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
                                 <div className="grid grid-cols-3 gap-2">
                                     <button
                                         onClick={() => setPaymentMethod('cash')}
-                                        className={`px-2 py-2 rounded-lg text-xs font-bold border transition-all ${paymentMethod === 'cash' ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : 'bg-slate-900 border-slate-600 text-slate-400'}`}
+                                        className={`px - 2 py - 2 rounded - lg text - xs font - bold border transition - all ${paymentMethod === 'cash' ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : 'bg-slate-900 border-slate-600 text-slate-400'} `}
                                     >
                                         Наличные
                                     </button>
                                     <button
                                         onClick={() => setPaymentMethod('bank')}
-                                        className={`px-2 py-2 rounded-lg text-xs font-bold border transition-all ${paymentMethod === 'bank' ? 'bg-blue-500/20 border-blue-500 text-blue-400' : 'bg-slate-900 border-slate-600 text-slate-400'}`}
+                                        className={`px - 2 py - 2 rounded - lg text - xs font - bold border transition - all ${paymentMethod === 'bank' ? 'bg-blue-500/20 border-blue-500 text-blue-400' : 'bg-slate-900 border-slate-600 text-slate-400'} `}
                                     >
                                         Перечисление
                                     </button>
@@ -306,11 +478,17 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
                                     >
                                         В долг
                                     </button>
+                                    <button
+                                        onClick={() => setPaymentMethod('mixed')}
+                                        className={`px-2 py-2 rounded-lg text-xs font-bold border transition-all col-span-3 ${paymentMethod === 'mixed' ? 'bg-amber-500/20 border-amber-500 text-amber-400' : 'bg-slate-900 border-slate-600 text-slate-400'}`}
+                                    >
+                                        Смешанная оплата (Частично)
+                                    </button>
                                 </div>
                             </div>
                         </div>
 
-                        {/* Add Item Form */}
+                        {/* Add Item Form with Quick Create */}
                         <div className="bg-slate-800 p-5 rounded-xl border border-slate-700 space-y-4 shadow-lg">
                             <h3 className="text-white font-bold flex items-center gap-2">
                                 <Plus size={18} className="text-emerald-500" /> Добавить товар
@@ -318,18 +496,58 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
 
                             <div className="space-y-2">
                                 <label className="text-xs font-medium text-slate-400">Товар</label>
-                                <select
-                                    className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-emerald-500 outline-none"
-                                    value={selectedProductId}
-                                    onChange={e => setSelectedProductId(e.target.value)}
+                                <div className="space-y-2">
+                                    <select
+                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-emerald-500 outline-none"
+                                        value={selectedProductId}
+                                        onChange={e => {
+                                            setSelectedProductId(e.target.value);
+                                            if (e.target.value) {
+                                                setInputProductName('');
+                                            }
+                                        }}
+                                    >
+                                        <option value="">-- Выберите товар из списка --</option>
+                                        {products.map(p => (
+                                            <option key={p.id} value={p.id}>
+                                                {p.name} ({p.dimensions}) {p.origin === 'import' ? '[Imp]' : '[Loc]'}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <div className="text-xs text-slate-500 text-center">или</div>
+                                    <input
+                                        type="text"
+                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-emerald-500 outline-none"
+                                        placeholder="Введите название нового товара (создастся автоматически)"
+                                        value={inputProductName}
+                                        onChange={e => {
+                                            setInputProductName(e.target.value);
+                                            if (e.target.value) {
+                                                setSelectedProductId('');
+                                            }
+                                        }}
+                                    />
+                                    {inputProductName && (
+                                        <div className="flex gap-2">
+                                            <select
+                                                className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
+                                                value={inputUnit}
+                                                onChange={e => setInputUnit(e.target.value as Unit)}
+                                            >
+                                                <option value={Unit.METER}>м (метр)</option>
+                                                <option value={Unit.TON}>т (тонна)</option>
+                                                <option value={Unit.PIECE}>шт (штука)</option>
+                                            </select>
+                                        </div>
+                                    )}
+                                </div>
+                                <button
+                                    onClick={() => setIsProductModalOpen(true)}
+                                    className="w-full bg-slate-700 hover:bg-emerald-600 text-white py-2 rounded-lg transition-colors border border-slate-600 text-sm flex items-center justify-center gap-2"
+                                    title="Создать новый товар с полными параметрами"
                                 >
-                                    <option value="">-- Выберите товар --</option>
-                                    {products.map(p => (
-                                        <option key={p.id} value={p.id}>
-                                            {p.name} ({p.dimensions}) {p.origin === 'import' ? '[Imp]' : '[Loc]'}
-                                        </option>
-                                    ))}
-                                </select>
+                                    <Plus size={16} /> Создать товар с параметрами
+                                </button>
                             </div>
 
                             <div className="grid grid-cols-2 gap-3">
@@ -519,7 +737,8 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
                                     <th className="px-6 py-4">Дата</th>
                                     <th className="px-6 py-4">Поставщик</th>
                                     <th className="px-6 py-4 text-right">Сумма (Inv.)</th>
-                                    <th className="px-6 py-4 text-center">Статус оплаты</th>
+                                    <th className="px-6 py-4 text-center">Метод</th>
+                                    <th className="px-6 py-4 text-center">Статус</th>
                                     <th className="px-6 py-4 text-right">Оплачено</th>
                                     <th className="px-6 py-4 text-right">Долг</th>
                                     <th className="px-6 py-4"></th>
@@ -528,35 +747,81 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
                             <tbody className="divide-y divide-slate-700">
                                 {purchases.slice().reverse().map(purchase => {
                                     const debt = purchase.totalInvoiceAmount - purchase.amountPaid;
+                                    const isMixed = purchase.paymentMethod === 'mixed';
+                                    const isExpanded = expandedPurchases.has(purchase.id);
+                                    const purchaseTrx = isMixed && isExpanded ? getPurchaseTransactions(purchase.id) : [];
+
                                     return (
-                                        <tr key={purchase.id} className="hover:bg-slate-700/30 transition-colors">
-                                            <td className="px-6 py-4 text-slate-300">{new Date(purchase.date).toLocaleDateString()}</td>
-                                            <td className="px-6 py-4 font-medium text-white">{purchase.supplierName}</td>
-                                            <td className="px-6 py-4 text-right font-mono text-slate-300">${purchase.totalInvoiceAmount.toLocaleString()}</td>
-                                            <td className="px-6 py-4 text-center">
-                                                <span className={`px-2 py-1 rounded text-xs font-bold uppercase ${purchase.paymentStatus === 'paid' ? 'bg-emerald-500/20 text-emerald-400' :
-                                                    purchase.paymentStatus === 'partial' ? 'bg-amber-500/20 text-amber-400' :
-                                                        'bg-red-500/20 text-red-400'
-                                                    }`}>
-                                                    {purchase.paymentStatus === 'paid' ? 'Оплачено' :
-                                                        purchase.paymentStatus === 'partial' ? 'Частично' : 'Не оплачено'}
-                                                </span>
-                                            </td>
-                                            <td className="px-6 py-4 text-right font-mono text-emerald-400">${purchase.amountPaid.toLocaleString()}</td>
-                                            <td className="px-6 py-4 text-right font-mono text-red-400 font-bold">
-                                                {debt > 0 ? `$${debt.toLocaleString()}` : '-'}
-                                            </td>
-                                            <td className="px-6 py-4 text-right">
-                                                {debt > 0 && (
+                                        <React.Fragment key={purchase.id}>
+                                            <tr className="hover:bg-slate-700/30 transition-colors">
+                                                <td className="px-6 py-4 text-slate-300">{new Date(purchase.date).toLocaleDateString()}</td>
+                                                <td className="px-6 py-4 font-medium text-white">{purchase.supplierName}</td>
+                                                <td className="px-6 py-4 text-right font-mono text-slate-300">${purchase.totalInvoiceAmount.toLocaleString()}</td>
+                                                <td className="px-6 py-4 text-center">
                                                     <button
-                                                        onClick={() => handleOpenRepayModal(purchase)}
-                                                        className="text-xs bg-slate-700 hover:bg-emerald-600 text-white px-3 py-1.5 rounded transition-colors flex items-center gap-1 ml-auto"
+                                                        disabled={!isMixed}
+                                                        onClick={() => isMixed && toggleExpand(purchase.id)}
+                                                        className={`flex items-center gap-1 mx-auto px-2 py-0.5 rounded text-[10px] font-bold uppercase transition-all ${purchase.paymentMethod === 'cash' ? 'bg-emerald-500/20 text-emerald-400' :
+                                                            purchase.paymentMethod === 'bank' ? 'bg-blue-500/20 text-blue-400' :
+                                                                purchase.paymentMethod === 'mixed' ? 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 cursor-pointer' :
+                                                                    'bg-red-500/20 text-red-400'
+                                                            }`}
                                                     >
-                                                        <Wallet size={14} /> Оплатить
+                                                        {purchase.paymentMethod === 'cash' ? 'Наличные' :
+                                                            purchase.paymentMethod === 'bank' ? 'Банк' :
+                                                                purchase.paymentMethod === 'mixed' ? 'МИКС' : 'Долг'}
+                                                        {isMixed && (isExpanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />)}
                                                     </button>
-                                                )}
-                                            </td>
-                                        </tr>
+                                                </td>
+                                                <td className="px-6 py-4 text-center">
+                                                    <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${purchase.paymentStatus === 'paid' ? 'bg-emerald-500/20 text-emerald-400' :
+                                                        purchase.paymentStatus === 'partial' ? 'bg-amber-500/20 text-amber-400' :
+                                                            'bg-red-500/20 text-red-400'
+                                                        }`}>
+                                                        {purchase.paymentStatus === 'paid' ? 'Оплачено' :
+                                                            purchase.paymentStatus === 'partial' ? 'Частично' : 'Не оплачено'}
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4 text-right font-mono text-emerald-400">${purchase.amountPaid.toLocaleString()}</td>
+                                                <td className="px-6 py-4 text-right font-mono text-red-400 font-bold">
+                                                    {debt > 0 ? `$${debt.toLocaleString()}` : '-'}
+                                                </td>
+                                                <td className="px-6 py-4 text-right">
+                                                    {debt > 0 && (
+                                                        <button
+                                                            onClick={() => handleOpenRepayModal(purchase)}
+                                                            className="text-xs bg-slate-700 hover:bg-emerald-600 text-white px-3 py-1.5 rounded transition-colors flex items-center gap-1 ml-auto"
+                                                        >
+                                                            <Wallet size={14} /> Оплатить
+                                                        </button>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                            {/* Details row */}
+                                            {isExpanded && isMixed && (
+                                                <tr className="bg-slate-800/50">
+                                                    <td colSpan={8} className="px-6 py-3">
+                                                        <div className="bg-slate-900/50 rounded-lg p-3 border border-slate-700 ml-10">
+                                                            <div className="text-[10px] font-bold text-slate-400 mb-2 uppercase">Детализация оплаты (МИКС)</div>
+                                                            {purchaseTrx.length === 0 ? (
+                                                                <div className="text-xs text-red-400">Транзакции не найдены</div>
+                                                            ) : (
+                                                                <div className="flex flex-wrap gap-4">
+                                                                    {purchaseTrx.map(t => (
+                                                                        <div key={t.id} className="bg-slate-800 p-2 rounded-lg border border-slate-700">
+                                                                            <div className="text-[10px] text-slate-500 uppercase">{t.method === 'cash' ? 'Наличные' : t.method === 'card' ? 'Карта' : 'Банк'}</div>
+                                                                            <div className={`text-sm font-mono font-bold ${t.method === 'cash' && t.currency === 'USD' ? 'text-emerald-400' : 'text-blue-400'}`}>
+                                                                                {t.currency === 'UZS' ? `${t.amount.toLocaleString()} UZS` : `$${t.amount.toFixed(2)}`}
+                                                                            </div>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </React.Fragment>
                                     );
                                 })}
                                 {purchases.length === 0 && (
@@ -621,6 +886,108 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
                     </div>
                 </div>
             )}
+
+            {/* Quick Product Create Modal */}
+            {isProductModalOpen && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
+                    <div className="bg-slate-800 rounded-2xl w-full max-w-lg border border-slate-700 shadow-2xl animate-scale-in">
+                        <div className="p-6 border-b border-slate-700 flex justify-between items-center">
+                            <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                                <Plus className="text-emerald-500" /> Создать новый товар
+                            </h3>
+                            <button onClick={() => setIsProductModalOpen(false)} className="text-slate-400 hover:text-white text-2xl">&times;</button>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-slate-400 mb-1">Название товара *</label>
+                                <input
+                                    type="text"
+                                    placeholder="Например: Труба 80x80x3"
+                                    className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-emerald-500 outline-none"
+                                    value={newProduct.name || ''}
+                                    onChange={e => setNewProduct({ ...newProduct, name: e.target.value })}
+                                />
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-400 mb-1">Тип</label>
+                                    <select
+                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-emerald-500 outline-none"
+                                        value={newProduct.type || 'Прочее'}
+                                        onChange={e => setNewProduct({ ...newProduct, type: e.target.value as ProductType })}
+                                    >
+                                        <option value="Труба">Труба</option>
+                                        <option value="Профиль">Профиль</option>
+                                        <option value="Лист">Лист</option>
+                                        <option value="Балка">Балка</option>
+                                        <option value="Прочее">Прочее</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-400 mb-1">Ед. измерения</label>
+                                    <select
+                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-emerald-500 outline-none"
+                                        value={newProduct.unit || 'шт'}
+                                        onChange={e => setNewProduct({ ...newProduct, unit: e.target.value as Unit })}
+                                    >
+                                        <option value="м">метр</option>
+                                        <option value="т">тонна</option>
+                                        <option value="шт">шт</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-3 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-400 mb-1">Размеры</label>
+                                    <input
+                                        type="text"
+                                        placeholder="50x50"
+                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-emerald-500 outline-none"
+                                        value={newProduct.dimensions || ''}
+                                        onChange={e => setNewProduct({ ...newProduct, dimensions: e.target.value })}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-400 mb-1">Марка стали</label>
+                                    <input
+                                        type="text"
+                                        placeholder="St3sp"
+                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-emerald-500 outline-none"
+                                        value={newProduct.steelGrade || ''}
+                                        onChange={e => setNewProduct({ ...newProduct, steelGrade: e.target.value })}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-400 mb-1">Происхождение</label>
+                                    <select
+                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-emerald-500 outline-none"
+                                        value={newProduct.origin || 'import'}
+                                        onChange={e => setNewProduct({ ...newProduct, origin: e.target.value as 'import' | 'local' })}
+                                    >
+                                        <option value="import">Импорт</option>
+                                        <option value="local">Местный</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <button
+                                onClick={handleCreateProduct}
+                                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-xl font-bold shadow-lg shadow-emerald-600/20 transition-all"
+                            >
+                                Создать Товар
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* Mixed Payment Modal */}
+            <PaymentSplitModal
+                isOpen={isSplitModalOpen}
+                onClose={() => setIsSplitModalOpen(false)}
+                totalAmountUSD={totals.totalInvoiceValue}
+                totalAmountUZS={totals.totalInvoiceValue * settings.exchangeRate}
+                exchangeRate={settings.exchangeRate}
+                onConfirm={finalizePurchase}
+            />
         </div>
     );
 };
