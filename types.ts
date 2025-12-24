@@ -259,6 +259,7 @@ export interface FixedAsset {
   lastDepreciationDate?: string;
   paymentMethod?: 'cash' | 'bank' | 'card'; // Способ оплаты
   paymentCurrency?: 'USD' | 'UZS'; // Валюта оплаты (для наличных)
+  amountPaid?: number; // USD - сумма оплачено (для частичной оплаты)
 }
 
 // Staff Management & RBAC

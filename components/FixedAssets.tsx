@@ -28,6 +28,7 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
     const [category, setCategory] = useState<FixedAssetCategory>(FixedAssetCategory.COMPUTER);
     const [purchaseDate, setPurchaseDate] = useState(new Date().toISOString().split('T')[0]);
     const [purchaseCost, setPurchaseCost] = useState('');
+    const [amountPaid, setAmountPaid] = useState('');
     const [revalValue, setRevalValue] = useState('');
     const [paymentMethod, setPaymentMethod] = useState<'cash' | 'bank' | 'card'>('cash');
     const [paymentCurrency, setPaymentCurrency] = useState<'USD' | 'UZS'>('UZS');
@@ -54,10 +55,16 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
         if (!name || !purchaseCost) return;
 
         const cost = parseFloat(purchaseCost);
+        const paid = amountPaid ? parseFloat(amountPaid) : cost;
         const rate = parseFloat(customExchangeRate) || defaultExchangeRate;
         const depreciationRate = getDepreciationRate(category);
         const assetId = `FA-${Date.now()}`;
         const currency = paymentMethod === 'cash' ? paymentCurrency : 'UZS';
+
+        if (paid > cost) {
+            toast.warning('Сумма оплаты не может превышать стоимость актива!');
+            return;
+        }
 
         const newAsset: FixedAsset = {
             id: assetId,
@@ -70,6 +77,7 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
             depreciationRate: depreciationRate,
             paymentMethod,
             paymentCurrency: currency,
+            amountPaid: paid
         };
 
         const updatedAssets = [...assets, newAsset];
@@ -78,10 +86,10 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
             await onSaveAssets(updatedAssets);
         }
 
-        // Создаём транзакцию расхода для кассового учёта
-        if (setTransactions && onSaveTransactions) {
+        // Создаём транзакцию расхода только на оплаченную сумму
+        if (setTransactions && onSaveTransactions && paid > 0) {
             // Рассчитываем сумму в валюте оплаты
-            const transactionAmount = currency === 'UZS' ? cost * rate : cost;
+            const transactionAmount = currency === 'UZS' ? paid * rate : paid;
 
             const newTransaction: Transaction = {
                 id: `TRX-${Date.now()}`,
@@ -91,7 +99,7 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
                 currency: currency,
                 exchangeRate: currency === 'UZS' ? rate : undefined,
                 method: paymentMethod,
-                description: `Покупка ОС: ${name} (${category})`,
+                description: `Покупка ОС: ${name} (${category})${paid < cost ? ' (частичная оплата)' : ''}`,
                 relatedId: assetId
             };
 
@@ -102,7 +110,10 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
 
         setIsModalOpen(false);
         resetForm();
-        toast.success('Основное средство добавлено и списано из кассы!');
+        const message = paid < cost
+            ? `ОС добавлено! Оплачено: $${paid.toLocaleString()}, осталось: $${(cost - paid).toLocaleString()}`
+            : 'Основное средство добавлено и оплачено полностью!';
+        toast.success(message);
     };
 
     const handleDelete = (id: string) => {
@@ -120,6 +131,7 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
         setCategory(FixedAssetCategory.COMPUTER);
         setPurchaseDate(new Date().toISOString().split('T')[0]);
         setPurchaseCost('');
+        setAmountPaid('');
         setPaymentMethod('cash');
         setPaymentCurrency('UZS');
         setCustomExchangeRate(defaultExchangeRate.toString());
@@ -237,43 +249,56 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
                                 <th className="p-4 font-medium">Категория</th>
                                 <th className="p-4 font-medium">Дата покупки</th>
                                 <th className="p-4 font-medium text-right">Стоимость</th>
+                                <th className="p-4 font-medium text-right">Оплачено</th>
                                 <th className="p-4 font-medium text-right">Тек. Стоимость</th>
                                 <th className="p-4 font-medium text-center">Ставка</th>
                                 <th className="p-4 font-medium text-center">Действия</th>
                             </tr>
                         </thead>
                         <tbody className="text-slate-200 text-sm divide-y divide-slate-700">
-                            {assets.map(asset => (
-                                <tr key={asset.id} className="hover:bg-slate-700/30 transition-colors">
-                                    <td className="p-4 font-medium">{asset.name}</td>
-                                    <td className="p-4">
-                                        <span className="bg-slate-700 px-2 py-1 rounded text-xs text-slate-300">{asset.category}</span>
-                                    </td>
-                                    <td className="p-4 text-slate-400">{asset.purchaseDate}</td>
-                                    <td className="p-4 text-right font-mono text-slate-400">${asset.purchaseCost.toLocaleString()}</td>
-                                    <td className="p-4 text-right font-mono font-bold text-white">${asset.currentValue.toLocaleString()}</td>
-                                    <td className="p-4 text-center text-amber-400 font-mono">{asset.depreciationRate}%</td>
-                                    <td className="p-4 flex justify-center gap-2">
-                                        <button
-                                            onClick={() => openRevaluation(asset)}
-                                            className="p-2 hover:bg-blue-500/20 text-blue-400 rounded-lg transition-colors"
-                                            title="Переоценка"
-                                        >
-                                            <Edit2 size={16} />
-                                        </button>
-                                        <button
-                                            onClick={() => handleDelete(asset.id)}
-                                            className="p-2 hover:bg-red-500/20 text-red-400 rounded-lg transition-colors"
-                                            title="Удалить"
-                                        >
-                                            <Trash2 size={16} />
-                                        </button>
-                                    </td>
-                                </tr>
-                            ))}
+                            {assets.map(asset => {
+                                const paid = asset.amountPaid ?? asset.purchaseCost;
+                                const isPartial = paid < asset.purchaseCost;
+                                return (
+                                    <tr key={asset.id} className="hover:bg-slate-700/30 transition-colors">
+                                        <td className="p-4 font-medium">{asset.name}</td>
+                                        <td className="p-4">
+                                            <span className="bg-slate-700 px-2 py-1 rounded text-xs text-slate-300">{asset.category}</span>
+                                        </td>
+                                        <td className="p-4 text-slate-400">{asset.purchaseDate}</td>
+                                        <td className="p-4 text-right font-mono text-slate-400">${asset.purchaseCost.toLocaleString()}</td>
+                                        <td className="p-4 text-right">
+                                            <div className="font-mono font-bold text-white">${paid.toLocaleString()}</div>
+                                            {isPartial && (
+                                                <div className="text-[10px] text-amber-400 mt-0.5">
+                                                    Долг: ${(asset.purchaseCost - paid).toLocaleString()}
+                                                </div>
+                                            )}
+                                        </td>
+                                        <td className="p-4 text-right font-mono font-bold text-white">${asset.currentValue.toLocaleString()}</td>
+                                        <td className="p-4 text-center text-amber-400 font-mono">{asset.depreciationRate}%</td>
+                                        <td className="p-4 flex justify-center gap-2">
+                                            <button
+                                                onClick={() => openRevaluation(asset)}
+                                                className="p-2 hover:bg-blue-500/20 text-blue-400 rounded-lg transition-colors"
+                                                title="Переоценка"
+                                            >
+                                                <Edit2 size={16} />
+                                            </button>
+                                            <button
+                                                onClick={() => handleDelete(asset.id)}
+                                                className="p-2 hover:bg-red-500/20 text-red-400 rounded-lg transition-colors"
+                                                title="Удалить"
+                                            >
+                                                <Trash2 size={16} />
+                                            </button>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
                             {assets.length === 0 && (
                                 <tr>
-                                    <td colSpan={7} className="p-8 text-center text-slate-500">
+                                    <td colSpan={8} className="p-8 text-center text-slate-500">
                                         Нет основных средств. Добавьте первое!
                                     </td>
                                 </tr>
@@ -317,7 +342,10 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
                                         type="number"
                                         className="w-full bg-slate-900 border border-slate-600 rounded-xl px-4 py-2 text-white outline-none focus:border-indigo-500"
                                         value={purchaseCost}
-                                        onChange={e => setPurchaseCost(e.target.value)}
+                                        onChange={e => {
+                                            setPurchaseCost(e.target.value);
+                                            if (!amountPaid) setAmountPaid(e.target.value);
+                                        }}
                                     />
                                 </div>
                                 <div>
@@ -329,6 +357,20 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
                                         onChange={e => setPurchaseDate(e.target.value)}
                                     />
                                 </div>
+                            </div>
+                            {/* Amount Paid Field */}
+                            <div>
+                                <label className="block text-sm font-medium text-slate-400 mb-1">Сумма оплаты (USD)</label>
+                                <input
+                                    type="number"
+                                    className="w-full bg-slate-900 border border-slate-600 rounded-xl px-4 py-2 text-white outline-none focus:border-indigo-500"
+                                    value={amountPaid}
+                                    onChange={e => setAmountPaid(e.target.value)}
+                                    placeholder={purchaseCost || '0'}
+                                />
+                                <p className="text-xs text-slate-500 mt-1">
+                                    Оставьте пустым для полной оплаты. Разница уходит в кредиторскую задолженность.
+                                </p>
                             </div>
                             {/* Payment Method */}
                             <div>

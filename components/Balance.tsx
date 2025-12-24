@@ -159,6 +159,12 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fi
     // 2. Accounts Payable (Debt to Suppliers)
     const accountsPayable = safePurchases.reduce((sum, p) => sum + (Math.max(0, (p.totalInvoiceAmount || 0) - (p.amountPaid || 0))), 0);
 
+    // 3. Accounts Payable - Fixed Assets (Debt for Fixed Assets)
+    const fixedAssetsPayable = safeFixedAssets.reduce((sum, fa) => {
+        const paid = fa.amountPaid ?? fa.purchaseCost;
+        return sum + Math.max(0, fa.purchaseCost - paid);
+    }, 0);
+
     // 3. Equity / Capital (Initial Investment in Inventory)
     // This represents the initial capital invested to purchase inventory
     const equity = inventoryValue;
@@ -187,10 +193,10 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fi
 
     // 5. Retained Earnings (Balancing Item)
     // This is what makes Assets = Liabilities + Equity
-    // Retained Earnings = Total Assets - (Equity + Fixed Assets Fund + VAT Liability + Accounts Payable)
-    const retainedEarnings = totalAssets - equity - fixedAssetsFund - vatLiability - accountsPayable;
+    // Retained Earnings = Total Assets - (Equity + Fixed Assets Fund + VAT Liability + Accounts Payable + Fixed Assets Payable)
+    const retainedEarnings = totalAssets - equity - fixedAssetsFund - vatLiability - accountsPayable - fixedAssetsPayable;
 
-    const totalPassives = equity + fixedAssetsFund + retainedEarnings + vatLiability + accountsPayable;
+    const totalPassives = equity + fixedAssetsFund + retainedEarnings + vatLiability + accountsPayable + fixedAssetsPayable;
 
     // Chart Data
     const assetsData = [
@@ -207,6 +213,7 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fi
         { name: 'Нераспр. прибыль', value: retainedEarnings > 0 ? retainedEarnings : 0, color: '#f59e0b' },
         { name: 'Обязательства по НДС', value: vatLiability, color: '#ef4444' },
         { name: 'Долг поставщикам', value: accountsPayable, color: '#fca5a5' },
+        { name: 'Долг за ОС', value: fixedAssetsPayable, color: '#fb923c' },
     ].filter(item => item.value > 0);
 
     const formatCurrency = (val: number) =>
