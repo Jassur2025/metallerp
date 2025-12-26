@@ -286,13 +286,23 @@ const AppContent: React.FC = () => {
       }
     });
 
-    // Транзакции
+    // Транзакции - только смешанные платежи и оплаты поставщикам
     transactions.forEach(t => {
       const amt = num(t.amount);
       const isUSD = t.currency === 'USD';
       const rate = getRate(t.exchangeRate);
+      
+      // Извлекаем ID заказа из описания (если есть)
+      const orderIdMatch = t.description?.match(/ORD-\d+/);
+      const relatedOrderId = orderIdMatch ? orderIdMatch[0] : null;
+      
+      // Находим связанный заказ
+      const relatedOrder = relatedOrderId ? orders.find(o => o.id === relatedOrderId) : null;
+      
+      // Транзакция связана с mixed заказом?
+      const isMixedPayment = relatedOrder?.paymentMethod === 'mixed';
 
-      if (t.type === 'client_payment') {
+      if (t.type === 'client_payment' && isMixedPayment) {
         if (t.method === 'cash') {
           if (isUSD) cashUSD += amt; else cashUZS += amt;
         } else if (t.method === 'bank') {
@@ -301,6 +311,7 @@ const AppContent: React.FC = () => {
           cardUZS += (isUSD ? amt * rate : amt);
         }
       } else if (t.type === 'supplier_payment') {
+        // Оплаты поставщикам всегда вычитаем
         if (t.method === 'cash') {
           if (isUSD) cashUSD -= amt; else cashUZS -= amt;
         } else if (t.method === 'bank') {
@@ -1059,7 +1070,7 @@ const AppContent: React.FC = () => {
       case 'settings':
         return renderLazyComponent(<SettingsComponent settings={settings} onSave={handleSaveSettings} />);
       case 'priceList':
-        return renderLazyComponent(<PriceList products={products} onSaveProducts={handleSaveProducts} />);
+        return renderLazyComponent(<PriceList products={products} onSaveProducts={handleSaveProducts} settings={settings} />);
       default:
         return renderLazyComponent(<Dashboard products={products} orders={orders} settings={settings} />);
     }

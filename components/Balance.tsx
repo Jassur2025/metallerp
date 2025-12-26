@@ -27,8 +27,8 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fi
 
     // --- ASSETS (АКТИВЫ) ---
 
-    // 1. Inventory Value (USD) - Stock on hand
-    const inventoryValue = safeProducts.reduce((sum, p) => sum + ((p.quantity || 0) * (p.pricePerUnit || 0)), 0);
+    // 1. Inventory Value (USD) - Stock on hand по СЕБЕСТОИМОСТИ (costPrice)
+    const inventoryValue = safeProducts.reduce((sum, p) => sum + ((p.quantity || 0) * (p.costPrice || 0)), 0);
 
     // --- LIQUID ASSETS (Net Cash Positions) ---
     const num = (v: any): number => {
@@ -88,14 +88,27 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fi
     });
 
     // Process Transactions
+    // ВАЖНО: Для обычных заказов баланс уже посчитан выше из orders
+    // client_payment транзакции учитываем ТОЛЬКО для смешанных платежей (mixed)
     safeTransactions.forEach(t => {
         const amt = num(t.amount);
         const rate = getRate(t.exchangeRate);
         const isUSD = t.currency === 'USD';
         // Валидируем суммы в USD
         const validatedUSDAmount = isUSD ? validateUSD(amt) : amt;
+        
+        // Извлекаем ID заказа из описания (если есть)
+        const orderIdMatch = t.description?.match(/ORD-\d+/);
+        const relatedOrderId = orderIdMatch ? orderIdMatch[0] : null;
+        
+        // Находим связанный заказ
+        const relatedOrder = relatedOrderId ? safeOrders.find(o => o.id === relatedOrderId) : null;
+        
+        // Транзакция связана с mixed заказом?
+        const isMixedPayment = relatedOrder?.paymentMethod === 'mixed';
 
-        if (t.type === 'client_payment') {
+        if (t.type === 'client_payment' && isMixedPayment) {
+            // Добавляем только транзакции от смешанных платежей
             if (t.method === 'cash') {
                 if (isUSD) netCashUSD += validatedUSDAmount; else netCashUZS += amt;
             } else if (t.method === 'bank') {
@@ -104,23 +117,16 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fi
                 netCardUZS += (isUSD ? validatedUSDAmount * rate : amt);
             }
         } else if (t.type === 'supplier_payment') {
+            // Оплаты поставщикам вычитаем
             if (t.method === 'cash') {
-                if (isUSD) {
-                    // netCashUSD -= validatedUSDAmount; // Showing Gross Revenue in Assets to match user expectations
-                } else {
-                    // netCashUZS -= amt;
-                }
+                if (isUSD) netCashUSD -= validatedUSDAmount; else netCashUZS -= amt;
             } else if (t.method === 'bank') {
-                // netBankUZS -= (isUSD ? validatedUSDAmount * rate : amt);
+                netBankUZS -= (isUSD ? validatedUSDAmount * rate : amt);
+            } else if (t.method === 'card') {
+                netCardUZS -= (isUSD ? validatedUSDAmount * rate : amt);
             }
         } else if (t.type === 'client_return' || t.type === 'client_refund' || t.type === 'return') {
-            // Keep returns as they are valid reductions of revenue?
-            // User likely wants to see "Current money" but thinks of it as "Sales Revenue".
-            // If we remove supplier payments, we should probably keep returns.
-            // BUT for consisteny with previous strict "Gross Sales" request, maybe we leave them?
-            // Let's comment them out to be safe if user considers returns "expense-like" or if they just want "Total In".
-            // However, usually returns strictly reduce Sales.
-            // Let's comment them out to start, or stick to "Sales Cash" logic which usually excludes returns.
+            // Возвраты вычитаем
             if (t.method === 'cash') {
                 if (isUSD) netCashUSD -= validatedUSDAmount; else netCashUZS -= amt;
             } else if (t.method === 'bank') {
@@ -192,9 +198,12 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fi
         return sum + Math.max(0, fa.purchaseCost - paid);
     }, 0);
 
-    // 3. Equity / Capital (Initial Investment in Inventory)
-    // This represents the initial capital invested to purchase inventory
-    const equity = inventoryValue;
+    // 3. Equity / Capital (Собственный капитал)
+    // Собственный капитал = Активы - Обязательства
+    // Но для баланса: если товар куплен в долг, то собственный капитал = 0
+    // Если товар оплачен, то собственный капитал = стоимость оплаченного товара
+    const paidForInventory = safePurchases.reduce((sum, p) => sum + (p.amountPaid || 0), 0);
+    const equity = paidForInventory;
 
     // 3. Fixed Assets Fund (Capital invested in Fixed Assets)
     // Equity in FA = Total Book Value - Remaining Debt

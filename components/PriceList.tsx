@@ -1,14 +1,15 @@
 import React, { useState, useMemo } from 'react';
-import { Product, ProductType } from '../types';
+import { Product, ProductType, AppSettings } from '../types';
 import { Search, FileText, Filter, Package, Save, Percent, Edit, CheckSquare, Square, ChevronDown, ChevronUp } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 
 interface PriceListProps {
     products: Product[];
     onSaveProducts: (products: Product[]) => Promise<void>;
+    settings: AppSettings;
 }
 
-export const PriceList: React.FC<PriceListProps> = ({ products, onSaveProducts }) => {
+export const PriceList: React.FC<PriceListProps> = ({ products, onSaveProducts, settings }) => {
     const toast = useToast();
     const [searchTerm, setSearchTerm] = useState('');
     const [typeFilter, setTypeFilter] = useState<string>('all');
@@ -247,7 +248,8 @@ export const PriceList: React.FC<PriceListProps> = ({ products, onSaveProducts }
                                 <th className="p-4 border-b border-slate-700">Размеры / Сталь</th>
                                 <th className="p-4 border-b border-slate-700 text-right">Себест. (USD)</th>
                                 <th className="p-4 border-b border-slate-700 text-right">Остаток</th>
-                                <th className="p-4 border-b border-slate-700 text-right w-48">Цена прод. (USD)</th>
+                                <th className="p-4 border-b border-slate-700 text-right w-40">Цена (USD)</th>
+                                <th className="p-4 border-b border-slate-700 text-right w-40">С НДС ({settings.vatRate}%)</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-700/50">
@@ -296,7 +298,7 @@ export const PriceList: React.FC<PriceListProps> = ({ products, onSaveProducts }
                                                     <input
                                                         type="number"
                                                         step="0.01"
-                                                        className={`bg-slate-900/50 border rounded-lg pl-6 pr-3 py-2 w-32 text-right font-mono text-lg transition-all outline-none ${editingPrices[product.id] !== undefined
+                                                        className={`bg-slate-900/50 border rounded-lg pl-6 pr-3 py-2 w-28 text-right font-mono transition-all outline-none ${editingPrices[product.id] !== undefined
                                                             ? 'border-emerald-500/50 text-emerald-400 ring-2 ring-emerald-500/10'
                                                             : 'border-slate-700 group-hover:border-slate-500 text-white'
                                                             }`}
@@ -306,11 +308,18 @@ export const PriceList: React.FC<PriceListProps> = ({ products, onSaveProducts }
                                                 </div>
                                             </div>
                                         </td>
+                                        <td className="p-4 text-right">
+                                            <span className="font-mono text-amber-400 font-bold">
+                                                ${((editingPrices[product.id] !== undefined 
+                                                    ? parseFloat(editingPrices[product.id]) 
+                                                    : product.pricePerUnit) * (1 + settings.vatRate / 100)).toFixed(2)}
+                                            </span>
+                                        </td>
                                     </tr>
                                 ))
                             ) : (
                                 <tr>
-                                    <td colSpan={6} className="p-10 text-center text-slate-500">
+                                    <td colSpan={7} className="p-10 text-center text-slate-500">
                                         Товары не найдены
                                     </td>
                                 </tr>

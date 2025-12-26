@@ -40,7 +40,7 @@ export interface FlyingItem {
   targetY: number;
 }
 
-export type SalesMode = 'sale' | 'expense' | 'return' | 'workflow';
+export type SalesMode = 'sale' | 'expense' | 'return' | 'workflow' | 'transactions';
 export type PaymentMethod = 'cash' | 'bank' | 'card' | 'debt' | 'mixed';
 export type Currency = 'USD' | 'UZS';
 

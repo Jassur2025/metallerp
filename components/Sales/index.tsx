@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Product, Order, OrderItem, Expense, Client, Transaction, JournalEvent, WorkflowOrder } from '../../types';
-import { ShoppingCart, ArrowDownRight, ArrowUpRight, RefreshCw, FileText, ClipboardList, BadgeCheck, AlertTriangle } from 'lucide-react';
+import { ShoppingCart, ArrowDownRight, ArrowUpRight, RefreshCw, FileText, ClipboardList, BadgeCheck, AlertTriangle, List } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import { SUPER_ADMIN_EMAILS, IS_DEV_MODE } from '../../constants';
 import { useAuth } from '../../contexts/AuthContext';
@@ -19,6 +19,7 @@ import { ReceiptModal } from './ReceiptModal';
 import { ClientModal } from './ClientModal';
 import { generateInvoicePDF, generateWaybillPDF } from '../../utils/DocumentTemplates';
 import { PaymentSplitModal, PaymentDistribution } from './PaymentSplitModal';
+import { TransactionsManager } from './TransactionsManager';
 
 const isDev = import.meta.env.DEV;
 const errorDev = (...args: unknown[]) => { if (isDev) console.error(...args); };
@@ -393,22 +394,40 @@ export const Sales: React.FC<SalesProps> = ({
     });
 
     // Process Transactions
+    // ВАЖНО: Для обычных заказов (cash, bank, card) баланс уже посчитан выше из orders
+    // Транзакции client_payment используем ТОЛЬКО для:
+    // 1. Смешанных платежей (mixed) - заказ пропускается выше
+    // 2. Погашения долгов клиентов (relatedId указывает на клиента, а не на заказ)
     (transactions || []).forEach(t => {
       const amt = num(t.amount);
       const isUSD = t.currency === 'USD';
       const rate = getRate(t.exchangeRate);
       const validatedAmt = isUSD ? validateUSD(amt, rate) : amt;
       
+      // Извлекаем ID заказа из описания (если есть)
+      const orderIdMatch = t.description?.match(/ORD-\d+/);
+      const relatedOrderId = orderIdMatch ? orderIdMatch[0] : null;
+      
+      // Находим связанный заказ
+      const relatedOrder = relatedOrderId ? orders.find(o => o.id === relatedOrderId) : null;
+      
+      // Транзакция связана с mixed заказом?
+      const isMixedPayment = relatedOrder?.paymentMethod === 'mixed';
+      
       if (t.type === 'client_payment') {
-        if (t.method === 'cash') {
-          if (isUSD) {
-            balUSD += validatedAmt;
-            trxInUSD += validatedAmt;
-          } else balCashUZS += amt;
-        } else if (t.method === 'bank') {
-          balBankUZS += (isUSD ? validatedAmt * rate : amt);
-        } else if (t.method === 'card') {
-          balCardUZS += (isUSD ? validatedAmt * rate : amt);
+        // Добавляем только транзакции от смешанных платежей
+        // Обычные заказы уже учтены выше
+        if (isMixedPayment) {
+          if (t.method === 'cash') {
+            if (isUSD) {
+              balUSD += validatedAmt;
+              trxInUSD += validatedAmt;
+            } else balCashUZS += amt;
+          } else if (t.method === 'bank') {
+            balBankUZS += (isUSD ? validatedAmt * rate : amt);
+          } else if (t.method === 'card') {
+            balCardUZS += (isUSD ? validatedAmt * rate : amt);
+          }
         }
       } else if (t.type === 'supplier_payment') {
         // Оплата поставщикам - вычитаем из соответствующей кассы
@@ -895,6 +914,12 @@ export const Sales: React.FC<SalesProps> = ({
                 <ClipboardList size={20} /> Workflow
               </button>
             )}
+
+            {isCashier && (
+              <button onClick={() => setMode('transactions')} className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${mode === 'transactions' ? 'bg-purple-600 text-white shadow-lg shadow-purple-900/20' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
+                <List size={20} /> Транзакции
+              </button>
+            )}
           </div>
 
           {/* Audit Alert - Visible in Sales too */}
@@ -1008,6 +1033,13 @@ export const Sales: React.FC<SalesProps> = ({
               expenseVatAmount={expenseVatAmount} setExpenseVatAmount={setExpenseVatAmount}
               onSubmit={handleAddExpense}
               expenseCategories={settings.expenseCategories} />
+          ) : mode === 'transactions' ? (
+            <TransactionsManager 
+              transactions={transactions}
+              onUpdateTransactions={setTransactions}
+              onSaveTransactions={onSaveTransactions}
+              exchangeRate={exchangeRate}
+            />
           ) : null}
         </div>
 
