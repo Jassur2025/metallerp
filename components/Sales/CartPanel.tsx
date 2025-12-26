@@ -1,5 +1,5 @@
-import React from 'react';
-import { ShoppingCart, Trash2, User, Plus, CheckCircle, FileText, Printer } from 'lucide-react';
+import React, { useState } from 'react';
+import { ShoppingCart, Trash2, User, Plus, CheckCircle, FileText, Printer, Percent, Tag } from 'lucide-react';
 import { OrderItem, Client, Employee, Order, AppSettings } from '../../types';
 import { PaymentMethod, Currency, FlyingItem } from './types';
 
@@ -32,6 +32,12 @@ interface CartPanelProps {
   onPrintInvoice: (order: Order) => void;
   onPrintWaybill: (order: Order) => void;
   flyingItems: FlyingItem[];
+  // Discount Props
+  discountPercent?: number;
+  onDiscountChange?: (val: number) => void;
+  manualTotal?: number | null;
+  onTotalChange?: (val: number) => void;
+  originalTotalUSD?: number;
 }
 
 export const CartPanel: React.FC<CartPanelProps> = ({
@@ -62,8 +68,57 @@ export const CartPanel: React.FC<CartPanelProps> = ({
   onPrintReceipt,
   onPrintInvoice,
   onPrintWaybill,
-  flyingItems
+  flyingItems,
+  discountPercent = 0,
+  onDiscountChange,
+  manualTotal,
+  onTotalChange,
+  originalTotalUSD = 0
 }) => {
+  const [showDiscountPanel, setShowDiscountPanel] = useState(false);
+  const [customRoundedValue, setCustomRoundedValue] = useState<string>('');
+
+  // Calculate discount amount
+  const discountAmountUSD = originalTotalUSD > 0 ? originalTotalUSD - totalAmountUSD : 0;
+  const discountAmountUZS = toUZS(discountAmountUSD);
+
+  // Quick discount percentages
+  const quickDiscounts = [1, 2, 3, 5, 10];
+
+  // Round to nearest value options
+  const getRoundOptions = () => {
+    const currentUZS = toUZS(originalTotalUSD);
+    const options: number[] = [];
+    
+    // Round down options
+    const roundTo = [1000, 5000, 10000, 50000, 100000];
+    roundTo.forEach(r => {
+      const rounded = Math.floor(currentUZS / r) * r;
+      if (rounded > 0 && rounded < currentUZS && !options.includes(rounded)) {
+        options.push(rounded);
+      }
+    });
+    
+    return options.sort((a, b) => b - a).slice(0, 4);
+  };
+
+  const handleRoundTo = (roundedUZS: number) => {
+    if (onTotalChange) {
+      const rate = settings.defaultExchangeRate || 12900;
+      const newTotalUSD = roundedUZS / rate;
+      onTotalChange(newTotalUSD);
+    }
+  };
+
+  const handleCustomRound = () => {
+    const value = parseFloat(customRoundedValue);
+    if (!isNaN(value) && value > 0 && onTotalChange) {
+      const rate = settings.defaultExchangeRate || 12900;
+      onTotalChange(value / rate);
+      setCustomRoundedValue('');
+    }
+  };
+
   return (
     <div className="hidden lg:flex bg-slate-800 border border-slate-700 rounded-2xl flex-col shadow-2xl shadow-black/20 overflow-hidden h-full">
       <div id="cart-target" className="p-6 border-b border-slate-700 bg-slate-900/50 relative transition-colors duration-300 flex justify-between items-center">
@@ -220,6 +275,97 @@ export const CartPanel: React.FC<CartPanelProps> = ({
           )}
         </div>
 
+        {/* Discount Section */}
+        {cart.length > 0 && (
+          <div className="space-y-2">
+            <button
+              onClick={() => setShowDiscountPanel(!showDiscountPanel)}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg border transition-all ${
+                discountPercent > 0 
+                  ? 'bg-orange-500/20 border-orange-500 text-orange-400' 
+                  : 'bg-slate-800 border-slate-600 text-slate-400 hover:bg-slate-700'
+              }`}
+            >
+              <span className="flex items-center gap-2 text-sm font-medium">
+                <Tag size={16} />
+                {discountPercent > 0 
+                  ? `Скидка: ${discountPercent.toFixed(1)}% (-${discountAmountUZS.toLocaleString()} сўм)`
+                  : 'Добавить скидку'
+                }
+              </span>
+              <Percent size={16} />
+            </button>
+
+            {showDiscountPanel && (
+              <div className="bg-slate-800/50 rounded-xl p-3 space-y-3 border border-slate-700 animate-fade-in">
+                {/* Quick Discount Buttons */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-medium text-slate-500 uppercase">Быстрая скидка %</label>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {quickDiscounts.map(d => (
+                      <button
+                        key={d}
+                        onClick={() => onDiscountChange?.(discountPercent === d ? 0 : d)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                          Math.abs(discountPercent - d) < 0.1
+                            ? 'bg-orange-500 text-white' 
+                            : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                        }`}
+                      >
+                        {d}%
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => onDiscountChange?.(0)}
+                      className="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-700 text-red-400 hover:bg-red-500/20 transition-all"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+
+                {/* Round To Options */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-medium text-slate-500 uppercase">Округлить до (UZS)</label>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {getRoundOptions().map(val => (
+                      <button
+                        key={val}
+                        onClick={() => handleRoundTo(val)}
+                        className="px-2 py-1.5 rounded-lg text-xs font-mono font-bold bg-slate-700 text-slate-300 hover:bg-blue-500/20 hover:text-blue-400 transition-all"
+                      >
+                        {val.toLocaleString()}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Custom Value Input */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-medium text-slate-500 uppercase">Своя сумма (UZS)</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      placeholder="Введите сумму..."
+                      className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-3 py-1.5 text-white text-sm focus:border-blue-500 outline-none"
+                      value={customRoundedValue}
+                      onChange={(e) => setCustomRoundedValue(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleCustomRound()}
+                    />
+                    <button
+                      onClick={handleCustomRound}
+                      disabled={!customRoundedValue}
+                      className="px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:text-slate-500 text-white transition-all"
+                    >
+                      OK
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="flex flex-col gap-2 pt-2 border-t border-slate-800 text-sm">
           <div className="flex justify-between items-center">
             <span className="text-slate-400">Подытог (без НДС):</span>
@@ -229,13 +375,25 @@ export const CartPanel: React.FC<CartPanelProps> = ({
             <span className="">НДС ({settings.vatRate}%):</span>
             <span className="font-mono">+${vatAmountUSD.toFixed(2)}</span>
           </div>
+          {discountPercent > 0 && (
+            <div className="flex justify-between items-center text-orange-400">
+              <span className="">Скидка ({discountPercent.toFixed(1)}%):</span>
+              <span className="font-mono">-${discountAmountUSD.toFixed(2)}</span>
+            </div>
+          )}
+          {discountPercent > 0 && (
+            <div className="flex justify-between items-center text-slate-500 text-xs">
+              <span className="">Было:</span>
+              <span className="font-mono line-through">${originalTotalUSD.toFixed(2)} / {toUZS(originalTotalUSD).toLocaleString()} сўм</span>
+            </div>
+          )}
           <div className="flex justify-between items-center pt-2 border-t border-slate-800">
             <span className="text-slate-200 font-bold">ИТОГО (USD):</span>
             <span className="font-mono text-slate-200 font-bold">${totalAmountUSD.toFixed(2)}</span>
           </div>
           <div className="flex justify-between items-center pt-1">
             <span className="text-slate-200 font-bold">К оплате (UZS):</span>
-            <span className="text-2xl font-bold text-emerald-400 font-mono">{totalAmountUZS.toLocaleString()}</span>
+            <span className={`text-2xl font-bold font-mono ${discountPercent > 0 ? 'text-orange-400' : 'text-emerald-400'}`}>{totalAmountUZS.toLocaleString()}</span>
           </div>
         </div>
 

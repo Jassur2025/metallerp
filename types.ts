@@ -159,6 +159,11 @@ export interface WorkflowOrder {
   notes?: string;
   deliveryDate?: string; // Optional delivery date
 
+  // Cancellation
+  cancellationReason?: string;
+  cancelledBy?: string;
+  cancelledAt?: string;
+
   // Link to actual Order (when converted to sale)
   convertedToOrderId?: string;
   convertedAt?: string;

@@ -27,6 +27,7 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
     const [isPhoneCheckModalOpen, setIsPhoneCheckModalOpen] = useState(false);
     const [phoneCheckResults, setPhoneCheckResults] = useState<ReturnType<typeof checkAllPhones> | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
+    const [typeFilter, setTypeFilter] = useState<'all' | 'individual' | 'legal'>('all');
     const [page, setPage] = useState(1);
     const pageSize = 12;
     const [editingClient, setEditingClient] = useState<Client | null>(null);
@@ -55,11 +56,19 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
     // Form State
     const [formData, setFormData] = useState<Partial<Client>>({
         name: '',
+        type: 'individual',
         phone: '',
         email: '',
         address: '',
         creditLimit: 0,
-        notes: ''
+        notes: '',
+        // Legal entity fields
+        companyName: '',
+        inn: '',
+        mfo: '',
+        bankAccount: '',
+        bankName: '',
+        addressLegal: ''
     });
 
     const handleOpenModal = (client?: Client) => {
@@ -70,11 +79,18 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
             setEditingClient(null);
             setFormData({
                 name: '',
+                type: 'individual',
                 phone: '',
                 email: '',
                 address: '',
                 creditLimit: 0,
-                notes: ''
+                notes: '',
+                companyName: '',
+                inn: '',
+                mfo: '',
+                bankAccount: '',
+                bankName: '',
+                addressLegal: ''
             });
         }
         setIsModalOpen(true);
@@ -158,12 +174,17 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
     };
 
     const filteredClients = useMemo(() => {
-        const list = clients.filter(c =>
-            c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            c.phone.includes(searchTerm)
-        );
+        const list = clients.filter(c => {
+            const matchesSearch = c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                c.phone.includes(searchTerm) ||
+                (c.companyName?.toLowerCase().includes(searchTerm.toLowerCase())) ||
+                (c.inn?.includes(searchTerm));
+            const matchesType = typeFilter === 'all' || 
+                (typeFilter === 'legal' ? c.type === 'legal' : c.type !== 'legal');
+            return matchesSearch && matchesType;
+        });
         return list;
-    }, [clients, searchTerm]);
+    }, [clients, searchTerm, typeFilter]);
 
     const totalPages = Math.max(1, Math.ceil(filteredClients.length / pageSize));
     const displayedClients = useMemo(() => {
@@ -499,17 +520,38 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
             {/* Clients View */}
             {activeView === 'clients' && (
                 <>
-                    {/* Search and Admin Tools */}
+                    {/* Search and Filters */}
                     <div className="flex flex-col sm:flex-row gap-3">
                         <div className="relative flex-1">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
                             <input
                                 type="text"
-                                placeholder="Поиск по имени или телефону..."
+                                placeholder="Поиск по имени, телефону, ИНН..."
                                 className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-10 pr-4 py-3 text-white focus:ring-2 focus:ring-primary-500 outline-none"
                                 value={searchTerm}
                                 onChange={e => setSearchTerm(e.target.value)}
                             />
+                        </div>
+                        {/* Type Filter */}
+                        <div className="flex bg-slate-800 rounded-xl p-1 border border-slate-700">
+                            <button
+                                onClick={() => setTypeFilter('all')}
+                                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${typeFilter === 'all' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'}`}
+                            >
+                                Все
+                            </button>
+                            <button
+                                onClick={() => setTypeFilter('individual')}
+                                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${typeFilter === 'individual' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                            >
+                                👤 Физ
+                            </button>
+                            <button
+                                onClick={() => setTypeFilter('legal')}
+                                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${typeFilter === 'legal' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                            >
+                                🏢 Юр
+                            </button>
                         </div>
                         {isAdmin && (
                             <button
@@ -517,8 +559,8 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
                                 className="flex items-center gap-2 px-4 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-medium transition-colors whitespace-nowrap"
                             >
                                 <Smartphone size={18} />
-                                <span className="hidden sm:inline">Проверить формат телефонов</span>
-                                <span className="sm:hidden">Телефоны</span>
+                                <span className="hidden sm:inline">Проверить телефоны</span>
+                                <span className="sm:hidden">📱</span>
                             </button>
                         )}
                     </div>
@@ -526,20 +568,33 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
                     {/* Clients Grid */}
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 overflow-y-auto pb-12 custom-scrollbar">
                         {displayedClients.map(client => {
+                            const isLegal = client.type === 'legal';
                             return (
-                                <div key={client.id} className="bg-slate-800 rounded-xl border border-slate-700 p-5 hover:border-slate-600 transition-all group relative overflow-hidden">
+                                <div key={client.id} className={`bg-slate-800 rounded-xl border p-5 hover:border-slate-500 transition-all group relative overflow-hidden ${isLegal ? 'border-blue-500/30' : 'border-slate-700'}`}>
+                                    {/* Type Badge */}
+                                    <div className={`absolute top-3 left-3 px-2 py-0.5 rounded text-[10px] font-bold ${isLegal ? 'bg-blue-500/20 text-blue-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
+                                        {isLegal ? '🏢 Юр. лицо' : '👤 Физ. лицо'}
+                                    </div>
+                                    
                                     <div className="absolute top-0 right-0 p-4 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
                                         <button onClick={() => handleOpenModal(client)} className="p-2 bg-slate-700 rounded-lg hover:bg-slate-600 text-slate-300 hover:text-white">
                                             <Edit size={16} />
                                         </button>
                                     </div>
 
-                                    <div className="flex items-start gap-4 mb-4">
-                                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-lg shadow-lg">
-                                            {client.name.charAt(0).toUpperCase()}
+                                    <div className="flex items-start gap-4 mb-4 mt-6">
+                                        <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg shadow-lg ${isLegal ? 'bg-gradient-to-br from-blue-500 to-cyan-600' : 'bg-gradient-to-br from-indigo-500 to-purple-600'}`}>
+                                            {isLegal ? '🏢' : client.name.charAt(0).toUpperCase()}
                                         </div>
-                                        <div>
-                                            <h3 className="font-bold text-white text-lg">{client.name}</h3>
+                                        <div className="flex-1 min-w-0">
+                                            {isLegal && client.companyName ? (
+                                                <>
+                                                    <h3 className="font-bold text-white text-lg truncate">{client.companyName}</h3>
+                                                    <div className="text-xs text-slate-400">Контакт: {client.name}</div>
+                                                </>
+                                            ) : (
+                                                <h3 className="font-bold text-white text-lg">{client.name}</h3>
+                                            )}
                                             <div className="flex items-center gap-2 text-slate-400 text-sm mt-1">
                                                 <Phone size={14} /> {client.phone}
                                             </div>
@@ -547,18 +602,19 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
                                     </div>
 
                                     <div className="space-y-2 mb-4">
-                                        {client.type === 'legal' && client.companyName && (
-                                            <div className="mb-2 p-2 bg-blue-500/10 rounded-lg border border-blue-500/20">
-                                                <div className="text-xs text-blue-400 font-medium mb-1">Юридическое лицо</div>
-                                                <div className="text-sm text-white font-medium">{client.companyName}</div>
+                                        {isLegal && (
+                                            <div className="p-2 bg-blue-500/10 rounded-lg border border-blue-500/20 space-y-1">
                                                 {client.inn && (
-                                                    <div className="text-xs text-slate-400 mt-1">ИНН: {client.inn}</div>
+                                                    <div className="text-xs text-slate-300"><span className="text-blue-400">ИНН:</span> {client.inn}</div>
                                                 )}
-                                                {client.mfo && client.bankAccount && (
-                                                    <div className="text-xs text-slate-400">МФО: {client.mfo}, р/с: {client.bankAccount}</div>
+                                                {client.mfo && (
+                                                    <div className="text-xs text-slate-300"><span className="text-blue-400">МФО:</span> {client.mfo}</div>
+                                                )}
+                                                {client.bankAccount && (
+                                                    <div className="text-xs text-slate-300 truncate"><span className="text-blue-400">Р/С:</span> {client.bankAccount}</div>
                                                 )}
                                                 {client.bankName && (
-                                                    <div className="text-xs text-slate-400">Банк: {client.bankName}</div>
+                                                    <div className="text-xs text-slate-300 truncate"><span className="text-blue-400">Банк:</span> {client.bankName}</div>
                                                 )}
                                             </div>
                                         )}
@@ -637,8 +693,8 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
             {/* Edit/Create Modal */}
             {isModalOpen && (
                 <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-slate-800 rounded-2xl w-full max-w-md border border-slate-700 shadow-2xl animate-scale-in">
-                        <div className="p-6 border-b border-slate-700 flex justify-between items-center">
+                    <div className="bg-slate-800 rounded-2xl w-full max-w-lg border border-slate-700 shadow-2xl animate-scale-in max-h-[90vh] overflow-hidden flex flex-col">
+                        <div className="p-6 border-b border-slate-700 flex justify-between items-center flex-shrink-0">
                             <h3 className="text-xl font-bold text-white">
                                 {editingClient ? 'Редактировать клиента' : 'Новый клиент'}
                             </h3>
@@ -646,14 +702,43 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
                                 <Plus size={24} className="rotate-45" />
                             </button>
                         </div>
-                        <div className="p-6 space-y-4">
+                        <div className="p-6 space-y-4 overflow-y-auto custom-scrollbar">
+                            {/* Client Type Selector */}
                             <div className="space-y-2">
-                                <label className="text-sm font-medium text-slate-400">Имя клиента *</label>
+                                <label className="text-sm font-medium text-slate-400">Тип клиента</label>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setFormData({ ...formData, type: 'individual' })}
+                                        className={`py-3 rounded-xl text-sm font-bold transition-all border ${formData.type !== 'legal' 
+                                            ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' 
+                                            : 'bg-slate-900 border-slate-600 text-slate-400 hover:bg-slate-700'}`}
+                                    >
+                                        👤 Физ. лицо
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setFormData({ ...formData, type: 'legal' })}
+                                        className={`py-3 rounded-xl text-sm font-bold transition-all border ${formData.type === 'legal' 
+                                            ? 'bg-blue-500/20 border-blue-500 text-blue-400' 
+                                            : 'bg-slate-900 border-slate-600 text-slate-400 hover:bg-slate-700'}`}
+                                    >
+                                        🏢 Юр. лицо
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Common Fields */}
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium text-slate-400">
+                                    {formData.type === 'legal' ? 'Контактное лицо *' : 'Имя клиента *'}
+                                </label>
                                 <input
                                     type="text"
                                     className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-primary-500 outline-none"
                                     value={formData.name}
                                     onChange={e => setFormData({ ...formData, name: e.target.value })}
+                                    placeholder={formData.type === 'legal' ? 'ФИО контактного лица' : 'ФИО клиента'}
                                 />
                             </div>
                             <div className="space-y-2">
@@ -663,8 +748,81 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
                                     className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-primary-500 outline-none"
                                     value={formData.phone}
                                     onChange={e => setFormData({ ...formData, phone: e.target.value })}
+                                    placeholder="+998 XX XXX XX XX"
                                 />
                             </div>
+
+                            {/* Legal Entity Fields */}
+                            {formData.type === 'legal' && (
+                                <div className="space-y-4 p-4 bg-blue-500/5 rounded-xl border border-blue-500/20">
+                                    <h4 className="text-sm font-bold text-blue-400 flex items-center gap-2">
+                                        🏢 Реквизиты организации
+                                    </h4>
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-medium text-slate-400">Название организации *</label>
+                                        <input
+                                            type="text"
+                                            className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                                            value={formData.companyName || ''}
+                                            onChange={e => setFormData({ ...formData, companyName: e.target.value })}
+                                            placeholder="ООО, АО, ИП..."
+                                        />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-medium text-slate-400">ИНН</label>
+                                            <input
+                                                type="text"
+                                                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                                                value={formData.inn || ''}
+                                                onChange={e => setFormData({ ...formData, inn: e.target.value })}
+                                                placeholder="123456789"
+                                            />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-medium text-slate-400">МФО</label>
+                                            <input
+                                                type="text"
+                                                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                                                value={formData.mfo || ''}
+                                                onChange={e => setFormData({ ...formData, mfo: e.target.value })}
+                                                placeholder="00000"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-medium text-slate-400">Расчётный счёт</label>
+                                        <input
+                                            type="text"
+                                            className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                                            value={formData.bankAccount || ''}
+                                            onChange={e => setFormData({ ...formData, bankAccount: e.target.value })}
+                                            placeholder="20208000..."
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-medium text-slate-400">Название банка</label>
+                                        <input
+                                            type="text"
+                                            className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                                            value={formData.bankName || ''}
+                                            onChange={e => setFormData({ ...formData, bankName: e.target.value })}
+                                            placeholder="АКБ Капиталбанк"
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-medium text-slate-400">Юридический адрес</label>
+                                        <input
+                                            type="text"
+                                            className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                                            value={formData.addressLegal || ''}
+                                            onChange={e => setFormData({ ...formData, addressLegal: e.target.value })}
+                                            placeholder="г. Ташкент, ул..."
+                                        />
+                                    </div>
+                                </div>
+                            )}
+
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="space-y-2">
                                     <label className="text-sm font-medium text-slate-400">Email</label>
@@ -686,7 +844,9 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
                                 </div>
                             </div>
                             <div className="space-y-2">
-                                <label className="text-sm font-medium text-slate-400">Адрес</label>
+                                <label className="text-sm font-medium text-slate-400">
+                                    {formData.type === 'legal' ? 'Фактический адрес' : 'Адрес'}
+                                </label>
                                 <input
                                     type="text"
                                     className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-primary-500 outline-none"
@@ -697,7 +857,7 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
                             <div className="space-y-2">
                                 <label className="text-sm font-medium text-slate-400">Заметки</label>
                                 <textarea
-                                    className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-primary-500 outline-none h-24 resize-none"
+                                    className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-primary-500 outline-none h-20 resize-none"
                                     value={formData.notes}
                                     onChange={e => setFormData({ ...formData, notes: e.target.value })}
                                 />

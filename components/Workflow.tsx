@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Product, WorkflowOrder, OrderItem, Order, Client, Transaction, AppSettings, Employee, JournalEvent } from '../types';
 import { useToast } from '../contexts/ToastContext';
-import { Plus, Trash2, Search, ClipboardList, BadgeCheck, Send, AlertTriangle, Wallet, Building2, CreditCard } from 'lucide-react';
+import { Plus, Trash2, Search, ClipboardList, BadgeCheck, Send, AlertTriangle, Wallet, Building2, CreditCard, XCircle, RotateCcw, Edit3 } from 'lucide-react';
 
 interface WorkflowProps {
   products: Product[];
@@ -59,8 +59,9 @@ export const Workflow: React.FC<WorkflowProps> = ({
   const isSales = currentEmployee?.role === 'sales' || currentEmployee?.role === 'manager' || currentEmployee?.role === 'admin';
   const isCashier = currentEmployee?.role === 'accountant' || currentEmployee?.role === 'manager' || currentEmployee?.role === 'admin';
 
-  const [tab, setTab] = useState<'create' | 'queue'>('create');
+  const [tab, setTab] = useState<'create' | 'queue' | 'cancelled'>('create');
   const [searchTerm, setSearchTerm] = useState('');
+  const [editingOrder, setEditingOrder] = useState<WorkflowOrder | null>(null);
 
   // Create form
   const [cart, setCart] = useState<OrderItem[]>([]);
@@ -307,20 +308,133 @@ export const Workflow: React.FC<WorkflowProps> = ({
     toast.success('Подтверждено: продажа создана и склад списан.');
   };
 
+  // Редактирование аннулированного заказа
+  const startEditCancelled = (wf: WorkflowOrder) => {
+    setEditingOrder(wf);
+    setCart([...wf.items]);
+    setCustomerName(wf.customerName);
+    setCustomerPhone(wf.customerPhone || '');
+    setNotes(wf.notes || '');
+    setExchangeRate(wf.exchangeRate);
+    setPaymentMethod(wf.paymentMethod as PaymentMethod);
+    setPaymentCurrency((wf.paymentCurrency || 'UZS') as Currency);
+    setTab('create');
+  };
+
+  // Переотправить заказ (после редактирования)
+  const resubmitOrder = async () => {
+    if (!editingOrder) return;
+    if (!customerName.trim()) {
+      toast.warning('Укажите клиента');
+      return;
+    }
+    if (cart.length === 0) {
+      toast.warning('Корзина пуста');
+      return;
+    }
+
+    const missing = getMissingItems(cart);
+    const status: WorkflowOrder['status'] = missing.length > 0 ? 'sent_to_procurement' : 'sent_to_cash';
+
+    const isDebt = paymentMethod === 'debt';
+    const amountPaid = isDebt ? 0 : totalUSD;
+    const paymentStatus: WorkflowOrder['paymentStatus'] = isDebt ? 'unpaid' : 'paid';
+    const finalCurrency: Currency | undefined =
+      paymentMethod === 'cash' ? paymentCurrency : paymentMethod === 'debt' ? 'USD' : 'UZS';
+
+    // Обновляем существующий заказ
+    const updatedWf: WorkflowOrder = {
+      ...editingOrder,
+      date: new Date().toISOString(),
+      customerName: customerName.trim(),
+      customerPhone: customerPhone.trim() || undefined,
+      items: cart,
+      subtotalAmount: subtotalUSD,
+      vatRateSnapshot: settings.vatRate,
+      vatAmount: vatAmountUSD,
+      totalAmount: totalUSD,
+      exchangeRate,
+      totalAmountUZS: totalUZS,
+      status,
+      notes: notes.trim() || undefined,
+      paymentMethod,
+      paymentStatus,
+      paymentCurrency: finalCurrency,
+      amountPaid
+    };
+
+    const nextWorkflow = workflowOrders.map(o => o.id === editingOrder.id ? updatedWf : o);
+    await saveWorkflowOrders(nextWorkflow);
+
+    // Journal
+    await onAddJournalEvent?.({
+      id: `JE-${Date.now()}`,
+      date: new Date().toISOString(),
+      type: 'employee_action',
+      employeeName: currentEmployee?.name || 'Продажи',
+      action: 'Workflow переотправлен',
+      description: `Аннулированный заказ ${editingOrder.id} был отредактирован и переотправлен.`,
+      module: 'workflow',
+      relatedType: 'workflow',
+      relatedId: editingOrder.id
+    });
+
+    if (missing.length > 0) {
+      toast.warning(`Заявка отправлена в закуп (нет остатка по ${missing.length} позициям).`);
+      onNavigateToProcurement?.();
+    } else {
+      toast.success('Заявка переотправлена в кассу.');
+    }
+
+    // Reset
+    setEditingOrder(null);
+    setCart([]);
+    setCustomerName('');
+    setCustomerPhone('');
+    setNotes('');
+    setPaymentMethod('cash');
+    setPaymentCurrency('UZS');
+    setTab('queue');
+  };
+
+  const cancelEdit = () => {
+    setEditingOrder(null);
+    setCart([]);
+    setCustomerName('');
+    setCustomerPhone('');
+    setNotes('');
+    setPaymentMethod('cash');
+    setPaymentCurrency('UZS');
+  };
+
   const statusBadge = (s: WorkflowOrder['status']) => {
     const base = 'text-[11px] font-bold px-2 py-1 rounded border';
     if (s === 'sent_to_cash') return `${base} bg-emerald-500/10 text-emerald-400 border-emerald-500/20`;
     if (s === 'sent_to_procurement') return `${base} bg-amber-500/10 text-amber-400 border-amber-500/20`;
     if (s === 'completed') return `${base} bg-blue-500/10 text-blue-400 border-blue-500/20`;
-    if (s === 'cancelled') return `${base} bg-slate-700/30 text-slate-400 border-slate-600/30`;
+    if (s === 'cancelled') return `${base} bg-red-500/10 text-red-400 border-red-500/20`;
     return `${base} bg-slate-700/30 text-slate-300 border-slate-600/30`;
+  };
+
+  const statusLabel = (s: WorkflowOrder['status']) => {
+    if (s === 'sent_to_cash') return 'На кассе';
+    if (s === 'sent_to_procurement') return 'В закупе';
+    if (s === 'completed') return 'Выполнен';
+    if (s === 'cancelled') return 'Аннулирован';
+    return s;
   };
 
   const queue = useMemo(() => {
     // Sales sees own + all if manager/admin
     const isManager = currentEmployee?.role === 'manager' || currentEmployee?.role === 'admin';
     const list = isManager ? workflowOrders : workflowOrders.filter(o => (o.createdBy || '').toLowerCase().includes((currentEmployee?.name || currentEmployee?.email || '').toLowerCase()));
-    return list;
+    return list.filter(o => o.status !== 'cancelled' && o.status !== 'completed');
+  }, [workflowOrders, currentEmployee]);
+
+  const cancelledOrders = useMemo(() => {
+    const isManager = currentEmployee?.role === 'manager' || currentEmployee?.role === 'admin';
+    const list = isManager ? workflowOrders : workflowOrders.filter(o => (o.createdBy || '').toLowerCase().includes((currentEmployee?.name || currentEmployee?.email || '').toLowerCase()));
+    return list.filter(o => o.status === 'cancelled');
   }, [workflowOrders, currentEmployee]);
 
   return (
@@ -343,12 +457,38 @@ export const Workflow: React.FC<WorkflowProps> = ({
             onClick={() => setTab('queue')}
             className={`px-4 py-2 rounded-md text-sm font-medium ${tab === 'queue' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'}`}
           >
-            Очередь
+            Очередь ({queue.length})
+          </button>
+          <button
+            onClick={() => setTab('cancelled')}
+            className={`px-4 py-2 rounded-md text-sm font-medium ${tab === 'cancelled' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white'}`}
+          >
+            <span className="flex items-center gap-1">
+              <XCircle size={14} /> Аннулированные {cancelledOrders.length > 0 && `(${cancelledOrders.length})`}
+            </span>
           </button>
         </div>
       </div>
 
       {tab === 'create' && (
+        <>
+        {editingOrder && (
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Edit3 className="text-amber-400" size={20} />
+              <div>
+                <div className="text-amber-400 font-medium">Редактирование аннулированного заказа #{editingOrder.id}</div>
+                <div className="text-amber-400/70 text-sm">Внесите изменения и переотправьте заказ</div>
+              </div>
+            </div>
+            <button
+              onClick={cancelEdit}
+              className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg"
+            >
+              Отмена редактирования
+            </button>
+          </div>
+        )}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-4">
             <div className="relative">
@@ -489,16 +629,26 @@ export const Workflow: React.FC<WorkflowProps> = ({
               <div className="flex justify-between font-bold text-white">
                 <span>ИТОГО</span><span className="font-mono">{totalUZS.toLocaleString()} сум</span>
               </div>
-              <button
-                onClick={submitWorkflowOrder}
-                disabled={!isSales}
-                className="w-full mt-3 bg-primary-600 hover:bg-primary-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2"
-              >
-                <Send size={18} /> Отправить
-              </button>
+              {editingOrder ? (
+                <button
+                  onClick={resubmitOrder}
+                  className="w-full mt-3 bg-amber-600 hover:bg-amber-500 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2"
+                >
+                  <RotateCcw size={18} /> Переотправить заказ
+                </button>
+              ) : (
+                <button
+                  onClick={submitWorkflowOrder}
+                  disabled={!isSales}
+                  className="w-full mt-3 bg-primary-600 hover:bg-primary-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2"
+                >
+                  <Send size={18} /> Отправить
+                </button>
+              )}
             </div>
           </div>
         </div>
+        </>
       )}
 
       {tab === 'queue' && (
@@ -512,7 +662,7 @@ export const Workflow: React.FC<WorkflowProps> = ({
                     <div className="text-xs text-slate-400 mt-1">{new Date(wf.date).toLocaleString('ru-RU')}</div>
                     <div className="text-xs text-slate-500 mt-1">ID: {wf.id}</div>
                   </div>
-                  <span className={statusBadge(wf.status)}>{wf.status}</span>
+                  <span className={statusBadge(wf.status)}>{statusLabel(wf.status)}</span>
                 </div>
 
                 <div className="mt-3 space-y-1 text-sm">
@@ -558,6 +708,74 @@ export const Workflow: React.FC<WorkflowProps> = ({
 
           {queue.length === 0 && (
             <div className="text-center text-slate-500 py-12">Заявок нет</div>
+          )}
+        </div>
+      )}
+
+      {tab === 'cancelled' && (
+        <div className="space-y-4">
+          <div className="bg-red-500/5 border border-red-500/20 rounded-xl p-4 mb-4">
+            <div className="flex items-center gap-2 text-red-400">
+              <XCircle size={18} />
+              <span className="font-medium">Аннулированные заказы</span>
+            </div>
+            <p className="text-sm text-slate-400 mt-1">
+              Здесь находятся заказы, которые были аннулированы кассой или закупом. Вы можете отредактировать и переотправить их.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {cancelledOrders.map(wf => (
+              <div key={wf.id} className="bg-slate-800 border border-red-500/30 rounded-2xl p-5">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <div className="text-white font-bold">{wf.customerName}</div>
+                    <div className="text-xs text-slate-400 mt-1">{new Date(wf.date).toLocaleString('ru-RU')}</div>
+                    <div className="text-xs text-slate-500 mt-1">ID: {wf.id}</div>
+                    {wf.cancellationReason && (
+                      <div className="text-xs text-red-400 mt-2 bg-red-500/10 px-2 py-1 rounded">
+                        Причина: {wf.cancellationReason}
+                      </div>
+                    )}
+                  </div>
+                  <span className={statusBadge('cancelled')}>{statusLabel('cancelled')}</span>
+                </div>
+
+                <div className="mt-3 space-y-1 text-sm">
+                  {wf.items.slice(0, 4).map((it, idx) => (
+                    <div key={idx} className="flex justify-between text-slate-300">
+                      <span className="truncate max-w-[220px]">
+                        {it.productName}
+                        {it.dimensions && it.dimensions !== '-' && <span className="text-slate-500 ml-1">({it.dimensions})</span>}
+                        <span className="text-slate-400 ml-1">× {it.quantity}</span>
+                      </span>
+                      <span className="font-mono text-slate-400">{toUZS(it.total).toLocaleString()} сум</span>
+                    </div>
+                  ))}
+                  {wf.items.length > 4 && <div className="text-xs text-slate-500">+ ещё {wf.items.length - 4} поз.</div>}
+                </div>
+
+                <div className="mt-4 flex items-center justify-between">
+                  <div>
+                    <div className="text-xs text-slate-500">Итого</div>
+                    <div className="font-mono font-bold text-slate-400 line-through">{wf.totalAmountUZS.toLocaleString()} сум</div>
+                  </div>
+                </div>
+
+                {isSales && (
+                  <button
+                    onClick={() => startEditCancelled(wf)}
+                    className="w-full mt-4 bg-amber-600 hover:bg-amber-500 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2"
+                  >
+                    <Edit3 size={18} /> Редактировать и переотправить
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {cancelledOrders.length === 0 && (
+            <div className="text-center text-slate-500 py-12">Аннулированных заказов нет</div>
           )}
         </div>
       )}

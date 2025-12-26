@@ -1167,7 +1167,22 @@ export const Sales: React.FC<SalesProps> = ({
         clients={clients} employees={employees} settings={settings}
         subtotalUSD={subtotalUSD} vatAmountUSD={vatAmountUSD} totalAmountUSD={totalAmountUSD} totalAmountUZS={totalAmountUZS}
         toUZS={toUZS} onCompleteOrder={completeOrder} onOpenClientModal={() => setIsClientModalOpen(true)}
-        onNavigateToStaff={onNavigateToStaff} flyingItems={flyingItems} />
+        onNavigateToStaff={onNavigateToStaff} flyingItems={flyingItems}
+        discountPercent={discountPercent}
+        onDiscountChange={(val) => {
+          setDiscountPercent(val);
+          setManualTotal(null);
+        }}
+        manualTotal={manualTotal}
+        onTotalChange={(val) => {
+          setManualTotal(val);
+          if (originalTotalUSD > 0) {
+            const newDiscount = ((originalTotalUSD - val) / originalTotalUSD) * 100;
+            setDiscountPercent(Math.max(0, newDiscount));
+          }
+        }}
+        originalTotalUSD={originalTotalUSD}
+      />
     </div>
   );
 };

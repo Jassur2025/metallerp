@@ -1,5 +1,5 @@
-import React from 'react';
-import { ShoppingCart, Trash2, User, Plus, CheckCircle, X } from 'lucide-react';
+import React, { useState } from 'react';
+import { ShoppingCart, Trash2, User, Plus, CheckCircle, X, Tag, Percent } from 'lucide-react';
 import { OrderItem, Client, Employee, AppSettings } from '../../types';
 import { PaymentMethod, Currency, FlyingItem } from './types';
 
@@ -29,6 +29,12 @@ interface MobileCartModalProps {
   onOpenClientModal: () => void;
   onNavigateToStaff: () => void;
   flyingItems: FlyingItem[];
+  // Discount Props
+  discountPercent?: number;
+  onDiscountChange?: (val: number) => void;
+  manualTotal?: number | null;
+  onTotalChange?: (val: number) => void;
+  originalTotalUSD?: number;
 }
 
 export const MobileCartModal: React.FC<MobileCartModalProps> = ({
@@ -56,8 +62,39 @@ export const MobileCartModal: React.FC<MobileCartModalProps> = ({
   onCompleteOrder,
   onOpenClientModal,
   onNavigateToStaff,
-  flyingItems
+  flyingItems,
+  discountPercent = 0,
+  onDiscountChange,
+  manualTotal,
+  onTotalChange,
+  originalTotalUSD = 0
 }) => {
+  const [showDiscountPanel, setShowDiscountPanel] = useState(false);
+  
+  const discountAmountUSD = originalTotalUSD > 0 ? originalTotalUSD - totalAmountUSD : 0;
+  const discountAmountUZS = toUZS(discountAmountUSD);
+  const quickDiscounts = [1, 2, 3, 5, 10];
+
+  const getRoundOptions = () => {
+    const currentUZS = toUZS(originalTotalUSD);
+    const options: number[] = [];
+    const roundTo = [1000, 5000, 10000, 50000, 100000];
+    roundTo.forEach(r => {
+      const rounded = Math.floor(currentUZS / r) * r;
+      if (rounded > 0 && rounded < currentUZS && !options.includes(rounded)) {
+        options.push(rounded);
+      }
+    });
+    return options.sort((a, b) => b - a).slice(0, 3);
+  };
+
+  const handleRoundTo = (roundedUZS: number) => {
+    if (onTotalChange) {
+      const rate = settings.defaultExchangeRate || 12900;
+      onTotalChange(roundedUZS / rate);
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -231,28 +268,88 @@ export const MobileCartModal: React.FC<MobileCartModalProps> = ({
             )}
           </div>
 
+          {/* Discount Section - Mobile */}
+          {cart.length > 0 && (
+            <div className="space-y-2">
+              <button
+                onClick={() => setShowDiscountPanel(!showDiscountPanel)}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg border transition-all ${
+                  discountPercent > 0 
+                    ? 'bg-orange-500/20 border-orange-500 text-orange-400' 
+                    : 'bg-slate-800 border-slate-600 text-slate-400'
+                }`}
+              >
+                <span className="flex items-center gap-2 text-sm font-medium">
+                  <Tag size={16} />
+                  {discountPercent > 0 
+                    ? `Скидка: ${discountPercent.toFixed(1)}%`
+                    : 'Скидка'
+                  }
+                </span>
+                <Percent size={16} />
+              </button>
+
+              {showDiscountPanel && (
+                <div className="bg-slate-800/50 rounded-xl p-3 space-y-2 border border-slate-700 animate-fade-in">
+                  <div className="flex gap-1.5 flex-wrap">
+                    {quickDiscounts.map(d => (
+                      <button
+                        key={d}
+                        onClick={() => onDiscountChange?.(discountPercent === d ? 0 : d)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                          Math.abs(discountPercent - d) < 0.1
+                            ? 'bg-orange-500 text-white' 
+                            : 'bg-slate-700 text-slate-300'
+                        }`}
+                      >
+                        {d}%
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => onDiscountChange?.(0)}
+                      className="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-700 text-red-400"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {getRoundOptions().map(val => (
+                      <button
+                        key={val}
+                        onClick={() => handleRoundTo(val)}
+                        className="px-2 py-1 rounded-lg text-[10px] font-mono font-bold bg-slate-700 text-slate-300"
+                      >
+                        {val.toLocaleString()}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="flex flex-col gap-2 pt-2 border-t border-slate-800 text-sm">
             <div className="flex justify-between items-center">
-              <span className="text-slate-400">Подытог (без НДС):</span>
+              <span className="text-slate-400">Подытог:</span>
               <span className="font-mono text-slate-300">${subtotalUSD.toFixed(2)}</span>
             </div>
             <div className="flex justify-between items-center text-amber-400">
-              <span className="">НДС ({settings.vatRate}%):</span>
+              <span>НДС ({settings.vatRate}%):</span>
               <span className="font-mono">+${vatAmountUSD.toFixed(2)}</span>
             </div>
+            {discountPercent > 0 && (
+              <div className="flex justify-between items-center text-orange-400">
+                <span>Скидка ({discountPercent.toFixed(1)}%):</span>
+                <span className="font-mono">-${discountAmountUSD.toFixed(2)}</span>
+              </div>
+            )}
             <div className="flex justify-between items-center pt-2 border-t border-slate-800">
-              <span className="text-slate-200 font-bold">ИТОГО (USD):</span>
+              <span className="text-slate-200 font-bold">ИТОГО:</span>
               <span className="font-mono text-slate-200 font-bold">${totalAmountUSD.toFixed(2)}</span>
             </div>
             <div className="flex justify-between items-center pt-1">
-              <span className="text-slate-200 font-bold">К оплате (UZS):</span>
-              <span className="text-2xl font-bold text-emerald-400 font-mono">{totalAmountUZS.toLocaleString()}</span>
-            </div>
-          </div>
-
-          <button
-            onClick={onCompleteOrder}
-            disabled={cart.length === 0 || !customerName}
+              <span className="text-slate-200 font-bold">К оплате:</span>
+              <span className={`text-2xl font-bold font-mono ${discountPercent > 0 ? 'text-orange-400' : 'text-emerald-400'}`}>{totalAmountUZS.toLocaleString()} сўм</span>
             className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-white py-3 rounded-xl font-bold text-lg flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-600/20"
           >
             <CheckCircle size={20} />
