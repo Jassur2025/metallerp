@@ -71,6 +71,9 @@ export const Workflow: React.FC<WorkflowProps> = ({
   const [exchangeRate, setExchangeRate] = useState(settings.defaultExchangeRate || 12800);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [paymentCurrency, setPaymentCurrency] = useState<Currency>('UZS');
+  
+  // Discount state
+  const [discountPercent, setDiscountPercent] = useState<number>(0);
 
   const toUZS = (usd: number) => Math.round(usd * (exchangeRate || 1));
 
@@ -107,8 +110,10 @@ export const Workflow: React.FC<WorkflowProps> = ({
   const removeItem = (productId: string) => setCart(prev => prev.filter(i => i.productId !== productId));
 
   const subtotalUSD = cart.reduce((s, i) => s + i.total, 0);
-  const vatAmountUSD = subtotalUSD * ((settings.vatRate || 0) / 100);
-  const totalUSD = subtotalUSD + vatAmountUSD;
+  const discountAmountUSD = subtotalUSD * (discountPercent / 100);
+  const afterDiscountUSD = subtotalUSD - discountAmountUSD;
+  const vatAmountUSD = afterDiscountUSD * ((settings.vatRate || 0) / 100);
+  const totalUSD = afterDiscountUSD + vatAmountUSD;
   const totalUZS = toUZS(totalUSD);
 
   const getMissingItems = (items: OrderItem[]) => {
@@ -159,6 +164,8 @@ export const Workflow: React.FC<WorkflowProps> = ({
       createdBy: currentEmployee?.name || currentEmployee?.email || currentUserEmail || 'sales',
       items: cart,
       subtotalAmount: subtotalUSD,
+      discountPercent: discountPercent || undefined,
+      discountAmount: discountAmountUSD || undefined,
       vatRateSnapshot: settings.vatRate,
       vatAmount: vatAmountUSD,
       totalAmount: totalUSD,
@@ -190,6 +197,7 @@ export const Workflow: React.FC<WorkflowProps> = ({
     setNotes('');
     setPaymentMethod('cash');
     setPaymentCurrency('UZS');
+    setDiscountPercent(0);
   };
 
   const approveAndConvert = async (wf: WorkflowOrder) => {
@@ -318,6 +326,7 @@ export const Workflow: React.FC<WorkflowProps> = ({
     setExchangeRate(wf.exchangeRate);
     setPaymentMethod(wf.paymentMethod as PaymentMethod);
     setPaymentCurrency((wf.paymentCurrency || 'UZS') as Currency);
+    setDiscountPercent(wf.discountPercent || 0);
     setTab('create');
   };
 
@@ -350,6 +359,8 @@ export const Workflow: React.FC<WorkflowProps> = ({
       customerPhone: customerPhone.trim() || undefined,
       items: cart,
       subtotalAmount: subtotalUSD,
+      discountPercent: discountPercent || undefined,
+      discountAmount: discountAmountUSD || undefined,
       vatRateSnapshot: settings.vatRate,
       vatAmount: vatAmountUSD,
       totalAmount: totalUSD,
@@ -394,6 +405,7 @@ export const Workflow: React.FC<WorkflowProps> = ({
     setNotes('');
     setPaymentMethod('cash');
     setPaymentCurrency('UZS');
+    setDiscountPercent(0);
     setTab('queue');
   };
 
@@ -405,6 +417,7 @@ export const Workflow: React.FC<WorkflowProps> = ({
     setNotes('');
     setPaymentMethod('cash');
     setPaymentCurrency('UZS');
+    setDiscountPercent(0);
   };
 
   const statusBadge = (s: WorkflowOrder['status']) => {
@@ -612,14 +625,51 @@ export const Workflow: React.FC<WorkflowProps> = ({
             </div>
 
             <div className="p-3 border-t border-slate-700 bg-slate-900/50 space-y-1 flex-shrink-0">
+              {/* Discount Section */}
+              <div className="mb-2 pb-2 border-b border-slate-700">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] text-slate-400">Скидка</span>
+                  {discountPercent > 0 && (
+                    <button onClick={() => setDiscountPercent(0)} className="text-[10px] text-red-400 hover:text-red-300">✕ Сбросить</button>
+                  )}
+                </div>
+                <div className="flex gap-1 flex-wrap">
+                  {[1, 2, 3, 5, 10].map(p => (
+                    <button
+                      key={p}
+                      onClick={() => setDiscountPercent(p)}
+                      className={`px-2 py-1 rounded text-[10px] font-bold ${discountPercent === p ? 'bg-orange-500 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}
+                    >
+                      {p}%
+                    </button>
+                  ))}
+                  <input
+                    type="number"
+                    value={discountPercent || ''}
+                    onChange={(e) => setDiscountPercent(Math.min(100, Math.max(0, Number(e.target.value))))}
+                    placeholder="%"
+                    className="w-12 bg-slate-700 border border-slate-600 rounded px-1 py-1 text-white text-[10px] font-mono text-center"
+                  />
+                </div>
+              </div>
+
               <div className="flex justify-between text-xs text-slate-300">
                 <span>Подытог</span><span className="font-mono">${subtotalUSD.toFixed(2)}</span>
               </div>
+              {discountPercent > 0 && (
+                <div className="flex justify-between text-xs text-orange-400">
+                  <span>Скидка ({discountPercent}%)</span><span className="font-mono">-${discountAmountUSD.toFixed(2)}</span>
+                </div>
+              )}
               <div className="flex justify-between text-xs text-amber-300">
                 <span>НДС ({settings.vatRate}%)</span><span className="font-mono">+${vatAmountUSD.toFixed(2)}</span>
               </div>
               <div className="flex justify-between font-bold text-white text-sm">
-                <span>ИТОГО</span><span className="font-mono">{totalUZS.toLocaleString()} сум</span>
+                <span>ИТОГО</span>
+                <div className="text-right">
+                  {discountPercent > 0 && <span className="text-[10px] text-slate-400 line-through mr-2">${(subtotalUSD + subtotalUSD * (settings.vatRate / 100)).toFixed(2)}</span>}
+                  <span className="font-mono">{totalUZS.toLocaleString()} сум</span>
+                </div>
               </div>
               {editingOrder ? (
                 <button
