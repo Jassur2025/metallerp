@@ -76,6 +76,43 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
         origin: 'local'
     });
 
+    // Workflow Cancel Modal
+    const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
+    const [workflowToCancel, setWorkflowToCancel] = useState<WorkflowOrder | null>(null);
+    const [cancelReason, setCancelReason] = useState('');
+
+    const openCancelModal = (wf: WorkflowOrder) => {
+        setWorkflowToCancel(wf);
+        setCancelReason('');
+        setIsCancelModalOpen(true);
+    };
+
+    const confirmCancelWorkflow = async () => {
+        if (!workflowToCancel) return;
+        if (!cancelReason.trim()) {
+            toast.warning('Укажите причину аннулирования');
+            return;
+        }
+
+        const updated = workflowOrders.map(o =>
+            o.id === workflowToCancel.id
+                ? {
+                      ...o,
+                      status: 'cancelled' as const,
+                      cancellationReason: cancelReason.trim(),
+                      cancelledBy: 'Закуп',
+                      cancelledAt: new Date().toISOString()
+                  }
+                : o
+        );
+
+        await onSaveWorkflowOrders(updated);
+        toast.success('Заказ аннулирован');
+        setIsCancelModalOpen(false);
+        setWorkflowToCancel(null);
+        setCancelReason('');
+    };
+
     React.useEffect(() => {
         localStorage.setItem('procurement_active_tab', activeTab);
     }, [activeTab]);
@@ -554,6 +591,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                     getMissingItems={getMissingItems}
                     createDraftPurchaseFromWorkflow={createDraftPurchaseFromWorkflow}
                     sendWorkflowToCash={sendWorkflowToCash}
+                    onCancelWorkflow={openCancelModal}
                 />
             ) : (
                 <HistoryTab
@@ -848,6 +886,49 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                 exchangeRate={settings.defaultExchangeRate}
                 onConfirm={finalizeProcurement}
             />
+
+            {/* Cancel Workflow Modal */}
+            {isCancelModalOpen && workflowToCancel && (
+                <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+                    <div className="bg-slate-800 rounded-2xl border border-slate-700 w-full max-w-md p-6">
+                        <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                            <AlertTriangle className="text-red-400" size={24} />
+                            Аннулирование заказа
+                        </h3>
+                        
+                        <div className="bg-slate-900/50 rounded-xl p-4 mb-4">
+                            <div className="text-sm text-slate-400">Заказ: <span className="text-white font-mono">{workflowToCancel.id}</span></div>
+                            <div className="text-sm text-slate-400 mt-1">Клиент: <span className="text-white">{workflowToCancel.customerName}</span></div>
+                            <div className="text-sm text-slate-400 mt-1">Сумма: <span className="text-emerald-300 font-mono">{Number(workflowToCancel.totalAmountUZS || 0).toLocaleString()} сум</span></div>
+                        </div>
+
+                        <div className="mb-4">
+                            <label className="text-sm text-slate-400 mb-2 block">Причина аннулирования *</label>
+                            <textarea
+                                value={cancelReason}
+                                onChange={(e) => setCancelReason(e.target.value)}
+                                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-red-500/50 h-24 resize-none"
+                                placeholder="Укажите причину аннулирования..."
+                            />
+                        </div>
+
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => { setIsCancelModalOpen(false); setWorkflowToCancel(null); setCancelReason(''); }}
+                                className="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-3 rounded-xl font-medium"
+                            >
+                                Отмена
+                            </button>
+                            <button
+                                onClick={confirmCancelWorkflow}
+                                className="flex-1 bg-red-600 hover:bg-red-500 text-white py-3 rounded-xl font-bold"
+                            >
+                                Аннулировать
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

@@ -95,10 +95,33 @@ export const Sales: React.FC<SalesProps> = ({
   // Sales Mixed Payment Modal State
   const [salesPaymentModalOpen, setSalesPaymentModalOpen] = useState(false);
 
+  // Order Edit State
+  const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
+  const [editOrderData, setEditOrderData] = useState<{
+    totalAmount: string;
+    amountPaid: string;
+    paymentMethod: string;
+    paymentCurrency: string;
+  }>({ totalAmount: '', amountPaid: '', paymentMethod: '', paymentCurrency: '' });
+
   // Workflow Payment Modal State
   // Workflow Payment Modal State
   const [workflowPaymentModalOpen, setWorkflowPaymentModalOpen] = useState(false);
   const [selectedWorkflowOrder, setSelectedWorkflowOrder] = useState<WorkflowOrder | null>(null);
+
+  useEffect(() => {
+    if (editingOrderId) {
+      const order = orders.find(o => o.id === editingOrderId);
+      if (order) {
+        setEditOrderData({
+          totalAmount: String(order.totalAmount || 0),
+          amountPaid: String(order.amountPaid || 0),
+          paymentMethod: order.paymentMethod || 'cash',
+          paymentCurrency: order.paymentCurrency || 'USD'
+        });
+      }
+    }
+  }, [editingOrderId, orders]);
 
   useEffect(() => {
     setExchangeRate(settings.defaultExchangeRate);
@@ -295,6 +318,56 @@ export const Sales: React.FC<SalesProps> = ({
     setSelectedWorkflowOrder(null);
   };
 
+  // --- Cancel Workflow Order ---
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancelModalOpen, setCancelModalOpen] = useState(false);
+  const [orderToCancel, setOrderToCancel] = useState<WorkflowOrder | null>(null);
+
+  const openCancelModal = (wf: WorkflowOrder) => {
+    setOrderToCancel(wf);
+    setCancelReason('');
+    setCancelModalOpen(true);
+  };
+
+  const confirmCancelWorkflow = async () => {
+    if (!orderToCancel) return;
+    if (!cancelReason.trim()) {
+      toast.warning('Укажите причину аннулирования');
+      return;
+    }
+
+    const updatedWorkflow = workflowOrders.map(o =>
+      o.id === orderToCancel.id
+        ? {
+            ...o,
+            status: 'cancelled' as const,
+            cancellationReason: cancelReason.trim(),
+            cancelledBy: currentEmployee?.name || currentUserEmail || 'Кассир',
+            cancelledAt: new Date().toISOString()
+          }
+        : o
+    );
+
+    await onSaveWorkflowOrders(updatedWorkflow);
+
+    await onAddJournalEvent?.({
+      id: `JE-${Date.now()}`,
+      date: new Date().toISOString(),
+      type: 'employee_action',
+      employeeName: currentEmployee?.name || 'Кассир',
+      action: 'Workflow аннулирован',
+      description: `Заказ ${orderToCancel.id} аннулирован. Причина: ${cancelReason.trim()}`,
+      module: 'sales',
+      relatedType: 'workflow',
+      relatedId: orderToCancel.id
+    });
+
+    toast.success('Заказ аннулирован');
+    setCancelModalOpen(false);
+    setOrderToCancel(null);
+    setCancelReason('');
+  };
+
   // --- Balance Calculations ---
   // --- Helpers ---
   const num = (v: any): number => {
@@ -355,10 +428,23 @@ export const Sales: React.FC<SalesProps> = ({
       const isCard = o.paymentMethod === 'card';
       const isMixed = o.paymentMethod === 'mixed';
 
-      const paidUSD = num(o.amountPaid);
-      // Use amountPaid if available (accurate for partials), otherwise fallback logic (legacy)
-      // Note: amountPaid is in USD.
-      const paidUZS = paidUSD * getRate(o.exchangeRate);
+      const rate = getRate(o.exchangeRate);
+      
+      // Определяем amountPaid - может быть записан как USD или как UZS
+      let paidUSD = num(o.amountPaid);
+      // Если amountPaid > 100,000 - это скорее всего сумма в UZS, записанная в поле USD
+      if (paidUSD > 100000) {
+        // Конвертируем из UZS в USD
+        paidUSD = paidUSD / rate;
+      }
+      
+      // Аналогично для totalAmount
+      let totalUSD = num(o.totalAmount);
+      if (totalUSD > 100000) {
+        totalUSD = totalUSD / rate;
+      }
+      
+      const paidUZS = paidUSD * rate;
 
       if (isMixed) {
         // Handled by transactions
@@ -367,27 +453,19 @@ export const Sales: React.FC<SalesProps> = ({
 
       if (isCash) {
         if (o.paymentCurrency === 'UZS') {
-          // Fix: Use paid amount in UZS if available, else total if it was a full payment?
-          // If amountPaid > 0, we trust it.
+          // Оплата в UZS - добавляем в кассу UZS
           if (paidUSD > 0) balCashUZS += paidUZS;
-          else balCashUZS += num(o.totalAmountUZS); // Fallback for old records without amountPaid
+          else balCashUZS += num(o.totalAmountUZS);
         } else {
-          let total = num(o.totalAmount);
-          if (total === 0 && o.items && o.items.length > 0) {
-            total = o.items.reduce((s, it) => s + num(it.total), 0);
-          }
-          const rate = getRate(o.exchangeRate);
-          const rawAmount = (paidUSD > 0 ? paidUSD : total);
-          const addedAmount = validateUSD(rawAmount, rate);
-          balUSD += addedAmount;
-          salesUSD += addedAmount;
+          // Оплата в USD - добавляем в кассу USD
+          const rawAmount = (paidUSD > 0 ? paidUSD : totalUSD);
+          balUSD += rawAmount;
+          salesUSD += rawAmount;
         }
       } else if (isBank) {
-        // Fix: Support partial bank payments
         if (paidUSD > 0) balBankUZS += paidUZS;
         else balBankUZS += num(o.totalAmountUZS);
       } else if (isCard) {
-        // Fix: Support partial card payments
         if (paidUSD > 0) balCardUZS += paidUZS;
         else balCardUZS += num(o.totalAmountUZS);
       }
@@ -998,17 +1076,25 @@ export const Sales: React.FC<SalesProps> = ({
                         {(wf.items || []).length > 5 && <div className="text-xs text-slate-500">+ ещё {(wf.items || []).length - 5} поз.</div>}
                       </div>
 
-                      <div className="mt-4 flex items-center justify-between">
+                      <div className="mt-4 flex items-center justify-between gap-2">
                         <div className="text-xs text-slate-400">
                           Оплата: <span className="text-slate-200 font-semibold">{wf.paymentMethod}</span>
                           {wf.paymentMethod === 'debt' && <span className="ml-2 text-amber-300 font-bold">ДОЛГ</span>}
                         </div>
-                        <button
-                          onClick={() => openWorkflowPaymentModal(wf)}
-                          className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2"
-                        >
-                          <BadgeCheck size={18} /> Подтвердить
-                        </button>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => openCancelModal(wf)}
+                            className="bg-red-600/20 hover:bg-red-600/40 text-red-400 px-3 py-2 rounded-xl font-medium flex items-center gap-1 border border-red-600/30"
+                          >
+                            ✕ Аннулировать
+                          </button>
+                          <button
+                            onClick={() => openWorkflowPaymentModal(wf)}
+                            className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2"
+                          >
+                            <BadgeCheck size={18} /> Подтвердить
+                          </button>
+                        </div>
                       </div>
 
                       <div className="mt-3 text-xs text-slate-500 flex items-center gap-2">
@@ -1034,12 +1120,99 @@ export const Sales: React.FC<SalesProps> = ({
               onSubmit={handleAddExpense}
               expenseCategories={settings.expenseCategories} />
           ) : mode === 'transactions' ? (
-            <TransactionsManager 
-              transactions={transactions}
-              onUpdateTransactions={setTransactions}
-              onSaveTransactions={onSaveTransactions}
-              exchangeRate={exchangeRate}
-            />
+            <div className="space-y-6">
+              {/* Детальный отчёт движения кассы */}
+              <div className="bg-slate-800 rounded-2xl border border-slate-700 p-5">
+                <h3 className="text-white font-bold mb-4 flex items-center gap-2">
+                  📊 Детализация баланса кассы USD
+                </h3>
+                
+                <div className="space-y-3 max-h-[400px] overflow-y-auto custom-scrollbar">
+                  <div className="text-xs text-slate-400 font-bold border-b border-slate-700 pb-2 grid grid-cols-6 gap-2">
+                    <span>ID Заказа</span>
+                    <span>Клиент</span>
+                    <span>Метод</span>
+                    <span>Валюта</span>
+                    <span className="text-right">Сумма (к балансу USD)</span>
+                    <span className="text-right">Действия</span>
+                  </div>
+                  
+                  {(orders || [])
+                    .filter(o => o.paymentMethod !== 'mixed' && o.paymentMethod !== 'debt')
+                    .map(o => {
+                      const rate = num(o.exchangeRate) > 100 ? num(o.exchangeRate) : 12900;
+                      let paidUSD = num(o.amountPaid);
+                      if (paidUSD > 100000) paidUSD = paidUSD / rate;
+                      let totalUSD = num(o.totalAmount);
+                      if (totalUSD > 100000) totalUSD = totalUSD / rate;
+                      const finalAmount = paidUSD > 0 ? paidUSD : totalUSD;
+                      
+                      const isCashUSD = o.paymentMethod === 'cash' && o.paymentCurrency !== 'UZS';
+                      const isLargeAmount = finalAmount > 10000;
+                      
+                      return (
+                        <div key={o.id} className={`text-xs grid grid-cols-6 gap-2 py-2 border-b border-slate-700/50 ${isLargeAmount ? 'bg-red-500/20 border-red-500/30' : isCashUSD ? 'bg-emerald-500/10' : 'bg-slate-900/30'}`}>
+                          <span className="text-slate-300 font-mono">{o.id}</span>
+                          <span className="text-slate-400 truncate">{o.customerName}</span>
+                          <span className="text-slate-400">{o.paymentMethod}</span>
+                          <span className="text-slate-400">{o.paymentCurrency || 'USD'}</span>
+                          <span className={`text-right font-mono font-bold ${isLargeAmount ? 'text-red-400' : isCashUSD ? 'text-emerald-400' : 'text-slate-500'}`}>
+                            {isCashUSD ? `+$${finalAmount.toLocaleString(undefined, {maximumFractionDigits: 2})}` : '-'}
+                          </span>
+                          <div className="flex justify-end gap-1">
+                            <button
+                              onClick={() => setEditingOrderId(o.id)}
+                              className="px-2 py-1 bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 rounded text-[10px] font-bold"
+                            >
+                              ✎
+                            </button>
+                            <button
+                              onClick={async () => {
+                                if (confirm(`Удалить заказ ${o.id}?`)) {
+                                  const updated = orders.filter(ord => ord.id !== o.id);
+                                  setOrders(updated);
+                                  await onSaveOrders?.(updated);
+                                  toast.success('Заказ удалён');
+                                }
+                              }}
+                              className="px-2 py-1 bg-red-600/20 hover:bg-red-600/40 text-red-400 rounded text-[10px] font-bold"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+                
+                <div className="mt-4 pt-4 border-t border-slate-700 flex justify-between items-center">
+                  <span className="text-slate-400">Итого в кассе USD (из заказов):</span>
+                  <span className="text-emerald-400 font-mono font-bold text-xl">
+                    ${(orders || [])
+                      .filter(o => o.paymentMethod === 'cash' && o.paymentCurrency !== 'UZS')
+                      .reduce((sum, o) => {
+                        const rate = num(o.exchangeRate) > 100 ? num(o.exchangeRate) : 12900;
+                        let paidUSD = num(o.amountPaid);
+                        if (paidUSD > 100000) paidUSD = paidUSD / rate;
+                        let totalUSD = num(o.totalAmount);
+                        if (totalUSD > 100000) totalUSD = totalUSD / rate;
+                        return sum + (paidUSD > 0 ? paidUSD : totalUSD);
+                      }, 0).toLocaleString(undefined, {maximumFractionDigits: 2})}
+                  </span>
+                </div>
+                
+                <div className="mt-2 text-xs text-amber-400 bg-amber-500/10 p-2 rounded-lg">
+                  💡 Зелёные строки добавляются к балансу USD. Если видите огромные суммы - это ошибки в данных.
+                </div>
+              </div>
+
+              <TransactionsManager 
+                transactions={transactions}
+                onUpdateTransactions={setTransactions}
+                onSaveTransactions={onSaveTransactions}
+                exchangeRate={exchangeRate}
+              />
+            </div>
           ) : null}
         </div>
 
@@ -1183,6 +1356,142 @@ export const Sales: React.FC<SalesProps> = ({
         }}
         originalTotalUSD={originalTotalUSD}
       />
+
+      {/* Cancel Workflow Modal */}
+      {cancelModalOpen && orderToCancel && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-800 rounded-2xl border border-slate-700 w-full max-w-md p-6">
+            <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+              <AlertTriangle className="text-red-400" size={24} />
+              Аннулирование заказа
+            </h3>
+            
+            <div className="bg-slate-900/50 rounded-xl p-4 mb-4">
+              <div className="text-sm text-slate-400">Заказ: <span className="text-white font-mono">{orderToCancel.id}</span></div>
+              <div className="text-sm text-slate-400 mt-1">Клиент: <span className="text-white">{orderToCancel.customerName}</span></div>
+              <div className="text-sm text-slate-400 mt-1">Сумма: <span className="text-emerald-300 font-mono">{Number(orderToCancel.totalAmountUZS || 0).toLocaleString()} сум</span></div>
+            </div>
+
+            <div className="mb-4">
+              <label className="text-sm text-slate-400 mb-2 block">Причина аннулирования *</label>
+              <textarea
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-red-500/50 h-24 resize-none"
+                placeholder="Укажите причину аннулирования..."
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => { setCancelModalOpen(false); setOrderToCancel(null); setCancelReason(''); }}
+                className="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-3 rounded-xl font-medium"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={confirmCancelWorkflow}
+                className="flex-1 bg-red-600 hover:bg-red-500 text-white py-3 rounded-xl font-bold"
+              >
+                Аннулировать
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Order Edit Modal */}
+      {editingOrderId && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-800 rounded-2xl border border-slate-700 w-full max-w-md p-6">
+            <h3 className="text-xl font-bold text-white mb-4">
+              ✎ Редактирование заказа
+            </h3>
+            
+            <div className="text-sm text-slate-400 mb-4">ID: <span className="text-white font-mono">{editingOrderId}</span></div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm text-slate-400 mb-1 block">Сумма (totalAmount) в USD</label>
+                <input
+                  type="number"
+                  value={editOrderData.totalAmount}
+                  onChange={(e) => setEditOrderData(prev => ({ ...prev, totalAmount: e.target.value }))}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white outline-none"
+                />
+              </div>
+              
+              <div>
+                <label className="text-sm text-slate-400 mb-1 block">Оплачено (amountPaid) в USD</label>
+                <input
+                  type="number"
+                  value={editOrderData.amountPaid}
+                  onChange={(e) => setEditOrderData(prev => ({ ...prev, amountPaid: e.target.value }))}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white outline-none"
+                />
+              </div>
+              
+              <div>
+                <label className="text-sm text-slate-400 mb-1 block">Метод оплаты</label>
+                <select
+                  value={editOrderData.paymentMethod}
+                  onChange={(e) => setEditOrderData(prev => ({ ...prev, paymentMethod: e.target.value }))}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white outline-none"
+                >
+                  <option value="cash">Cash</option>
+                  <option value="bank">Bank</option>
+                  <option value="card">Card</option>
+                  <option value="debt">Debt</option>
+                  <option value="mixed">Mixed</option>
+                </select>
+              </div>
+              
+              <div>
+                <label className="text-sm text-slate-400 mb-1 block">Валюта оплаты</label>
+                <select
+                  value={editOrderData.paymentCurrency}
+                  onChange={(e) => setEditOrderData(prev => ({ ...prev, paymentCurrency: e.target.value }))}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white outline-none"
+                >
+                  <option value="USD">USD</option>
+                  <option value="UZS">UZS</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setEditingOrderId(null)}
+                className="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-3 rounded-xl font-medium"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={async () => {
+                  const updated = orders.map(o => 
+                    o.id === editingOrderId 
+                      ? { 
+                          ...o, 
+                          totalAmount: parseFloat(editOrderData.totalAmount) || 0,
+                          amountPaid: parseFloat(editOrderData.amountPaid) || 0,
+                          paymentMethod: editOrderData.paymentMethod as any,
+                          paymentCurrency: editOrderData.paymentCurrency as any
+                        } 
+                      : o
+                  );
+                  setOrders(updated);
+                  await onSaveOrders?.(updated);
+                  toast.success('Заказ обновлён');
+                  setEditingOrderId(null);
+                }}
+                className="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl font-bold"
+              >
+                Сохранить
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

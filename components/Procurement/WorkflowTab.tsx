@@ -1,5 +1,5 @@
 import React from 'react';
-import { ClipboardList, Plus, Send } from 'lucide-react';
+import { ClipboardList, Plus, Send, XCircle } from 'lucide-react';
 import type { Product, WorkflowOrder, OrderItem } from '../../types';
 
 interface MissingRow {
@@ -14,6 +14,7 @@ interface WorkflowTabProps {
   getMissingItems: (items: OrderItem[]) => MissingRow[];
   createDraftPurchaseFromWorkflow: (wf: WorkflowOrder) => void;
   sendWorkflowToCash: (wf: WorkflowOrder) => void;
+  onCancelWorkflow?: (wf: WorkflowOrder) => void;
 }
 
 export const WorkflowTab: React.FC<WorkflowTabProps> = ({
@@ -22,6 +23,7 @@ export const WorkflowTab: React.FC<WorkflowTabProps> = ({
   getMissingItems,
   createDraftPurchaseFromWorkflow,
   sendWorkflowToCash,
+  onCancelWorkflow,
 }) => {
   return (
     <div className="flex-1 bg-slate-800 rounded-xl border border-slate-700 shadow-lg overflow-hidden flex flex-col">
@@ -110,8 +112,14 @@ export const WorkflowTab: React.FC<WorkflowTabProps> = ({
                         className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-900 disabled:text-slate-500 disabled:cursor-not-allowed text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2"
                       >
                         <Send size={18} /> Отправить в кассу
-                      </button>
-                      <div className="text-xs text-slate-500">
+                      </button>                      {onCancelWorkflow && (
+                        <button
+                          onClick={() => onCancelWorkflow(wf)}
+                          className="w-full bg-red-600/20 hover:bg-red-600/40 text-red-400 py-3 rounded-xl font-medium flex items-center justify-center gap-2 border border-red-600/30"
+                        >
+                          <XCircle size={18} /> Аннулировать заказ
+                        </button>
+                      )}                      <div className="text-xs text-slate-500">
                         “Отправить в кассу” доступно только когда все позиции есть в наличии.
                       </div>
                     </div>

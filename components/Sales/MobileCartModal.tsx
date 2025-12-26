@@ -350,6 +350,12 @@ export const MobileCartModal: React.FC<MobileCartModalProps> = ({
             <div className="flex justify-between items-center pt-1">
               <span className="text-slate-200 font-bold">К оплате:</span>
               <span className={`text-2xl font-bold font-mono ${discountPercent > 0 ? 'text-orange-400' : 'text-emerald-400'}`}>{totalAmountUZS.toLocaleString()} сўм</span>
+            </div>
+          </div>
+
+          <button
+            onClick={onCompleteOrder}
+            disabled={cart.length === 0 || !customerName.trim()}
             className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-white py-3 rounded-xl font-bold text-lg flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-600/20"
           >
             <CheckCircle size={20} />
