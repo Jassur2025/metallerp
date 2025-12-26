@@ -42,13 +42,32 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fi
 
     const getRate = (rate: any) => {
         const r = num(rate);
-        return r > 0 ? r : (num(settings.defaultExchangeRate) || 1);
+        // Курс должен быть реалистичным (например ~12000-13000 UZS за 1 USD)
+        // Если курс меньше 100, считаем его некорректным и используем дефолтный
+        const defaultRate = num(settings.defaultExchangeRate);
+        const safeDefault = defaultRate > 100 ? defaultRate : 12800; // Примерный курс UZS/USD
+        return r > 100 ? r : safeDefault;
     };
 
     let netCashUSD = 0;
     let netCashUZS = 0;
     let netBankUZS = 0;
     let netCardUZS = 0;
+
+    // Валидация суммы в USD - нереалистично большие суммы скорее всего ошибки данных
+    const validateUSD = (amount: number): number => {
+        const rate = getRate(null);
+        // Если сумма > $100,000 - проверяем, не является ли это суммой в UZS
+        if (amount > 100000) {
+            const possibleUSD = amount / rate;
+            // Если после деления получается разумная сумма (1-100000), значит это была UZS
+            if (possibleUSD >= 1 && possibleUSD <= 100000) {
+                console.warn(`[Balance] Автокоррекция: ${amount} → ${possibleUSD.toFixed(2)} USD`);
+                return possibleUSD;
+            }
+        }
+        return amount;
+    };
 
     // Process Orders
     safeOrders.forEach(o => {
@@ -58,7 +77,8 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fi
             } else {
                 const paid = num(o.amountPaid);
                 const total = num(o.totalAmount);
-                netCashUSD += (paid > 0 ? paid : total);
+                const rawAmount = paid > 0 ? paid : total;
+                netCashUSD += validateUSD(rawAmount);
             }
         } else if (o.paymentMethod === 'bank') {
             netBankUZS += num(o.totalAmountUZS);
@@ -72,24 +92,26 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fi
         const amt = num(t.amount);
         const rate = getRate(t.exchangeRate);
         const isUSD = t.currency === 'USD';
+        // Валидируем суммы в USD
+        const validatedUSDAmount = isUSD ? validateUSD(amt) : amt;
 
         if (t.type === 'client_payment') {
             if (t.method === 'cash') {
-                if (isUSD) netCashUSD += amt; else netCashUZS += amt;
+                if (isUSD) netCashUSD += validatedUSDAmount; else netCashUZS += amt;
             } else if (t.method === 'bank') {
-                netBankUZS += (isUSD ? amt * rate : amt);
+                netBankUZS += (isUSD ? validatedUSDAmount * rate : amt);
             } else if (t.method === 'card') {
-                netCardUZS += (isUSD ? amt * rate : amt);
+                netCardUZS += (isUSD ? validatedUSDAmount * rate : amt);
             }
         } else if (t.type === 'supplier_payment') {
             if (t.method === 'cash') {
                 if (isUSD) {
-                    // netCashUSD -= amt; // Showing Gross Revenue in Assets to match user expectations
+                    // netCashUSD -= validatedUSDAmount; // Showing Gross Revenue in Assets to match user expectations
                 } else {
                     // netCashUZS -= amt;
                 }
             } else if (t.method === 'bank') {
-                // netBankUZS -= (isUSD ? amt * rate : amt);
+                // netBankUZS -= (isUSD ? validatedUSDAmount * rate : amt);
             }
         } else if (t.type === 'client_return' || t.type === 'client_refund' || t.type === 'return') {
             // Keep returns as they are valid reductions of revenue?
@@ -100,9 +122,18 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fi
             // However, usually returns strictly reduce Sales.
             // Let's comment them out to start, or stick to "Sales Cash" logic which usually excludes returns.
             if (t.method === 'cash') {
-                if (isUSD) netCashUSD -= amt; else netCashUZS -= amt;
+                if (isUSD) netCashUSD -= validatedUSDAmount; else netCashUZS -= amt;
             } else if (t.method === 'bank') {
-                netBankUZS -= (isUSD ? amt * rate : amt);
+                netBankUZS -= (isUSD ? validatedUSDAmount * rate : amt);
+            }
+        } else if (t.type === 'expense') {
+            // Deduct fixed asset payments and other expenses from balances
+            if (t.method === 'cash') {
+                if (isUSD) netCashUSD -= validatedUSDAmount; else netCashUZS -= amt;
+            } else if (t.method === 'bank') {
+                netBankUZS -= (isUSD ? validatedUSDAmount * rate : amt);
+            } else if (t.method === 'card') {
+                netCardUZS -= (isUSD ? validatedUSDAmount * rate : amt);
             }
         }
     });
@@ -122,17 +153,13 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fi
         }
     });
 
-    const netCash = Math.max(0, netCashUSD);
-    const netCashUZS_Total = Math.max(0, netCashUZS);
-    const netBank = Math.max(0, netBankUZS);
-    const netCard = Math.max(0, netCardUZS);
-
     const currentRate = getRate(null);
-    const netBankUSD = netBank / currentRate;
-    const netCardUSD = netCard / currentRate;
+    const totalCashUSD = netCashUSD + (netCashUZS / currentRate);
+    const netBankUSD = netBankUZS / currentRate;
+    const netCardUSD = netCardUZS / currentRate;
 
     // For total conversion to USD used in Assets summary
-    const totalLiquidAssets = netCash + (netCashUZS_Total / getRate(null)) + (netBank / getRate(null)) + (netCard / getRate(null));
+    const totalLiquidAssets = totalCashUSD + netBankUSD + netCardUSD;
 
 
     // 3. Fixed Assets Value
@@ -170,7 +197,8 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fi
     const equity = inventoryValue;
 
     // 3. Fixed Assets Fund (Capital invested in Fixed Assets)
-    const fixedAssetsFund = fixedAssetsValue;
+    // Equity in FA = Total Book Value - Remaining Debt
+    const fixedAssetsFund = Math.max(0, fixedAssetsValue - fixedAssetsPayable);
 
     // 4. Net Profit (for display purposes - from PnL)
     // Revenue (excluding VAT)
@@ -202,8 +230,8 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fi
     const assetsData = [
         { name: 'Осн. Средства', value: fixedAssetsValue, color: '#0ea5e9' }, // Sky blue
         { name: 'Товар', value: inventoryValue, color: '#3b82f6' },
-        { name: 'Касса (Нал)', value: netCash, color: '#10b981' },
-        { name: 'Р/С (Банк)', value: netBank, color: '#8b5cf6' },
+        { name: 'Касса (Нал)', value: totalCashUSD, color: '#10b981' },
+        { name: 'Р/С (Банк)', value: netBankUSD, color: '#8b5cf6' },
         { name: 'Дебиторка', value: accountsReceivable, color: '#f59e0b' },
     ].filter(item => item.value > 0);
 
@@ -221,6 +249,20 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fi
 
     // Assuming exchangeRate is available from settings or another prop
     const exchangeRate = settings.defaultExchangeRate;
+
+    // --- AUDIT SECTION (Finding major errors) ---
+    const suspiciousThreshold = 1000000; // $1M
+    const largeOrders = safeOrders.filter(o => (o.totalAmount || 0) > suspiciousThreshold);
+    const largeTransactions = safeTransactions.filter(t => {
+        const rate = getRate(t.exchangeRate);
+        const amountUSD = t.currency === 'UZS' ? (num(t.amount) / rate) : num(t.amount);
+        return amountUSD > suspiciousThreshold;
+    });
+    const largeExpenses = safeExpenses.filter(e => {
+        const rate = getRate(e.exchangeRate);
+        const amountUSD = e.currency === 'UZS' ? (num(e.amount) / rate) : num(e.amount);
+        return amountUSD > suspiciousThreshold;
+    });
 
     return (
         <div className="h-[calc(100vh-2rem)] flex flex-col p-6 space-y-6 animate-fade-in overflow-y-auto overflow-x-hidden custom-scrollbar">
@@ -262,7 +304,7 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fi
                                 <div className="w-2 h-8 bg-emerald-500 rounded-full"></div>
                                 <span className="text-slate-300">Касса (Наличные)</span>
                             </div>
-                            <span className="font-mono text-emerald-400">{formatCurrency(netCash)}</span>
+                            <span className="font-mono text-emerald-400">{formatCurrency(totalCashUSD)}</span>
                         </div>
 
                         <div className="flex justify-between items-center p-2 bg-slate-900/50 rounded-lg border border-slate-700/50">
@@ -420,6 +462,51 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fi
                     </div>
                 </div>
             </div>
+
+            {/* Audit Section - Only shown if huge amounts exist */}
+            {(largeOrders.length > 0 || largeTransactions.length > 0 || largeExpenses.length > 0) && (
+                <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-6">
+                    <h3 className="text-xl font-bold text-red-400 mb-4 flex items-center gap-2">
+                        <Scale className="text-red-500" /> ВНИМАНИЕ: Ошибки в данных
+                    </h3>
+                    <p className="text-slate-400 text-sm mb-4">
+                        Найдены записи с аномально большими суммами (более $1 000 000). Проверьте их в истории:
+                    </p>
+                    <div className="space-y-2">
+                        {largeOrders.map(o => (
+                            <div key={o.id} className="bg-slate-900/50 p-3 rounded-xl flex justify-between items-center border border-red-500/20">
+                                <div>
+                                    <p className="text-white font-mono text-sm">Заказ: {o.id}</p>
+                                    <p className="text-xs text-slate-500">{o.date} • {o.customerName}</p>
+                                </div>
+                                <span className="text-red-400 font-bold font-mono">{formatCurrency(o.totalAmount)}</span>
+                            </div>
+                        ))}
+                        {largeTransactions.map(t => (
+                            <div key={t.id} className="bg-slate-900/50 p-3 rounded-xl flex justify-between items-center border border-red-500/20">
+                                <div>
+                                    <p className="text-white font-mono text-sm">Транзакция: {t.id} ({t.type})</p>
+                                    <p className="text-xs text-slate-500">{t.date} • {t.description}</p>
+                                </div>
+                                <span className="text-red-400 font-bold font-mono">
+                                    {formatCurrency(t.currency === 'UZS' ? num(t.amount) / getRate(t.exchangeRate) : num(t.amount))}
+                                </span>
+                            </div>
+                        ))}
+                        {largeExpenses.map(e => (
+                            <div key={e.id} className="bg-slate-900/50 p-3 rounded-xl flex justify-between items-center border border-red-500/20">
+                                <div>
+                                    <p className="text-white font-mono text-sm">Расход: {e.id}</p>
+                                    <p className="text-xs text-slate-500">{e.date} • {e.description}</p>
+                                </div>
+                                <span className="text-red-400 font-bold font-mono">
+                                    {formatCurrency(e.currency === 'UZS' ? num(e.amount) / getRate(e.exchangeRate) : num(e.amount))}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

@@ -204,7 +204,8 @@ export interface Purchase {
   totalLandedAmount: number; // Sum of landed costs (Invoice + Overheads)
 
   // Payment Info
-  paymentMethod: 'cash' | 'bank' | 'debt' | 'mixed';
+  paymentMethod: 'cash' | 'bank' | 'card' | 'debt' | 'mixed';
+  paymentCurrency?: 'USD' | 'UZS'; // Валюта оплаты для наличных
   paymentStatus: 'paid' | 'unpaid' | 'partial';
   amountPaid: number; // Amount actually paid (USD)
 }

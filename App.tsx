@@ -246,6 +246,97 @@ const AppContent: React.FC = () => {
     });
   };
 
+  // Вычисление балансов кассы
+  const balances = React.useMemo(() => {
+    const num = (v: unknown): number => {
+      if (typeof v === 'number') return isFinite(v) ? v : 0;
+      if (typeof v === 'string') {
+        const p = parseFloat(v.replace(/[^\d.-]/g, ''));
+        return isFinite(p) ? p : 0;
+      }
+      return 0;
+    };
+
+    const getRate = (rate: unknown) => {
+      const r = num(rate);
+      const defaultRate = num(settings.defaultExchangeRate);
+      const safeDefault = defaultRate > 100 ? defaultRate : 12900;
+      return r > 100 ? r : safeDefault;
+    };
+
+    let cashUSD = 0;
+    let cashUZS = 0;
+    let bankUZS = 0;
+    let cardUZS = 0;
+
+    // Заказы (продажи) - приход денег
+    orders.forEach(o => {
+      if (o.paymentMethod === 'cash') {
+        if (o.paymentCurrency === 'UZS') {
+          cashUZS += num(o.totalAmountUZS);
+        } else {
+          const paid = num(o.amountPaid);
+          const total = num(o.totalAmount);
+          cashUSD += (paid > 0 ? paid : total);
+        }
+      } else if (o.paymentMethod === 'bank') {
+        bankUZS += num(o.totalAmountUZS);
+      } else if (o.paymentMethod === 'card') {
+        cardUZS += num(o.totalAmountUZS);
+      }
+    });
+
+    // Транзакции
+    transactions.forEach(t => {
+      const amt = num(t.amount);
+      const isUSD = t.currency === 'USD';
+      const rate = getRate(t.exchangeRate);
+
+      if (t.type === 'client_payment') {
+        if (t.method === 'cash') {
+          if (isUSD) cashUSD += amt; else cashUZS += amt;
+        } else if (t.method === 'bank') {
+          bankUZS += (isUSD ? amt * rate : amt);
+        } else if (t.method === 'card') {
+          cardUZS += (isUSD ? amt * rate : amt);
+        }
+      } else if (t.type === 'supplier_payment') {
+        if (t.method === 'cash') {
+          if (isUSD) cashUSD -= amt; else cashUZS -= amt;
+        } else if (t.method === 'bank') {
+          bankUZS -= (isUSD ? amt * rate : amt);
+        } else if (t.method === 'card') {
+          cardUZS -= (isUSD ? amt * rate : amt);
+        }
+      } else if (t.type === 'client_return' || t.type === 'client_refund') {
+        if (t.method === 'cash') {
+          if (isUSD) cashUSD -= amt; else cashUZS -= amt;
+        } else if (t.method === 'bank') {
+          bankUZS -= (isUSD ? amt * rate : amt);
+        } else if (t.method === 'card') {
+          cardUZS -= (isUSD ? amt * rate : amt);
+        }
+      }
+    });
+
+    // Расходы
+    expenses.forEach(e => {
+      const amt = num(e.amount);
+      const isUSD = e.currency === 'USD';
+      const rate = getRate(e.exchangeRate);
+
+      if (e.paymentMethod === 'cash') {
+        if (isUSD) cashUSD -= amt; else cashUZS -= amt;
+      } else if (e.paymentMethod === 'bank') {
+        bankUZS -= (isUSD ? amt * rate : amt);
+      } else if (e.paymentMethod === 'card') {
+        cardUZS -= (isUSD ? amt * rate : amt);
+      }
+    });
+
+    return { cashUSD, cashUZS, bankUZS, cardUZS };
+  }, [orders, transactions, expenses, settings.defaultExchangeRate]);
+
   const loadData = async () => {
     if (!accessToken) return;
     setIsLoading(true);
@@ -879,6 +970,7 @@ const AppContent: React.FC = () => {
           onSaveWorkflowOrders={handleSaveWorkflowOrders}
           onSaveProducts={handleSaveProducts}
           onSaveTransactions={handleSaveTransactions}
+          balances={balances}
         />);
       case 'journal':
         return renderLazyComponent(<JournalEventsView events={journalEvents} />);

@@ -262,6 +262,56 @@ export const sheetsService = {
       throw e;
     }
   },
+
+  // Очистка всех данных для тестирования
+  clearAllData: async (accessToken: string) => {
+    const spreadsheetId = getSpreadsheetId();
+    if (!spreadsheetId) throw new Error('Spreadsheet ID not set');
+
+    const ranges = [
+      'Orders!A2:P',
+      'Products!A2:K',
+      'Expenses!A2:G',
+      'Clients!A2:I',
+      'Transactions!A2:I',
+      'FixedAssets!A2:I',
+      'Purchases!A2:K',
+      'WorkflowOrders!A2:U',
+      'Staff!A2:K',
+      'Journal!A2:M',
+    ];
+
+    const errors: string[] = [];
+    
+    for (const range of ranges) {
+      try {
+        await clearRange(accessToken, range);
+        logDev(`✅ Очищен: ${range}`);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        warnDev(`⚠️ Не удалось очистить ${range}: ${msg}`);
+        errors.push(range.split('!')[0]);
+      }
+    }
+
+    // Очистка локального кэша
+    cacheService.invalidate('orders');
+    cacheService.invalidate('products');
+    cacheService.invalidate('expenses');
+    cacheService.invalidate('clients');
+    cacheService.invalidate('transactions');
+    cacheService.invalidate('fixedAssets');
+    cacheService.invalidate('purchases');
+    cacheService.invalidate('workflowOrders');
+    cacheService.invalidate('employees');
+    cacheService.invalidate('journalEvents');
+
+    if (errors.length > 0) {
+      throw new Error(`Не удалось очистить: ${errors.join(', ')}`);
+    }
+
+    return 'Все данные успешно удалены!';
+  },
 };
 
 

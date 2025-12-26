@@ -295,22 +295,43 @@ export const Sales: React.FC<SalesProps> = ({
   };
 
   // --- Balance Calculations ---
-  const calculateBalance = (): { balances: Balances; debugStats: any } => {
-    // Robust number conversion
-    const num = (v: any): number => {
-      if (typeof v === 'number') return isFinite(v) ? v : 0;
-      if (typeof v === 'string') {
-        const p = parseFloat(v.replace(/[^\d.-]/g, ''));
-        return isFinite(p) ? p : 0;
+  // --- Helpers ---
+  const num = (v: any): number => {
+    if (typeof v === 'number') return isFinite(v) ? v : 0;
+    if (typeof v === 'string') {
+      const p = parseFloat(v.replace(/[^\d.-]/g, ''));
+      return isFinite(p) ? p : 0;
+    }
+    return 0;
+  };
+
+  const getRate = (rate: any) => {
+    const r = num(rate);
+    // Минимальный реалистичный курс UZS/USD около 12000
+    const defaultRate = num(exchangeRate);
+    const safeDefault = defaultRate > 100 ? defaultRate : 12900;
+    return r > 100 ? r : safeDefault;
+  };
+
+  // Валидация USD - если сумма слишком большая, это скорее всего UZS записанный как USD
+  const validateUSD = (amount: number, rate: number): number => {
+    // Если сумма > $100,000 - проверяем, не является ли это суммой в UZS
+    // Типичная сумма заказа металла $100 - $50,000
+    // Если сумма выглядит как UZS (миллионы), конвертируем
+    if (amount > 100000) {
+      // Проверяем: если после деления на курс получается разумная сумма, значит это UZS
+      const possibleUSD = amount / rate;
+      if (possibleUSD >= 1 && possibleUSD <= 100000) {
+        console.warn(`[Balance] Автокоррекция: ${amount} → ${possibleUSD.toFixed(2)} USD (обнаружена сумма в UZS)`);
+        return possibleUSD;
       }
-      return 0;
-    };
+    }
+    return amount;
+  };
 
-    const getRate = (rate: any) => {
-      const r = num(rate);
-      return r > 0 ? r : (num(exchangeRate) || 1);
-    };
+  const suspiciousThreshold = 100000; // $100k
 
+  const calculateBalance = (): { balances: Balances; debugStats: any; suspicious: any } => {
     const val = num; // Alias for backward compatibility during refactor
 
 
@@ -354,7 +375,9 @@ export const Sales: React.FC<SalesProps> = ({
           if (total === 0 && o.items && o.items.length > 0) {
             total = o.items.reduce((s, it) => s + num(it.total), 0);
           }
-          const addedAmount = (paidUSD > 0 ? paidUSD : total);
+          const rate = getRate(o.exchangeRate);
+          const rawAmount = (paidUSD > 0 ? paidUSD : total);
+          const addedAmount = validateUSD(rawAmount, rate);
           balUSD += addedAmount;
           salesUSD += addedAmount;
         }
@@ -374,34 +397,43 @@ export const Sales: React.FC<SalesProps> = ({
       const amt = num(t.amount);
       const isUSD = t.currency === 'USD';
       const rate = getRate(t.exchangeRate);
+      const validatedAmt = isUSD ? validateUSD(amt, rate) : amt;
+      
       if (t.type === 'client_payment') {
         if (t.method === 'cash') {
           if (isUSD) {
-            balUSD += amt;
-            trxInUSD += amt;
+            balUSD += validatedAmt;
+            trxInUSD += validatedAmt;
           } else balCashUZS += amt;
         } else if (t.method === 'bank') {
-          balBankUZS += (isUSD ? amt * rate : amt);
+          balBankUZS += (isUSD ? validatedAmt * rate : amt);
         } else if (t.method === 'card') {
-          balCardUZS += (isUSD ? amt * rate : amt);
+          balCardUZS += (isUSD ? validatedAmt * rate : amt);
         }
       } else if (t.type === 'supplier_payment') {
+        // Оплата поставщикам - вычитаем из соответствующей кассы
         if (t.method === 'cash') {
           if (isUSD) {
-            // balUSD -= amt; // Disabling for "Kassa (USD)" to prioritize Sales Cash visibility
-            trxOutUSD += amt;
-          } else balCashUZS -= amt;
+            balUSD -= validatedAmt;
+            trxOutUSD += validatedAmt;
+          } else {
+            balCashUZS -= amt;
+          }
         } else if (t.method === 'bank') {
-          // balBankUZS -= (isUSD ? amt * rate : amt);
+          balBankUZS -= (isUSD ? validatedAmt * rate : amt);
+        } else if (t.method === 'card') {
+          balCardUZS -= (isUSD ? validatedAmt * rate : amt);
         }
       } else if (t.type === 'client_return' || t.type === 'client_refund') {
         if (t.method === 'cash') {
           if (isUSD) {
-            balUSD -= amt;
-            trxOutUSD += amt;
+            balUSD -= validatedAmt;
+            trxOutUSD += validatedAmt;
           } else balCashUZS -= amt;
         } else if (t.method === 'bank') {
-          // balBankUZS -= (isUSD ? amt * rate : amt);
+          balBankUZS -= (isUSD ? validatedAmt * rate : amt);
+        } else if (t.method === 'card') {
+          balCardUZS -= (isUSD ? validatedAmt * rate : amt);
         }
       }
     });
@@ -417,7 +449,7 @@ export const Sales: React.FC<SalesProps> = ({
           expUSD += amt;
         } else balCashUZS -= amt;
       } else if (e.paymentMethod === 'bank') {
-        // balBankUZS -= (isUSD ? amt * rate : amt);
+        balBankUZS -= (isUSD ? amt * rate : amt);
       } else if (e.paymentMethod === 'card') {
         balCardUZS -= (isUSD ? amt * rate : amt);
       }
@@ -435,11 +467,24 @@ export const Sales: React.FC<SalesProps> = ({
         trxInUSD,
         trxOutUSD,
         expUSD
+      },
+      suspicious: {
+        orders: (orders || []).filter(o => num(o.totalAmount) > suspiciousThreshold || num(o.amountPaid) > suspiciousThreshold),
+        transactions: (transactions || []).filter(t => {
+          const rate = getRate(t.exchangeRate);
+          const usd = t.currency === 'USD' ? num(t.amount) : num(t.amount) / rate;
+          return usd > suspiciousThreshold;
+        }),
+        expenses: (expenses || []).filter(e => {
+          const rate = getRate(e.exchangeRate);
+          const usd = e.currency === 'USD' ? num(e.amount) : num(e.amount) / rate;
+          return usd > suspiciousThreshold;
+        })
       }
     };
   };
 
-  const { balances, debugStats } = calculateBalance();
+  const { balances, debugStats, suspicious } = calculateBalance();
 
   // --- Cart Logic ---
   const addToCart = (product: Product) => {
@@ -504,12 +549,8 @@ export const Sales: React.FC<SalesProps> = ({
 
   const discountAmount = originalTotalUSD - totalAmountUSD;
 
-  // Auto-calculate percentage if manual total is changed
-  // Logic handled in handlers, but here we derive final values.
-
   const totalAmountUZS = toUZS(totalAmountUSD);
 
-  // --- Complete Order ---
   // --- Order Finalization (Shared) ---
   const finalizeSale = async (dist: PaymentDistribution, method: PaymentMethod = 'mixed', customStatus?: 'paid' | 'unpaid' | 'partial') => {
     const { cashUSD, cashUZS, cardUZS, bankUZS, isPaid, remainingUSD } = dist;
@@ -708,7 +749,9 @@ export const Sales: React.FC<SalesProps> = ({
     const newExpense: Expense = {
       id: `EXP-${Date.now()}`, date: new Date().toISOString(), description: expenseDesc,
       amount: parseFloat(expenseAmount), category: expenseCategory, paymentMethod: expenseMethod,
-      currency: expenseCurrency, exchangeRate, vatAmount: withVat && expenseVatAmount ? parseFloat(expenseVatAmount) : 0
+      currency: expenseCurrency,
+      exchangeRate: exchangeRate > 0 ? exchangeRate : settings.defaultExchangeRate,
+      vatAmount: withVat && expenseVatAmount ? parseFloat(expenseVatAmount) : 0
     };
     const updatedExpenses = [newExpense, ...expenses];
     setExpenses(updatedExpenses);
@@ -853,6 +896,37 @@ export const Sales: React.FC<SalesProps> = ({
               </button>
             )}
           </div>
+
+          {/* Audit Alert - Visible in Sales too */}
+          {(suspicious.orders.length > 0 || suspicious.transactions.length > 0 || suspicious.expenses.length > 0) && (
+            <div className="mb-6 bg-red-500/10 border border-red-500/30 rounded-2xl p-4 animate-bounce-subtle">
+              <div className="flex items-center gap-2 text-red-400 font-bold mb-3">
+                <AlertTriangle size={20} />
+                <span>ВНИМАНИЕ: Найдены аномальные записи ($3.3 млрд?)</span>
+              </div>
+              <div className="space-y-2 max-h-[200px] overflow-y-auto custom-scrollbar">
+                {suspicious.orders.map(o => (
+                  <div key={o.id} className="text-xs bg-slate-900/50 p-2 rounded-lg flex justify-between border border-red-500/20">
+                    <span className="text-slate-300">Заказ {o.id} ({o.customerName})</span>
+                    <span className="text-red-400 font-bold">${num(o.totalAmount).toLocaleString()}</span>
+                  </div>
+                ))}
+                {suspicious.transactions.map(t => (
+                  <div key={t.id} className="text-xs bg-slate-900/50 p-2 rounded-lg flex justify-between border border-red-500/20">
+                    <span className="text-slate-300">Транзакция {t.id} ({t.type})</span>
+                    <span className="text-red-400 font-bold">${(t.currency === 'USD' ? num(t.amount) : num(t.amount) / getRate(t.exchangeRate)).toLocaleString()}</span>
+                  </div>
+                ))}
+                {suspicious.expenses.map(e => (
+                  <div key={e.id} className="text-xs bg-slate-900/50 p-2 rounded-lg flex justify-between border border-red-500/20">
+                    <span className="text-slate-300">Расход {e.id} ({e.description})</span>
+                    <span className="text-red-400 font-bold">${(e.currency === 'USD' ? num(e.amount) : num(e.amount) / getRate(e.exchangeRate)).toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="text-[10px] text-slate-500 mt-2 italic">* Найдите эти записи в истории и измените валюту на UZS или исправьте сумму.</p>
+            </div>
+          )}
 
           {mode === 'workflow' ? (
             <div className="bg-slate-800 rounded-2xl border border-slate-700 p-5 overflow-y-auto custom-scrollbar">

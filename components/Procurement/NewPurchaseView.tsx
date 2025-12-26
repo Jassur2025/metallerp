@@ -106,7 +106,7 @@ export const NewPurchaseView: React.FC<NewPurchaseViewProps> = ({
           </div>
           <div className="space-y-2">
             <label className="text-xs font-medium text-slate-400">Оплата</label>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               <button
                 onClick={() => {
                   setPaymentMethod('cash');
@@ -116,7 +116,19 @@ export const NewPurchaseView: React.FC<NewPurchaseViewProps> = ({
                     : 'bg-slate-900 border-slate-600 text-slate-400'
                   }`}
               >
-                Наличные
+                💵 Наличные
+              </button>
+              <button
+                onClick={() => {
+                  setPaymentMethod('card');
+                  setPaymentCurrency('UZS');
+                }}
+                className={`px-2 py-2 rounded-lg text-xs font-bold border transition-all ${paymentMethod === 'card'
+                    ? 'bg-orange-500/20 border-orange-500 text-orange-400'
+                    : 'bg-slate-900 border-slate-600 text-slate-400'
+                  }`}
+              >
+                💳 Карта
               </button>
               <button
                 onClick={() => {
@@ -128,7 +140,7 @@ export const NewPurchaseView: React.FC<NewPurchaseViewProps> = ({
                     : 'bg-slate-900 border-slate-600 text-slate-400'
                   }`}
               >
-                Перечисление
+                🏦 Р/С (Банк)
               </button>
               <button
                 onClick={() => setPaymentMethod('debt')}
@@ -137,18 +149,18 @@ export const NewPurchaseView: React.FC<NewPurchaseViewProps> = ({
                     : 'bg-slate-900 border-slate-600 text-slate-400'
                   }`}
               >
-                В долг
-              </button>
-              <button
-                onClick={() => setPaymentMethod('mixed')}
-                className={`px-2 py-2 rounded-lg text-xs font-bold border transition-all col-span-3 ${paymentMethod === 'mixed'
-                    ? 'bg-amber-500/20 border-amber-500 text-amber-400'
-                    : 'bg-slate-900 border-slate-600 text-slate-400'
-                  }`}
-              >
-                Смешанная оплата (Частично)
+                📋 В долг
               </button>
             </div>
+            <button
+              onClick={() => setPaymentMethod('mixed')}
+              className={`w-full px-2 py-2 rounded-lg text-xs font-bold border transition-all ${paymentMethod === 'mixed'
+                  ? 'bg-amber-500/20 border-amber-500 text-amber-400'
+                  : 'bg-slate-900 border-slate-600 text-slate-400'
+                }`}
+            >
+              🔀 Смешанная оплата (Частично)
+            </button>
 
             {/* Currency Selection - Only for cash */}
             {paymentMethod === 'cash' && (
@@ -181,7 +193,13 @@ export const NewPurchaseView: React.FC<NewPurchaseViewProps> = ({
 
             {paymentMethod === 'bank' && (
               <div className="mt-2 p-2 bg-blue-500/10 border border-blue-500/20 rounded-lg">
-                <p className="text-xs text-blue-400">💰 Перечисление всегда в UZS</p>
+                <p className="text-xs text-blue-400">🏦 Оплата с расчётного счёта (UZS)</p>
+              </div>
+            )}
+
+            {paymentMethod === 'card' && (
+              <div className="mt-2 p-2 bg-orange-500/10 border border-orange-500/20 rounded-lg">
+                <p className="text-xs text-orange-400">💳 Оплата картой (UZS)</p>
               </div>
             )}
           </div>

@@ -1,5 +1,12 @@
 import type { AppSettings, Product, Purchase, PurchaseItem, PurchaseOverheads, Transaction, WorkflowOrder } from '../../types';
 
+export interface Balances {
+  cashUSD: number;
+  cashUZS: number;
+  bankUZS: number;
+  cardUZS: number;
+}
+
 export interface ProcurementProps {
   products: Product[];
   setProducts: (products: Product[]) => void;
@@ -12,11 +19,13 @@ export interface ProcurementProps {
   onSaveWorkflowOrders: (workflowOrders: WorkflowOrder[]) => Promise<boolean | void>;
   onSaveProducts?: (products: Product[]) => Promise<void>;
   onSaveTransactions?: (transactions: Transaction[]) => Promise<boolean | void>;
+  // Балансы кассы
+  balances?: Balances;
 }
 
 export type ProcurementTab = 'new' | 'history' | 'workflow';
 export type ProcurementType = 'local' | 'import';
-export type PaymentMethod = 'cash' | 'bank' | 'debt' | 'mixed';
+export type PaymentMethod = 'cash' | 'bank' | 'card' | 'debt' | 'mixed';
 export type PaymentCurrency = 'USD' | 'UZS';
 
 export interface Totals {

@@ -1,10 +1,88 @@
 
 import React, { useState } from 'react';
 import { AppSettings, ExpenseCategory, ExpensePnLCategory } from '../types';
-import { Save, Settings as SettingsIcon, AlertCircle, Database, CheckCircle, XCircle, Loader2, Send, Plus, Trash2, Receipt } from 'lucide-react';
+import { Save, Settings as SettingsIcon, AlertCircle, Database, CheckCircle, XCircle, Loader2, Send, Plus, Trash2, Receipt, RefreshCw } from 'lucide-react';
 import { getSpreadsheetId, saveSpreadsheetId, sheetsService } from '../services/sheetsService';
 import { telegramService } from '../services/telegramService';
 import { useAuth } from '../contexts/AuthContext';
+
+// Компонент кнопки очистки данных
+const ClearDataButton: React.FC<{ accessToken: string | null }> = ({ accessToken }) => {
+    const [status, setStatus] = useState<'idle' | 'confirm' | 'loading' | 'success' | 'error'>('idle');
+    const [message, setMessage] = useState('');
+
+    const handleClear = async () => {
+        if (status === 'idle') {
+            setStatus('confirm');
+            return;
+        }
+        
+        if (status === 'confirm') {
+            if (!accessToken) {
+                setMessage('Нет токена доступа');
+                setStatus('error');
+                return;
+            }
+            
+            setStatus('loading');
+            try {
+                const result = await sheetsService.clearAllData(accessToken);
+                setMessage(result);
+                setStatus('success');
+                // Перезагрузить страницу через 2 секунды
+                setTimeout(() => window.location.reload(), 2000);
+            } catch (e) {
+                setMessage(e instanceof Error ? e.message : 'Ошибка');
+                setStatus('error');
+            }
+        }
+    };
+
+    const handleCancel = () => {
+        setStatus('idle');
+        setMessage('');
+    };
+
+    return (
+        <div className="flex items-center gap-3">
+            {status === 'confirm' && (
+                <button
+                    onClick={handleCancel}
+                    className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-sm transition-colors"
+                >
+                    Отмена
+                </button>
+            )}
+            <button
+                onClick={handleClear}
+                disabled={status === 'loading' || status === 'success'}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
+                    status === 'confirm' 
+                        ? 'bg-red-600 hover:bg-red-500 text-white animate-pulse'
+                        : status === 'loading'
+                        ? 'bg-red-600/50 text-white cursor-wait'
+                        : status === 'success'
+                        ? 'bg-emerald-600 text-white'
+                        : status === 'error'
+                        ? 'bg-red-600 text-white'
+                        : 'bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30'
+                }`}
+            >
+                {status === 'loading' && <Loader2 size={16} className="animate-spin" />}
+                {status === 'success' && <CheckCircle size={16} />}
+                {status === 'error' && <XCircle size={16} />}
+                {status === 'idle' && <Trash2 size={16} />}
+                {status === 'confirm' && <AlertCircle size={16} />}
+                
+                {status === 'idle' && 'Очистить все данные'}
+                {status === 'confirm' && 'Подтвердить удаление?'}
+                {status === 'loading' && 'Удаление...'}
+                {status === 'success' && 'Удалено! Перезагрузка...'}
+                {status === 'error' && message}
+            </button>
+        </div>
+    );
+};
 
 // Дефолтные категории расходов
 const DEFAULT_EXPENSE_CATEGORIES: ExpenseCategory[] = [
@@ -277,6 +355,18 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
                                     : 'Вставьте ID вашей Google Таблицы. Приложение будет автоматически сохранять туда товары и заказы.'}
                             </p>
                         </div>
+                    </div>
+
+                    {/* Danger Zone - Clear Data */}
+                    <div className="mt-6 p-4 bg-red-500/10 border border-red-500/30 rounded-xl">
+                        <h4 className="text-lg font-bold text-red-400 mb-2 flex items-center gap-2">
+                            <AlertCircle size={20} />
+                            Опасная зона
+                        </h4>
+                        <p className="text-sm text-slate-400 mb-4">
+                            Очистка всех данных в Google Sheets. Используйте для тестирования. <strong className="text-red-400">Это действие нельзя отменить!</strong>
+                        </p>
+                        <ClearDataButton accessToken={accessToken} />
                     </div>
 
                     <div className="border-t border-slate-700 my-6"></div>

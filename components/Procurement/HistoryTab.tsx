@@ -76,12 +76,15 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({
                       <td className="px-6 py-4 text-center">
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${purchase.paymentMethod === 'cash' ? 'bg-emerald-500/20 text-emerald-400' :
                           purchase.paymentMethod === 'bank' ? 'bg-blue-500/20 text-blue-400' :
-                            purchase.paymentMethod === 'mixed' ? 'bg-amber-500/20 text-amber-400' :
-                              'bg-red-500/20 text-red-400'
+                            purchase.paymentMethod === 'card' ? 'bg-orange-500/20 text-orange-400' :
+                              purchase.paymentMethod === 'mixed' ? 'bg-amber-500/20 text-amber-400' :
+                                'bg-red-500/20 text-red-400'
                           }`}>
-                          {purchase.paymentMethod === 'cash' ? 'Наличные' :
-                            purchase.paymentMethod === 'bank' ? 'Банк' :
-                              purchase.paymentMethod === 'mixed' ? 'МИКС' : 'Долг'}
+                          {purchase.paymentMethod === 'cash' 
+                            ? (purchase.paymentCurrency === 'USD' ? '💵 Нал (USD)' : '💰 Нал (UZS)') 
+                            : purchase.paymentMethod === 'bank' ? '🏦 Р/С' 
+                              : purchase.paymentMethod === 'card' ? '💳 Карта'
+                                : purchase.paymentMethod === 'mixed' ? '🔀 Микс' : '📋 Долг'}
                         </span>
                       </td>
                       <td className="px-6 py-4 text-center">

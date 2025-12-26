@@ -1,10 +1,10 @@
 import React, { useState, useMemo } from 'react';
 import { Product, Purchase, PurchaseItem, PurchaseOverheads, Transaction, WorkflowOrder, OrderItem, ProductType, Unit } from '../types';
-import { Plus, DollarSign, Wallet, CreditCard, Building2, Banknote } from 'lucide-react';
+import { Plus, DollarSign, Wallet, CreditCard, Building2, Banknote, AlertTriangle } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { PaymentSplitModal, PaymentDistribution } from './Sales/PaymentSplitModal';
 
-import type { ProcurementProps, ProcurementTab, ProcurementType, PaymentMethod, PaymentCurrency, Totals } from './Procurement/types';
+import type { ProcurementProps, ProcurementTab, ProcurementType, PaymentMethod, PaymentCurrency, Totals, Balances } from './Procurement/types';
 import { TopBar } from './Procurement/TopBar';
 import { NewPurchaseView } from './Procurement/NewPurchaseView';
 import { WorkflowTab } from './Procurement/WorkflowTab';
@@ -13,7 +13,7 @@ import { HistoryTab } from './Procurement/HistoryTab';
 const isDev = import.meta.env.DEV;
 const logDev = (...args: unknown[]) => { if (isDev) console.log(...args); };
 
-export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts, settings, purchases, onSavePurchases, transactions, setTransactions, workflowOrders, onSaveWorkflowOrders, onSaveProducts, onSaveTransactions }) => {
+export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts, settings, purchases, onSavePurchases, transactions, setTransactions, workflowOrders, onSaveWorkflowOrders, onSaveProducts, onSaveTransactions, balances }) => {
     const toast = useToast();
     const [activeTab, setActiveTab] = useState<ProcurementTab>(() => {
         const saved = localStorage.getItem('procurement_active_tab');
@@ -272,10 +272,58 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
         }
     }, [totals.totalInvoiceValue, paymentMethod]);
 
+    // Проверка достаточности средств на кассе
+    const checkBalance = (method: PaymentMethod, currency: PaymentCurrency, amountUSD: number): { ok: boolean; message: string } => {
+        if (!balances) return { ok: true, message: '' }; // Если балансы не переданы, пропускаем проверку
+        
+        const rate = settings.defaultExchangeRate || 12900;
+        
+        if (method === 'cash') {
+            if (currency === 'USD') {
+                if (balances.cashUSD < amountUSD) {
+                    return { ok: false, message: `Недостаточно USD в кассе. Доступно: $${balances.cashUSD.toFixed(2)}, нужно: $${amountUSD.toFixed(2)}` };
+                }
+            } else {
+                const amountUZS = amountUSD * rate;
+                if (balances.cashUZS < amountUZS) {
+                    return { ok: false, message: `Недостаточно сум в кассе. Доступно: ${balances.cashUZS.toLocaleString()} сум, нужно: ${amountUZS.toLocaleString()} сум` };
+                }
+            }
+        } else if (method === 'bank') {
+            const amountUZS = amountUSD * rate;
+            if (balances.bankUZS < amountUZS) {
+                return { ok: false, message: `Недостаточно средств на Р/С. Доступно: ${balances.bankUZS.toLocaleString()} сум, нужно: ${amountUZS.toLocaleString()} сум` };
+            }
+        } else if (method === 'card') {
+            const amountUZS = amountUSD * rate;
+            if (balances.cardUZS < amountUZS) {
+                return { ok: false, message: `Недостаточно средств на карте. Доступно: ${balances.cardUZS.toLocaleString()} сум, нужно: ${amountUZS.toLocaleString()} сум` };
+            }
+        }
+        
+        return { ok: true, message: '' };
+    };
+
     const finalizeProcurement = async (distribution?: PaymentDistribution) => {
         if (!supplierName || cart.length === 0) return;
 
         const totalToPayUSD = totals.totalInvoiceValue;
+        
+        // Проверка баланса перед оплатой (если не в долг и не смешанная)
+        if (paymentMethod !== 'debt' && paymentMethod !== 'mixed' && !distribution) {
+            const balanceCheck = checkBalance(paymentMethod, paymentCurrency, totalToPayUSD);
+            if (!balanceCheck.ok) {
+                toast.error(balanceCheck.message);
+                // Предложить записать в долг
+                const confirmDebt = window.confirm(`${balanceCheck.message}\n\nЗаписать закупку в долг поставщику?`);
+                if (confirmDebt) {
+                    setPaymentMethod('debt');
+                    toast.info('Закупка будет записана в долг. Нажмите "Провести" ещё раз.');
+                }
+                return;
+            }
+        }
+
         const paidUSD = distribution ? totalToPayUSD - distribution.remainingUSD : (paymentMethod === 'debt' ? 0 : totalToPayUSD);
         const status = distribution ? (distribution.isPaid ? 'paid' : (paidUSD > 0 ? 'partial' : 'unpaid')) : (paymentMethod === 'debt' ? 'unpaid' : 'paid');
 
@@ -289,6 +337,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
             totalInvoiceAmount: totals.totalInvoiceValue,
             totalLandedAmount: totals.totalLandedValue,
             paymentMethod: distribution ? 'mixed' : paymentMethod,
+            paymentCurrency: paymentMethod === 'cash' ? paymentCurrency : undefined,
             paymentStatus: status as 'paid' | 'unpaid' | 'partial',
             amountPaid: paidUSD
         };
@@ -318,7 +367,10 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                 newTransactions.push({ ...baseTrx, id: `TRX-BANK-${Date.now()}`, amount: distribution.bankUZS, currency: 'UZS', exchangeRate: settings.defaultExchangeRate, method: 'bank', description: `Оплата поставщику (UZS Bank): ${supplierName} (Закупка #${purchase.id})` });
             }
         } else if (paymentMethod !== 'debt') {
-            const transactionAmount = paymentCurrency === 'UZS'
+            // Для карты и банка - всегда UZS
+            const isCardOrBank = paymentMethod === 'card' || paymentMethod === 'bank';
+            const currency = isCardOrBank ? 'UZS' : paymentCurrency;
+            const transactionAmount = currency === 'UZS'
                 ? totals.totalInvoiceValue * settings.defaultExchangeRate
                 : totals.totalInvoiceValue;
 
@@ -326,10 +378,10 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                 ...baseTrx,
                 id: `TRX-${Date.now()}`,
                 amount: transactionAmount,
-                currency: paymentCurrency,
-                exchangeRate: paymentCurrency === 'UZS' ? settings.defaultExchangeRate : undefined,
-                method: paymentMethod as 'cash' | 'bank',
-                description: `Оплата поставщику (${procurementType === 'local' ? 'Местный' : 'Импорт'}): ${supplierName} (Закупка #${purchase.id})`
+                currency: currency,
+                exchangeRate: currency === 'UZS' ? settings.defaultExchangeRate : undefined,
+                method: paymentMethod as 'cash' | 'bank' | 'card',
+                description: `Оплата поставщику (${paymentMethod === 'cash' ? (paymentCurrency === 'USD' ? 'Нал USD' : 'Нал UZS') : paymentMethod === 'card' ? 'Карта' : 'Р/С'}): ${supplierName}`
             });
         }
 

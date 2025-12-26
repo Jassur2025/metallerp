@@ -10,9 +10,10 @@ const errorDev = (...args: unknown[]) => { if (isDev) console.error(...args); };
 interface PnLProps {
     orders: Order[];
     expenses: Expense[];
+    defaultExchangeRate?: number;
 }
 
-export const PnL: React.FC<PnLProps> = ({ orders, expenses }) => {
+export const PnL: React.FC<PnLProps> = ({ orders, expenses, defaultExchangeRate = 12600 }) => {
     const toast = useToast();
     const [timeRange, setTimeRange] = useState<'all' | 'currentMonth' | 'lastMonth'>('currentMonth');
     const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
@@ -71,10 +72,10 @@ export const PnL: React.FC<PnLProps> = ({ orders, expenses }) => {
         // If exchangeRate is missing (legacy data), amount is already in USD.
 
         // Safety check for exchange rate to avoid division by zero
-        const rate = safeNumber(e.exchangeRate, 1);
+        const rate = safeNumber(e.exchangeRate) > 0 ? safeNumber(e.exchangeRate) : safeNumber(defaultExchangeRate, 12600);
         const amount = safeNumber(e.amount);
 
-        const amountUSD = (e.exchangeRate && e.currency === 'UZS')
+        const amountUSD = (e.currency === 'UZS')
             ? amount / rate
             : amount;
 
@@ -158,12 +159,15 @@ export const PnL: React.FC<PnLProps> = ({ orders, expenses }) => {
                 </tr>
             </thead>
             <tbody>
-                ${filteredData.expenses.map(e => `
+                ${filteredData.expenses.map(e => {
+                const rate = safeNumber(e.exchangeRate) > 0 ? safeNumber(e.exchangeRate) : safeNumber(defaultExchangeRate, 12600);
+                const amtUSD = e.currency === 'UZS' ? safeNumber(e.amount) / rate : safeNumber(e.amount);
+                return `
                     <tr>
                         <td>${e.category}</td>
-                        <td>${safeNumber(e.amount).toFixed(2)}</td>
+                        <td>${amtUSD.toFixed(2)}</td>
                     </tr>
-                `).join('')}
+                `}).join('')}
             </tbody>
           </table>
         </body>
@@ -418,8 +422,8 @@ export const PnL: React.FC<PnLProps> = ({ orders, expenses }) => {
                                                 <span>{e.category}</span>
                                                 <span>
                                                     {formatCurrency(
-                                                        (e.exchangeRate && e.currency === 'UZS')
-                                                            ? safeNumber(e.amount) / safeNumber(e.exchangeRate, 1)
+                                                        e.currency === 'UZS'
+                                                            ? safeNumber(e.amount) / (safeNumber(e.exchangeRate) > 0 ? safeNumber(e.exchangeRate) : safeNumber(defaultExchangeRate, 12600))
                                                             : safeNumber(e.amount)
                                                     )}
                                                     {e.currency === 'UZS' && (
