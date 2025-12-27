@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Product, ProductType, AppSettings } from '../types';
 import { Search, FileText, Filter, Package, Save, Percent, Edit, CheckSquare, Square, ChevronDown, ChevronUp } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
+import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
 
 interface PriceListProps {
     products: Product[];
@@ -10,6 +11,8 @@ interface PriceListProps {
 }
 
 export const PriceList: React.FC<PriceListProps> = ({ products, onSaveProducts, settings }) => {
+    const { theme } = useTheme();
+    const t = getThemeClasses(theme);
     const toast = useToast();
     const [searchTerm, setSearchTerm] = useState('');
     const [typeFilter, setTypeFilter] = useState<string>('all');
@@ -119,21 +122,21 @@ export const PriceList: React.FC<PriceListProps> = ({ products, onSaveProducts, 
     };
 
     return (
-        <div className="h-full flex flex-col p-3 sm:p-6 space-y-4 sm:space-y-6 animate-fade-in text-white">
+        <div className="h-full flex flex-col p-3 sm:p-6 space-y-4 sm:space-y-6 animate-fade-in">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
                 <div>
-                    <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-white flex items-center gap-2">
+                    <h2 className={`text-2xl sm:text-3xl font-bold tracking-tight ${t.text} flex items-center gap-2`}>
                         <FileText className="text-primary-500" size={32} />
                         Система Прайс
                     </h2>
-                    <p className="text-slate-400 mt-1">Управление ценами на основе себестоимости</p>
+                    <p className={`${t.textMuted} mt-1`}>Управление ценами на основе себестоимости</p>
                 </div>
                 <button
                     onClick={handleSave}
                     disabled={isSaving || Object.keys(editingPrices).length === 0}
                     className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shadow-lg ${Object.keys(editingPrices).length > 0
                         ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/20'
-                        : 'bg-slate-700 text-slate-400 cursor-not-allowed'
+                        : `${theme === 'dark' ? 'bg-slate-700 text-slate-400' : 'bg-slate-200 text-slate-400'} cursor-not-allowed`
                         }`}
                 >
                     <Save size={20} className={isSaving ? 'animate-pulse' : ''} />
@@ -142,13 +145,13 @@ export const PriceList: React.FC<PriceListProps> = ({ products, onSaveProducts, 
             </div>
 
             {/* Filters and Search */}
-            <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 flex flex-col md:flex-row gap-4">
+            <div className={`${t.bgCard} p-4 rounded-xl border ${t.border} flex flex-col md:flex-row gap-4`}>
                 <div className="flex-1 relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+                    <Search className={`absolute left-3 top-1/2 -translate-y-1/2 ${t.textMuted}`} size={20} />
                     <input
                         type="text"
                         placeholder="Поиск по номенклатуре..."
-                        className="w-full bg-slate-700 border border-slate-600 rounded-lg pl-10 pr-4 py-2 text-white placeholder-slate-400 focus:border-primary-500 outline-none"
+                        className={`w-full ${t.input} border ${t.border} rounded-lg pl-10 pr-4 py-2 ${t.text} placeholder-slate-400 focus:border-primary-500 outline-none`}
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                     />
@@ -156,9 +159,9 @@ export const PriceList: React.FC<PriceListProps> = ({ products, onSaveProducts, 
 
                 <div className="flex gap-4">
                     <div className="flex items-center gap-2">
-                        <Filter size={20} className="text-slate-400" />
+                        <Filter size={20} className={t.textMuted} />
                         <select
-                            className="bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 text-white outline-none focus:border-primary-500"
+                            className={`${t.input} border ${t.border} rounded-lg px-4 py-2 ${t.text} outline-none focus:border-primary-500`}
                             value={typeFilter}
                             onChange={(e) => setTypeFilter(e.target.value)}
                         >
@@ -172,32 +175,32 @@ export const PriceList: React.FC<PriceListProps> = ({ products, onSaveProducts, 
             </div>
 
             {/* Bulk Update Panel */}
-            <div className="bg-slate-800/50 rounded-xl border border-slate-700 overflow-hidden">
+            <div className={`${theme === 'dark' ? 'bg-slate-800/50' : 'bg-slate-100'} rounded-xl border ${t.border} overflow-hidden`}>
                 <button
                     onClick={() => setShowBulkPanel(!showBulkPanel)}
-                    className="w-full flex items-center justify-between p-4 hover:bg-slate-700/30 transition-colors"
+                    className={`w-full flex items-center justify-between p-4 ${theme === 'dark' ? 'hover:bg-slate-700/30' : 'hover:bg-slate-200'} transition-colors`}
                 >
-                    <div className="flex items-center gap-2 font-semibold">
+                    <div className={`flex items-center gap-2 font-semibold ${t.text}`}>
                         <Percent size={20} className="text-primary-400" />
                         <span>Массовое изменение ({selectedIds.size})</span>
                     </div>
-                    {showBulkPanel ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                    {showBulkPanel ? <ChevronUp size={20} className={t.text} /> : <ChevronDown size={20} className={t.text} />}
                 </button>
 
                 {showBulkPanel && (
-                    <div className="p-4 border-t border-slate-700 bg-slate-900/20 animate-slide-down">
+                    <div className={`p-4 border-t ${t.border} ${theme === 'dark' ? 'bg-slate-900/20' : 'bg-slate-50'} animate-slide-down`}>
                         <div className="flex flex-wrap items-center gap-4">
-                            <div className="flex bg-slate-700 rounded-lg p-1">
+                            <div className={`flex ${theme === 'dark' ? 'bg-slate-700' : 'bg-slate-200'} rounded-lg p-1`}>
                                 <button
                                     onClick={() => setBulkType('percent')}
-                                    className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${bulkType === 'percent' ? 'bg-primary-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'
+                                    className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${bulkType === 'percent' ? 'bg-primary-600 text-white shadow-sm' : `${t.textMuted} hover:${t.text}`
                                         }`}
                                 >
                                     Наценка на себест. (%)
                                 </button>
                                 <button
                                     onClick={() => setBulkType('manual')}
-                                    className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${bulkType === 'manual' ? 'bg-primary-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'
+                                    className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${bulkType === 'manual' ? 'bg-primary-600 text-white shadow-sm' : `${t.textMuted} hover:${t.text}`
                                         }`}
                                 >
                                     Фикс. цена ($)
@@ -208,7 +211,7 @@ export const PriceList: React.FC<PriceListProps> = ({ products, onSaveProducts, 
                                 <input
                                     type="number"
                                     placeholder={bulkType === 'percent' ? "+/- %" : "0.00"}
-                                    className="bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 w-32 outline-none focus:border-primary-500"
+                                    className={`${t.input} border ${t.border} rounded-lg px-4 py-2 w-32 outline-none focus:border-primary-500 ${t.text}`}
                                     value={bulkValue}
                                     onChange={(e) => setBulkValue(e.target.value)}
                                 />
@@ -222,7 +225,7 @@ export const PriceList: React.FC<PriceListProps> = ({ products, onSaveProducts, 
                                 Применить к выбранным
                             </button>
 
-                            <p className="text-xs text-slate-500 md:ml-auto">
+                            <p className={`text-xs ${t.textMuted} md:ml-auto`}>
                                 * При выборе %, новая цена = Себестоимость + %.
                             </p>
                         </div>
@@ -231,76 +234,76 @@ export const PriceList: React.FC<PriceListProps> = ({ products, onSaveProducts, 
             </div>
 
             {/* Table */}
-            <div className="flex-1 overflow-hidden bg-slate-800 rounded-xl border border-slate-700 shadow-xl relative">
+            <div className={`flex-1 overflow-hidden ${t.bgCard} rounded-xl border ${t.border} shadow-xl relative`}>
                 <div className="absolute inset-0 overflow-auto custom-scrollbar">
                     <table className="w-full text-left border-collapse">
-                        <thead className="bg-slate-900/80 sticky top-0 z-10 font-bold text-slate-300 backdrop-blur-md">
+                        <thead className={`${theme === 'dark' ? 'bg-slate-900/80' : 'bg-slate-100/80'} sticky top-0 z-10 font-bold ${t.textMuted} backdrop-blur-md`}>
                             <tr>
-                                <th className="p-4 border-b border-slate-700 w-12 text-center">
+                                <th className={`p-4 border-b ${t.border} w-12 text-center`}>
                                     <input
                                         type="checkbox"
-                                        className="w-5 h-5 rounded border-slate-600 bg-slate-700 text-primary-500 focus:ring-primary-500/20"
+                                        className={`w-5 h-5 rounded ${t.border} ${t.input} text-primary-500 focus:ring-primary-500/20`}
                                         checked={selectedIds.size === filteredProducts.length && filteredProducts.length > 0}
                                         onChange={handleSelectAll}
                                     />
                                 </th>
-                                <th className="p-4 border-b border-slate-700">Наименование</th>
-                                <th className="p-4 border-b border-slate-700">Размеры / Сталь</th>
-                                <th className="p-4 border-b border-slate-700 text-right">Себест. (USD)</th>
-                                <th className="p-4 border-b border-slate-700 text-right">Остаток</th>
-                                <th className="p-4 border-b border-slate-700 text-right w-40">Цена (USD)</th>
-                                <th className="p-4 border-b border-slate-700 text-right w-40">С НДС ({settings.vatRate}%)</th>
+                                <th className={`p-4 border-b ${t.border}`}>Наименование</th>
+                                <th className={`p-4 border-b ${t.border}`}>Размеры / Сталь</th>
+                                <th className={`p-4 border-b ${t.border} text-right`}>Себест. (USD)</th>
+                                <th className={`p-4 border-b ${t.border} text-right`}>Остаток</th>
+                                <th className={`p-4 border-b ${t.border} text-right w-40`}>Цена (USD)</th>
+                                <th className={`p-4 border-b ${t.border} text-right w-40`}>С НДС ({settings.vatRate}%)</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-700/50">
+                        <tbody className={`divide-y ${t.divide}`}>
                             {filteredProducts.length > 0 ? (
                                 filteredProducts.map((product) => (
                                     <tr
                                         key={product.id}
-                                        className={`hover:bg-slate-700/30 transition-colors ${selectedIds.has(product.id) ? 'bg-primary-500/5' : ''}`}
+                                        className={`${theme === 'dark' ? 'hover:bg-slate-700/30' : 'hover:bg-slate-50'} transition-colors ${selectedIds.has(product.id) ? 'bg-primary-500/5' : ''}`}
                                     >
                                         <td className="p-4 text-center">
                                             <input
                                                 type="checkbox"
-                                                className="w-5 h-5 rounded border-slate-600 bg-slate-700 text-primary-500 focus:ring-primary-500/20"
+                                                className={`w-5 h-5 rounded ${t.border} ${t.input} text-primary-500 focus:ring-primary-500/20`}
                                                 checked={selectedIds.has(product.id)}
                                                 onChange={() => toggleSelect(product.id)}
                                             />
                                         </td>
-                                        <td className="p-4 font-medium text-white">
+                                        <td className={`p-4 font-medium ${t.text}`}>
                                             <div className="flex items-center gap-3">
-                                                <div className="hidden sm:block p-2 bg-slate-800 rounded-lg text-primary-400">
+                                                <div className={`hidden sm:block p-2 ${theme === 'dark' ? 'bg-slate-800' : 'bg-slate-200'} rounded-lg text-primary-400`}>
                                                     <Package size={20} />
                                                 </div>
                                                 <div>
-                                                    <div className="text-white text-sm">{product.name}</div>
-                                                    <div className="text-[10px] text-slate-500">{product.type}</div>
+                                                    <div className={`${t.text} text-sm`}>{product.name}</div>
+                                                    <div className={`text-[10px] ${t.textMuted}`}>{product.type}</div>
                                                 </div>
                                             </div>
                                         </td>
                                         <td className="p-4">
-                                            <div className="text-slate-300 font-mono text-[10px]">{product.dimensions}</div>
-                                            <div className="text-slate-500 text-[10px]">{product.steelGrade}</div>
+                                            <div className={`${theme === 'dark' ? 'text-slate-300' : 'text-slate-600'} font-mono text-[10px]`}>{product.dimensions}</div>
+                                            <div className={`${t.textMuted} text-[10px]`}>{product.steelGrade}</div>
                                         </td>
-                                        <td className="p-4 text-right font-mono text-slate-400 text-sm">
+                                        <td className={`p-4 text-right font-mono ${t.textMuted} text-sm`}>
                                             ${(product.costPrice || 0).toFixed(2)}
                                         </td>
                                         <td className="p-4 text-right">
-                                            <span className={`font-mono text-sm ${product.quantity > product.minStockLevel ? 'text-slate-300' : 'text-red-400'}`}>
+                                            <span className={`font-mono text-sm ${product.quantity > product.minStockLevel ? (theme === 'dark' ? 'text-slate-300' : 'text-slate-700') : 'text-red-400'}`}>
                                                 {product.quantity.toLocaleString()}
                                             </span>
-                                            <span className="text-slate-500 text-[10px] ml-1">{product.unit}</span>
+                                            <span className={`${t.textMuted} text-[10px] ml-1`}>{product.unit}</span>
                                         </td>
                                         <td className="p-4 text-right">
                                             <div className="flex items-center justify-end gap-2 group">
                                                 <div className="relative">
-                                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">$</span>
+                                                    <span className={`absolute left-3 top-1/2 -translate-y-1/2 ${t.textMuted} text-sm`}>$</span>
                                                     <input
                                                         type="number"
                                                         step="0.01"
-                                                        className={`bg-slate-900/50 border rounded-lg pl-6 pr-3 py-2 w-28 text-right font-mono transition-all outline-none ${editingPrices[product.id] !== undefined
+                                                        className={`${theme === 'dark' ? 'bg-slate-900/50' : 'bg-white'} border rounded-lg pl-6 pr-3 py-2 w-28 text-right font-mono transition-all outline-none ${editingPrices[product.id] !== undefined
                                                             ? 'border-emerald-500/50 text-emerald-400 ring-2 ring-emerald-500/10'
-                                                            : 'border-slate-700 group-hover:border-slate-500 text-white'
+                                                            : `${t.border} group-hover:border-slate-500 ${t.text}`
                                                             }`}
                                                         value={editingPrices[product.id] ?? product.pricePerUnit.toFixed(2)}
                                                         onChange={(e) => handlePriceChange(product.id, e.target.value)}
@@ -319,7 +322,7 @@ export const PriceList: React.FC<PriceListProps> = ({ products, onSaveProducts, 
                                 ))
                             ) : (
                                 <tr>
-                                    <td colSpan={7} className="p-10 text-center text-slate-500">
+                                    <td colSpan={7} className={`p-10 text-center ${t.textMuted}`}>
                                         Товары не найдены
                                     </td>
                                 </tr>

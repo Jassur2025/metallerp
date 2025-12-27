@@ -3,6 +3,8 @@ import React from 'react';
 import { Product, Order, Expense, FixedAsset, AppSettings, Transaction, Client, Purchase } from '../types';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { ShieldCheck, Wallet, Building2, Scale, Landmark } from 'lucide-react';
+import { useTheme } from '../contexts/ThemeContext';
+import { getThemeClasses } from '../contexts/ThemeContext';
 
 interface BalanceProps {
     products: Product[];
@@ -16,6 +18,9 @@ interface BalanceProps {
 }
 
 export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fixedAssets, settings, transactions, clients, purchases }) => {
+    const { theme } = useTheme();
+    const t = getThemeClasses(theme);
+
     // Safety checks - ensure arrays are defined
     const safeProducts = products || [];
     const safeOrders = orders || [];
@@ -278,78 +283,78 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fi
             {/* Top Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Assets Card */}
-                <div className="bg-slate-800/50 rounded-2xl p-6 border-t-4 border-t-emerald-500 border-x border-b border-slate-700 shadow-lg">
+                <div className={`${t.bgCard} rounded-2xl p-6 border-t-4 border-t-emerald-500 border-x border-b ${t.border} shadow-lg`}>
                     <div className="flex justify-between items-start mb-4">
                         <div>
-                            <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                            <h3 className={`text-xl font-bold ${t.text} flex items-center gap-2`}>
                                 <Wallet className="text-emerald-500" /> АКТИВ
                             </h3>
-                            <p className="text-slate-400 text-sm">Куда вложены средства</p>
+                            <p className={`${t.textMuted} text-sm`}>Куда вложены средства</p>
                         </div>
-                        <span className="bg-emerald-500/10 text-emerald-400 px-3 py-1 rounded-full text-sm font-mono">
+                        <span className="bg-emerald-500/10 text-emerald-500 px-3 py-1 rounded-full text-sm font-mono">
                             {formatCurrency(totalAssets)}
                         </span>
                     </div>
 
                     <div className="space-y-3">
-                        <div className="flex justify-between items-center p-2 bg-slate-900/50 rounded-lg border border-slate-700/50">
+                        <div className={`flex justify-between items-center p-2 ${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-50'} rounded-lg border ${theme === 'dark' ? 'border-slate-700/50' : 'border-slate-200'}`}>
                             <div className="flex items-center gap-3">
                                 <div className="w-2 h-8 bg-sky-500 rounded-full"></div>
-                                <span className="text-slate-300">Основные средства</span>
+                                <span className={t.textMuted}>Основные средства</span>
                             </div>
-                            <span className="font-mono text-sky-400">{formatCurrency(fixedAssetsValue)}</span>
+                            <span className="font-mono text-sky-500">{formatCurrency(fixedAssetsValue)}</span>
                         </div>
 
-                        <div className="flex justify-between items-center p-2 bg-slate-900/50 rounded-lg border border-slate-700/50">
+                        <div className={`flex justify-between items-center p-2 ${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-50'} rounded-lg border ${theme === 'dark' ? 'border-slate-700/50' : 'border-slate-200'}`}>
                             <div className="flex items-center gap-3">
                                 <div className="w-2 h-8 bg-blue-500 rounded-full"></div>
-                                <span className="text-slate-300">Товарные запасы</span>
+                                <span className={t.textMuted}>Товарные запасы</span>
                             </div>
-                            <span className="font-mono text-blue-400">{formatCurrency(inventoryValue)}</span>
+                            <span className="font-mono text-blue-500">{formatCurrency(inventoryValue)}</span>
                         </div>
 
-                        <div className="flex justify-between items-center p-2 bg-slate-900/50 rounded-lg border border-slate-700/50">
+                        <div className={`flex justify-between items-center p-2 ${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-50'} rounded-lg border ${theme === 'dark' ? 'border-slate-700/50' : 'border-slate-200'}`}>
                             <div className="flex items-center gap-3">
                                 <div className="w-2 h-8 bg-emerald-500 rounded-full"></div>
-                                <span className="text-slate-300">Касса (Наличные)</span>
+                                <span className={t.textMuted}>Касса (Наличные)</span>
                             </div>
-                            <span className="font-mono text-emerald-400">{formatCurrency(totalCashUSD)}</span>
+                            <span className="font-mono text-emerald-500">{formatCurrency(totalCashUSD)}</span>
                         </div>
 
-                        <div className="flex justify-between items-center p-2 bg-slate-900/50 rounded-lg border border-slate-700/50">
+                        <div className={`flex justify-between items-center p-2 ${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-50'} rounded-lg border ${theme === 'dark' ? 'border-slate-700/50' : 'border-slate-200'}`}>
                             <div className="flex items-center gap-3">
                                 <div className="w-2 h-8 bg-purple-500 rounded-full"></div>
-                                <span className="text-slate-300">Расчетный счет</span>
+                                <span className={t.textMuted}>Расчетный счет</span>
                             </div>
-                            <span className="font-mono text-purple-400">{formatCurrency(netBankUSD)}</span>
+                            <span className="font-mono text-purple-500">{formatCurrency(netBankUSD)}</span>
                         </div>
 
-                        <div className="flex justify-between items-center p-2 bg-slate-900/50 rounded-lg border border-slate-700/50">
+                        <div className={`flex justify-between items-center p-2 ${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-50'} rounded-lg border ${theme === 'dark' ? 'border-slate-700/50' : 'border-slate-200'}`}>
                             <div className="flex items-center gap-3">
                                 <div className="w-2 h-8 bg-indigo-400 rounded-full"></div>
-                                <span className="text-slate-300">Терминал / Карта</span>
+                                <span className={t.textMuted}>Терминал / Карта</span>
                             </div>
-                            <span className="font-mono text-indigo-400">{formatCurrency(netCardUSD)}</span>
+                            <span className="font-mono text-indigo-500">{formatCurrency(netCardUSD)}</span>
                         </div>
 
-                        <div className="flex justify-between items-center p-2 bg-slate-900/50 rounded-lg border border-slate-700/50">
+                        <div className={`flex justify-between items-center p-2 ${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-50'} rounded-lg border ${theme === 'dark' ? 'border-slate-700/50' : 'border-slate-200'}`}>
                             <div className="flex items-center gap-3">
                                 <div className="w-2 h-8 bg-amber-500 rounded-full"></div>
-                                <span className="text-slate-300">Дебиторская задолженность</span>
+                                <span className={t.textMuted}>Дебиторская задолженность</span>
                             </div>
-                            <span className="font-mono text-amber-400">{formatCurrency(accountsReceivable)}</span>
+                            <span className="font-mono text-amber-500">{formatCurrency(accountsReceivable)}</span>
                         </div>
                     </div>
                 </div>
 
                 {/* Passives Card */}
-                <div className="bg-slate-800/50 rounded-2xl p-6 border-t-4 border-t-indigo-500 border-x border-b border-slate-700 shadow-lg">
+                <div className={`${t.bgCard} rounded-2xl p-6 border-t-4 border-t-indigo-500 border-x border-b ${t.border} shadow-lg`}>
                     <div className="flex justify-between items-start mb-4">
                         <div>
-                            <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                            <h3 className={`text-xl font-bold ${t.text} flex items-center gap-2`}>
                                 <Building2 className="text-indigo-500" /> ПАССИВ
                             </h3>
-                            <p className="text-slate-400 text-sm">Источники средств</p>
+                            <p className={`${t.textMuted} text-sm`}>Источники средств</p>
                         </div>
                         <span className="bg-indigo-500/10 text-indigo-400 px-3 py-1 rounded-full text-sm font-mono">
                             {formatCurrency(totalPassives)}
@@ -357,34 +362,34 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fi
                     </div>
 
                     <div className="space-y-4">
-                        <div className="flex justify-between items-center p-3 bg-slate-900/50 rounded-xl border border-slate-700/50">
+                        <div className={`flex justify-between items-center p-3 ${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-50'} rounded-xl border ${theme === 'dark' ? 'border-slate-700/50' : 'border-slate-200'}`}>
                             <div className="flex items-center gap-3">
                                 <div className="w-2 h-10 bg-indigo-500 rounded-full"></div>
                                 <div>
-                                    <p className="text-white font-medium">Собственный капитал</p>
-                                    <p className="text-xs text-slate-500">Инвестиции в товар</p>
+                                    <p className={`${t.text} font-medium`}>Собственный капитал</p>
+                                    <p className={`text-xs ${t.textMuted}`}>Инвестиции в товар</p>
                                 </div>
                             </div>
                             <p className="font-mono text-lg text-indigo-400">{formatCurrency(equity)}</p>
                         </div>
 
-                        <div className="flex justify-between items-center p-3 bg-slate-900/50 rounded-xl border border-slate-700/50">
+                        <div className={`flex justify-between items-center p-3 ${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-50'} rounded-xl border ${theme === 'dark' ? 'border-slate-700/50' : 'border-slate-200'}`}>
                             <div className="flex items-center gap-3">
                                 <div className="w-2 h-10 bg-sky-500 rounded-full"></div>
                                 <div>
-                                    <p className="text-white font-medium">Фонд основных средств</p>
-                                    <p className="text-xs text-slate-500">Инвестиции в ОС</p>
+                                    <p className={`${t.text} font-medium`}>Фонд основных средств</p>
+                                    <p className={`text-xs ${t.textMuted}`}>Инвестиции в ОС</p>
                                 </div>
                             </div>
                             <p className="font-mono text-lg text-sky-400">{formatCurrency(fixedAssetsFund)}</p>
                         </div>
 
-                        <div className="flex justify-between items-center p-3 bg-slate-900/50 rounded-xl border border-slate-700/50">
+                        <div className={`flex justify-between items-center p-3 ${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-50'} rounded-xl border ${theme === 'dark' ? 'border-slate-700/50' : 'border-slate-200'}`}>
                             <div className="flex items-center gap-3">
                                 <div className="w-2 h-10 bg-amber-500 rounded-full"></div>
                                 <div>
-                                    <p className="text-white font-medium">Нераспределенная прибыль</p>
-                                    <p className="text-xs text-slate-500">Retained Earnings</p>
+                                    <p className={`${t.text} font-medium`}>Нераспределенная прибыль</p>
+                                    <p className={`text-xs ${t.textMuted}`}>Retained Earnings</p>
                                 </div>
                             </div>
                             <p className={`font-mono text-lg ${retainedEarnings >= 0 ? 'text-amber-400' : 'text-red-400'}`}>
@@ -392,23 +397,23 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fi
                             </p>
                         </div>
 
-                        <div className="flex justify-between items-center p-3 bg-slate-900/50 rounded-xl border border-slate-700/50">
+                        <div className={`flex justify-between items-center p-3 ${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-50'} rounded-xl border ${theme === 'dark' ? 'border-slate-700/50' : 'border-slate-200'}`}>
                             <div className="flex items-center gap-3">
                                 <div className="w-2 h-10 bg-red-500 rounded-full"></div>
                                 <div>
-                                    <p className="text-white font-medium">Обязательства по НДС</p>
-                                    <p className="text-xs text-slate-500">Подлежит уплате в бюджет</p>
+                                    <p className={`${t.text} font-medium`}>Обязательства по НДС</p>
+                                    <p className={`text-xs ${t.textMuted}`}>Подлежит уплате в бюджет</p>
                                 </div>
                             </div>
-                            <p className="font-mono text-lg text-red-400">{formatCurrency(vatLiability)}</p>
+                            <p className="font-mono text-lg text-red-500">{formatCurrency(vatLiability)}</p>
                         </div>
 
-                        <div className="flex justify-between items-center p-3 bg-slate-900/50 rounded-xl border border-slate-700/50">
+                        <div className={`flex justify-between items-center p-3 ${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-50'} rounded-xl border ${theme === 'dark' ? 'border-slate-700/50' : 'border-slate-200'}`}>
                             <div className="flex items-center gap-3">
                                 <div className="w-2 h-10 bg-red-300 rounded-full"></div>
                                 <div>
-                                    <p className="text-white font-medium">Обязательства перед поставщиками</p>
-                                    <p className="text-xs text-slate-500">Долг за товары</p>
+                                    <p className={`${t.text} font-medium`}>Обязательства перед поставщиками</p>
+                                    <p className={`text-xs ${t.textMuted}`}>Долг за товары</p>
                                 </div>
                             </div>
                             <p className="font-mono text-lg text-red-400">{formatCurrency(accountsPayable)}</p>
@@ -419,8 +424,8 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fi
 
             {/* Charts Section */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="bg-slate-800 rounded-xl border border-slate-700 p-6">
-                    <h4 className="text-lg font-bold text-white mb-4 text-center">Структура Пассивов</h4>
+                <div className={`${t.bgCard} rounded-xl border ${t.border} p-6`}>
+                    <h4 className={`text-lg font-bold ${t.text} mb-4 text-center`}>Структура Пассивов</h4>
                     <div className="h-[250px] w-full">
                         <ResponsiveContainer width="100%" height="100%">
                             <PieChart>
@@ -438,7 +443,11 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fi
                                     ))}
                                 </Pie>
                                 <Tooltip
-                                    contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', color: '#f1f5f9' }}
+                                    contentStyle={{ 
+                                        backgroundColor: theme === 'dark' ? '#0f172a' : '#ffffff', 
+                                        borderColor: theme === 'dark' ? '#334155' : '#e2e8f0', 
+                                        color: theme === 'dark' ? '#f1f5f9' : '#0f172a' 
+                                    }}
                                     formatter={(value: number) => formatCurrency(value)}
                                 />
                                 <Legend verticalAlign="bottom" height={36} />
@@ -447,26 +456,26 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fi
                     </div>
                 </div>
 
-                <div className="bg-slate-800 rounded-xl border border-slate-700 p-6 flex flex-col justify-center items-center text-center space-y-6">
+                <div className={`${t.bgCard} rounded-xl border ${t.border} p-6 flex flex-col justify-center items-center text-center space-y-6`}>
                     <div className="p-4 bg-emerald-500/10 rounded-full">
                         <Landmark size={48} className="text-emerald-500" />
                     </div>
                     <div>
-                        <h4 className="text-xl font-bold text-white">Финансовая сводка</h4>
-                        <p className="text-slate-400 max-w-md mx-auto mt-2">
-                            Текущий денежный поток позволяет покрыть налоговые обязательства. Зарезервировано <span className="text-white font-bold">{formatCurrency(vatLiability)}</span> на НДС.
+                        <h4 className={`text-xl font-bold ${t.text}`}>Финансовая сводка</h4>
+                        <p className={`${t.textMuted} max-w-md mx-auto mt-2`}>
+                            Текущий денежный поток позволяет покрыть налоговые обязательства. Зарезервировано <span className={`${t.text} font-bold`}>{formatCurrency(vatLiability)}</span> на НДС.
                         </p>
                     </div>
-                    <div className="w-full bg-slate-700/50 rounded-lg p-4 grid grid-cols-2 gap-4 divide-x divide-slate-600">
+                    <div className={`w-full ${theme === 'dark' ? 'bg-slate-700/50' : 'bg-slate-100'} rounded-lg p-4 grid grid-cols-2 gap-4 divide-x ${t.divide}`}>
                         <div>
-                            <p className="text-xs text-slate-500">Чистая Прибыль</p>
-                            <p className={`font-bold ${netProfit >= 0 ? 'text-amber-400' : 'text-red-400'}`}>
+                            <p className={`text-xs ${t.textMuted}`}>Чистая Прибыль</p>
+                            <p className={`font-bold ${netProfit >= 0 ? 'text-amber-500' : 'text-red-500'}`}>
                                 {formatCurrency(netProfit)}
                             </p>
                         </div>
                         <div>
-                            <p className="text-xs text-slate-500">Расходы</p>
-                            <p className="text-red-400 font-bold">{formatCurrency(totalExpensesAll)}</p>
+                            <p className={`text-xs ${t.textMuted}`}>Расходы</p>
+                            <p className="text-red-500 font-bold">{formatCurrency(totalExpensesAll)}</p>
                         </div>
                     </div>
                 </div>
@@ -475,40 +484,40 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fi
             {/* Audit Section - Only shown if huge amounts exist */}
             {(largeOrders.length > 0 || largeTransactions.length > 0 || largeExpenses.length > 0) && (
                 <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-6">
-                    <h3 className="text-xl font-bold text-red-400 mb-4 flex items-center gap-2">
+                    <h3 className="text-xl font-bold text-red-500 mb-4 flex items-center gap-2">
                         <Scale className="text-red-500" /> ВНИМАНИЕ: Ошибки в данных
                     </h3>
-                    <p className="text-slate-400 text-sm mb-4">
+                    <p className={`${t.textMuted} text-sm mb-4`}>
                         Найдены записи с аномально большими суммами (более $1 000 000). Проверьте их в истории:
                     </p>
                     <div className="space-y-2">
                         {largeOrders.map(o => (
-                            <div key={o.id} className="bg-slate-900/50 p-3 rounded-xl flex justify-between items-center border border-red-500/20">
+                            <div key={o.id} className={`${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-50'} p-3 rounded-xl flex justify-between items-center border border-red-500/20`}>
                                 <div>
-                                    <p className="text-white font-mono text-sm">Заказ: {o.id}</p>
-                                    <p className="text-xs text-slate-500">{o.date} • {o.customerName}</p>
+                                    <p className={`${t.text} font-mono text-sm`}>Заказ: {o.id}</p>
+                                    <p className={`text-xs ${t.textMuted}`}>{o.date} • {o.customerName}</p>
                                 </div>
-                                <span className="text-red-400 font-bold font-mono">{formatCurrency(o.totalAmount)}</span>
+                                <span className="text-red-500 font-bold font-mono">{formatCurrency(o.totalAmount)}</span>
                             </div>
                         ))}
                         {largeTransactions.map(t => (
-                            <div key={t.id} className="bg-slate-900/50 p-3 rounded-xl flex justify-between items-center border border-red-500/20">
+                            <div key={t.id} className={`${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-50'} p-3 rounded-xl flex justify-between items-center border border-red-500/20`}>
                                 <div>
-                                    <p className="text-white font-mono text-sm">Транзакция: {t.id} ({t.type})</p>
-                                    <p className="text-xs text-slate-500">{t.date} • {t.description}</p>
+                                    <p className={`${t.text} font-mono text-sm`}>Транзакция: {t.id} ({t.type})</p>
+                                    <p className={`text-xs ${t.textMuted}`}>{t.date} • {t.description}</p>
                                 </div>
-                                <span className="text-red-400 font-bold font-mono">
+                                <span className="text-red-500 font-bold font-mono">
                                     {formatCurrency(t.currency === 'UZS' ? num(t.amount) / getRate(t.exchangeRate) : num(t.amount))}
                                 </span>
                             </div>
                         ))}
                         {largeExpenses.map(e => (
-                            <div key={e.id} className="bg-slate-900/50 p-3 rounded-xl flex justify-between items-center border border-red-500/20">
+                            <div key={e.id} className={`${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-50'} p-3 rounded-xl flex justify-between items-center border border-red-500/20`}>
                                 <div>
-                                    <p className="text-white font-mono text-sm">Расход: {e.id}</p>
-                                    <p className="text-xs text-slate-500">{e.date} • {e.description}</p>
+                                    <p className={`${t.text} font-mono text-sm`}>Расход: {e.id}</p>
+                                    <p className={`text-xs ${t.textMuted}`}>{e.date} • {e.description}</p>
                                 </div>
-                                <span className="text-red-400 font-bold font-mono">
+                                <span className="text-red-500 font-bold font-mono">
                                     {formatCurrency(e.currency === 'UZS' ? num(e.amount) / getRate(e.exchangeRate) : num(e.amount))}
                                 </span>
                             </div>

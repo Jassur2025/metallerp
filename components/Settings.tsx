@@ -5,11 +5,14 @@ import { Save, Settings as SettingsIcon, AlertCircle, Database, CheckCircle, XCi
 import { getSpreadsheetId, saveSpreadsheetId, sheetsService } from '../services/sheetsService';
 import { telegramService } from '../services/telegramService';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
 
 // Компонент кнопки очистки данных
 const ClearDataButton: React.FC<{ accessToken: string | null }> = ({ accessToken }) => {
     const [status, setStatus] = useState<'idle' | 'confirm' | 'loading' | 'success' | 'error'>('idle');
     const [message, setMessage] = useState('');
+    const { theme } = useTheme();
+    const t = getThemeClasses(theme);
 
     const handleClear = async () => {
         if (status === 'idle') {
@@ -48,7 +51,7 @@ const ClearDataButton: React.FC<{ accessToken: string | null }> = ({ accessToken
             {status === 'confirm' && (
                 <button
                     onClick={handleCancel}
-                    className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-sm transition-colors"
+                    className={`px-4 py-2 ${theme === 'dark' ? 'bg-slate-700 hover:bg-slate-600' : 'bg-slate-200 hover:bg-slate-300'} ${t.text} rounded-lg text-sm transition-colors`}
                 >
                     Отмена
                 </button>
@@ -127,6 +130,8 @@ interface SettingsProps {
 }
 
 export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
+    const { theme } = useTheme();
+    const t = getThemeClasses(theme);
     const { accessToken } = useAuth();
     const envSheetId = import.meta.env.VITE_GOOGLE_SHEET_ID || '';
     const envBotToken = import.meta.env.VITE_BOT_TOKEN || '';
@@ -263,12 +268,12 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
 
     return (
         <div className="h-full overflow-y-auto custom-scrollbar p-6 space-y-8 animate-fade-in max-w-4xl mx-auto">
-            <div className="border-b border-slate-700 pb-6">
-                <h2 className="text-3xl font-bold text-white tracking-tight flex items-center gap-3">
+            <div className={`border-b ${t.border} pb-6`}>
+                <h2 className={`text-3xl font-bold ${t.text} tracking-tight flex items-center gap-3`}>
                     <SettingsIcon size={32} className="text-primary-500" />
                     Настройки Системы
                 </h2>
-                <p className="text-slate-400 mt-2">Конфигурация налогов и валютных курсов</p>
+                <p className={`${t.textMuted} mt-2`}>Конфигурация налогов и валютных курсов</p>
             </div>
 
             {/* Tabs */}
@@ -277,7 +282,7 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
                     onClick={() => setActiveTab('general')}
                     className={`px-6 py-3 rounded-xl font-medium transition-all ${activeTab === 'general'
                         ? 'bg-primary-600 text-white shadow-lg shadow-primary-600/20'
-                        : 'bg-slate-800 text-slate-400 hover:text-white border border-slate-700'
+                        : `${t.bgCard} ${t.textMuted} hover:${t.text} border ${t.border}`
                         }`}
                 >
                     <SettingsIcon size={18} className="inline mr-2" />
@@ -287,7 +292,7 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
                     onClick={() => setActiveTab('expenses')}
                     className={`px-6 py-3 rounded-xl font-medium transition-all ${activeTab === 'expenses'
                         ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20'
-                        : 'bg-slate-800 text-slate-400 hover:text-white border border-slate-700'
+                        : `${t.bgCard} ${t.textMuted} hover:${t.text} border ${t.border}`
                         }`}
                 >
                     <Receipt size={18} className="inline mr-2" />
@@ -297,23 +302,23 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
 
             {/* Tab: General Settings */}
             {activeTab === 'general' && (
-                <div className="bg-slate-800 rounded-2xl border border-slate-700 p-8 shadow-lg space-y-8">
+                <div className={`${t.bgCard} rounded-2xl border ${t.border} p-8 shadow-lg space-y-8`}>
 
                     {/* Google Sheets Connection */}
                     <div className="space-y-6">
-                        <h3 className="text-xl font-bold text-white border-l-4 border-blue-500 pl-4 flex items-center gap-2">
+                        <h3 className={`text-xl font-bold ${t.text} border-l-4 border-blue-500 pl-4 flex items-center gap-2`}>
                             <Database size={24} className="text-blue-500" />
                             Подключение к Google Sheets
                         </h3>
 
                         <div className="space-y-2">
-                            <label className="block text-sm font-medium text-slate-300">
+                            <label className={`block text-sm font-medium ${t.textMuted}`}>
                                 ID Таблицы (Spreadsheet ID)
                             </label>
                             <div className="flex gap-2">
                                 <input
                                     type={isSheetFromEnv ? 'password' : 'text'}
-                                    className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm disabled:opacity-60"
+                                    className={`flex-1 ${t.input} border ${t.border} rounded-lg px-4 py-3 ${t.text} focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm disabled:opacity-60`}
                                     value={isSheetFromEnv ? '••••••••••••••••' : spreadsheetId}
                                     readOnly={isSheetFromEnv}
                                     onChange={(e) => setSpreadsheetId(e.target.value)}
@@ -339,7 +344,7 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
 
                                 {connectionStatus !== 'idle' && (
                                     <div className={`text-sm flex items-center gap-2 ${connectionStatus === 'success' ? 'text-emerald-400' :
-                                        connectionStatus === 'error' ? 'text-red-400' : 'text-slate-400'
+                                        connectionStatus === 'error' ? 'text-red-400' : t.textMuted
                                         }`}>
                                         {connectionStatus === 'loading' && <Loader2 size={16} className="animate-spin" />}
                                         {connectionStatus === 'success' && <CheckCircle size={16} />}
@@ -349,7 +354,7 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
                                 )}
                             </div>
 
-                            <p className="text-xs text-slate-500">
+                            <p className={`text-xs ${t.textMuted}`}>
                                 {isSheetFromEnv
                                     ? 'ID таблицы задается через env и скрыт для безопасности.'
                                     : 'Вставьте ID вашей Google Таблицы. Приложение будет автоматически сохранять туда товары и заказы.'}
@@ -363,54 +368,128 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
                             <AlertCircle size={20} />
                             Опасная зона
                         </h4>
-                        <p className="text-sm text-slate-400 mb-4">
+                        <p className={`text-sm ${t.textMuted} mb-4`}>
                             Очистка всех данных в Google Sheets. Используйте для тестирования. <strong className="text-red-400">Это действие нельзя отменить!</strong>
                         </p>
                         <ClearDataButton accessToken={accessToken} />
                     </div>
 
-                    <div className="border-t border-slate-700 my-6"></div>
+                    <div className={`border-t ${t.border} my-6`}></div>
+
+                    {/* Theme Settings */}
+                    <div className="space-y-6">
+                        <h3 className={`text-xl font-bold ${t.text} border-l-4 border-purple-500 pl-4 flex items-center gap-2`}>
+                            <svg className="w-6 h-6 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+                            </svg>
+                            Тема интерфейса
+                        </h3>
+
+                        <div className="space-y-4">
+                            <label className={`block text-sm font-medium ${t.textMuted}`}>
+                                Цветовая схема
+                            </label>
+                            <p className={`text-xs ${t.textMuted} mb-3`}>
+                                Выберите светлую тему (Material Design, стиль Google Drive) или темную тему для работы.
+                            </p>
+                            <div className="flex gap-4">
+                                <button
+                                    onClick={() => setFormData({ ...formData, theme: 'light' })}
+                                    className={`flex-1 p-4 rounded-xl border-2 transition-all ${
+                                        formData.theme === 'light' || !formData.theme
+                                            ? 'border-blue-500 bg-blue-500/10 shadow-lg shadow-blue-500/20'
+                                            : `${t.border} ${t.bgCard} hover:border-slate-500`
+                                    }`}
+                                >
+                                    <div className="flex items-center justify-center gap-3 mb-2">
+                                        <svg className="w-8 h-8 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
+                                        </svg>
+                                    </div>
+                                    <div className="text-center">
+                                        <div className={`font-bold ${t.text} text-lg`}>Светлая</div>
+                                        <div className={`text-xs ${t.textMuted} mt-1`}>Material Design</div>
+                                        <div className={`text-xs ${t.textMuted}`}>Google Drive стиль</div>
+                                    </div>
+                                </button>
+
+                                <button
+                                    onClick={() => setFormData({ ...formData, theme: 'dark' })}
+                                    className={`flex-1 p-4 rounded-xl border-2 transition-all ${
+                                        formData.theme === 'dark'
+                                            ? 'border-slate-400 bg-slate-700/30 shadow-lg shadow-slate-500/20'
+                                            : `${t.border} ${t.bgCard} hover:border-slate-500`
+                                    }`}
+                                >
+                                    <div className="flex items-center justify-center gap-3 mb-2">
+                                        <svg className="w-8 h-8 text-indigo-400" fill="currentColor" viewBox="0 0 20 20">
+                                            <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
+                                        </svg>
+                                    </div>
+                                    <div className="text-center">
+                                        <div className={`font-bold ${t.text} text-lg`}>Темная</div>
+                                        <div className={`text-xs ${t.textMuted} mt-1`}>Текущая тема</div>
+                                        <div className={`text-xs ${t.textMuted}`}>Для вечерней работы</div>
+                                    </div>
+                                </button>
+                            </div>
+
+                            {formData.theme === 'light' && (
+                                <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-4 mt-4">
+                                    <div className="flex gap-3">
+                                        <AlertCircle className="text-amber-400 flex-shrink-0" size={20} />
+                                        <div>
+                                            <div className={`font-medium text-sm ${t.text}`}>Светлая тема активна</div>
+                                            <div className={`text-xs mt-1 ${t.textMuted}`}>Фон слоновая кость (#F8F9FA), скругленные карточки, стиль Material Design 3</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className={`border-t ${t.border} my-6`}></div>
 
                     {/* Financial Settings */}
                     <div className="space-y-6">
-                        <h3 className="text-xl font-bold text-white border-l-4 border-primary-500 pl-4">
+                        <h3 className={`text-xl font-bold ${t.text} border-l-4 border-primary-500 pl-4`}>
                             Финансы и Налоги
                         </h3>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                             <div className="space-y-2">
-                                <label className="block text-sm font-medium text-slate-300">
+                                <label className={`block text-sm font-medium ${t.textMuted}`}>
                                     Ставка НДС (%)
                                 </label>
-                                <p className="text-xs text-slate-500 mb-2">
+                                <p className={`text-xs ${t.textMuted} mb-2`}>
                                     Налог на добавленную стоимость, применяемый к продажам.
                                 </p>
                                 <div className="relative">
                                     <input
                                         type="number"
-                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-primary-500 outline-none"
+                                        className={`w-full ${t.input} border ${t.border} rounded-lg px-4 py-3 ${t.text} focus:ring-2 focus:ring-primary-500 outline-none`}
                                         value={formData.vatRate}
                                         onChange={(e) => setFormData({ ...formData, vatRate: Number(e.target.value) })}
                                     />
-                                    <span className="absolute right-4 top-3 text-slate-500">%</span>
+                                    <span className={`absolute right-4 top-3 ${t.textMuted}`}>%</span>
                                 </div>
                             </div>
 
                             <div className="space-y-2">
-                                <label className="block text-sm font-medium text-slate-300">
+                                <label className={`block text-sm font-medium ${t.textMuted}`}>
                                     Курс валют по умолчанию (USD → UZS)
                                 </label>
-                                <p className="text-xs text-slate-500 mb-2">
+                                <p className={`text-xs ${t.textMuted} mb-2`}>
                                     Базовый курс, используемый при инициализации продажи.
                                 </p>
                                 <div className="relative">
                                     <input
                                         type="number"
-                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-primary-500 outline-none"
+                                        className={`w-full ${t.input} border ${t.border} rounded-lg px-4 py-3 ${t.text} focus:ring-2 focus:ring-primary-500 outline-none`}
                                         value={formData.defaultExchangeRate}
                                         onChange={(e) => setFormData({ ...formData, defaultExchangeRate: Number(e.target.value) })}
                                     />
-                                    <span className="absolute right-4 top-3 text-slate-500">UZS</span>
+                                    <span className={`absolute right-4 top-3 ${t.textMuted}`}>UZS</span>
                                 </div>
                             </div>
                         </div>
@@ -420,84 +499,84 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
 
 
 
-                    <div className="border-t border-slate-700 my-6"></div>
+                    <div className={`border-t ${t.border} my-6`}></div>
 
                     {/* Company Status */}
                     <div className="space-y-6">
-                        <h3 className="text-xl font-bold text-white border-l-4 border-indigo-500 pl-4 flex items-center gap-2">
+                        <h3 className={`text-xl font-bold ${t.text} border-l-4 border-indigo-500 pl-4 flex items-center gap-2`}>
                             <div className="i-lucide-building-2 text-indigo-500" />
                             Реквизиты Компании
                         </h3>
-                        <p className="text-sm text-slate-400">Эти данные будут отображаться в счетах на оплату и накладных.</p>
+                        <p className={`text-sm ${t.textMuted}`}>Эти данные будут отображаться в счетах на оплату и накладных.</p>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div className="space-y-2">
-                                <label className="block text-sm font-medium text-slate-300">Название компании</label>
-                                <input type="text" className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                                <label className={`block text-sm font-medium ${t.textMuted}`}>Название компании</label>
+                                <input type="text" className={`w-full ${t.input} border ${t.border} rounded-lg px-4 py-3 ${t.text} focus:ring-2 focus:ring-indigo-500 outline-none`}
                                     value={formData.companyDetails?.name || ''}
                                     onChange={(e) => setFormData({ ...formData, companyDetails: { ...formData.companyDetails, name: e.target.value } as any })}
                                     placeholder="ООО 'METAL MASTER'"
                                 />
                             </div>
                             <div className="space-y-2">
-                                <label className="block text-sm font-medium text-slate-300">Телефон</label>
-                                <input type="text" className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                                <label className={`block text-sm font-medium ${t.textMuted}`}>Телефон</label>
+                                <input type="text" className={`w-full ${t.input} border ${t.border} rounded-lg px-4 py-3 ${t.text} focus:ring-2 focus:ring-indigo-500 outline-none`}
                                     value={formData.companyDetails?.phone || ''}
                                     onChange={(e) => setFormData({ ...formData, companyDetails: { ...formData.companyDetails, phone: e.target.value } as any })}
                                     placeholder="+998 90 123 45 67"
                                 />
                             </div>
                             <div className="col-span-full space-y-2">
-                                <label className="block text-sm font-medium text-slate-300">Юридический адрес</label>
-                                <input type="text" className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                                <label className={`block text-sm font-medium ${t.textMuted}`}>Юридический адрес</label>
+                                <input type="text" className={`w-full ${t.input} border ${t.border} rounded-lg px-4 py-3 ${t.text} focus:ring-2 focus:ring-indigo-500 outline-none`}
                                     value={formData.companyDetails?.address || ''}
                                     onChange={(e) => setFormData({ ...formData, companyDetails: { ...formData.companyDetails, address: e.target.value } as any })}
                                     placeholder="г. Ташкент, ул. Примерная, 1"
                                 />
                             </div>
                             <div className="space-y-2">
-                                <label className="block text-sm font-medium text-slate-300">ИНН (STIR)</label>
-                                <input type="text" className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                                <label className={`block text-sm font-medium ${t.textMuted}`}>ИНН (STIR)</label>
+                                <input type="text" className={`w-full ${t.input} border ${t.border} rounded-lg px-4 py-3 ${t.text} focus:ring-2 focus:ring-indigo-500 outline-none`}
                                     value={formData.companyDetails?.inn || ''}
                                     onChange={(e) => setFormData({ ...formData, companyDetails: { ...formData.companyDetails, inn: e.target.value } as any })}
                                     placeholder="123456789"
                                 />
                             </div>
                             <div className="space-y-2">
-                                <label className="block text-sm font-medium text-slate-300">МФО (MFO)</label>
-                                <input type="text" className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                                <label className={`block text-sm font-medium ${t.textMuted}`}>МФО (MFO)</label>
+                                <input type="text" className={`w-full ${t.input} border ${t.border} rounded-lg px-4 py-3 ${t.text} focus:ring-2 focus:ring-indigo-500 outline-none`}
                                     value={formData.companyDetails?.mfo || ''}
                                     onChange={(e) => setFormData({ ...formData, companyDetails: { ...formData.companyDetails, mfo: e.target.value } as any })}
                                     placeholder="00123"
                                 />
                             </div>
                             <div className="space-y-2">
-                                <label className="block text-sm font-medium text-slate-300">Название Банка</label>
-                                <input type="text" className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                                <label className={`block text-sm font-medium ${t.textMuted}`}>Название Банка</label>
+                                <input type="text" className={`w-full ${t.input} border ${t.border} rounded-lg px-4 py-3 ${t.text} focus:ring-2 focus:ring-indigo-500 outline-none`}
                                     value={formData.companyDetails?.bankName || ''}
                                     onChange={(e) => setFormData({ ...formData, companyDetails: { ...formData.companyDetails, bankName: e.target.value } as any })}
                                     placeholder="АКБ 'Kapitalbank'"
                                 />
                             </div>
                             <div className="space-y-2">
-                                <label className="block text-sm font-medium text-slate-300">Расчетный счет</label>
-                                <input type="text" className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-indigo-500 outline-none font-mono"
+                                <label className={`block text-sm font-medium ${t.textMuted}`}>Расчетный счет</label>
+                                <input type="text" className={`w-full ${t.input} border ${t.border} rounded-lg px-4 py-3 ${t.text} focus:ring-2 focus:ring-indigo-500 outline-none font-mono`}
                                     value={formData.companyDetails?.accountNumber || ''}
                                     onChange={(e) => setFormData({ ...formData, companyDetails: { ...formData.companyDetails, accountNumber: e.target.value } as any })}
                                     placeholder="2020 8000 ..."
                                 />
                             </div>
                             <div className="space-y-2">
-                                <label className="block text-sm font-medium text-slate-300">Директор</label>
-                                <input type="text" className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                                <label className={`block text-sm font-medium ${t.textMuted}`}>Директор</label>
+                                <input type="text" className={`w-full ${t.input} border ${t.border} rounded-lg px-4 py-3 ${t.text} focus:ring-2 focus:ring-indigo-500 outline-none`}
                                     value={formData.companyDetails?.director || ''}
                                     onChange={(e) => setFormData({ ...formData, companyDetails: { ...formData.companyDetails, director: e.target.value } as any })}
                                     placeholder="Иванов И.И."
                                 />
                             </div>
                             <div className="space-y-2">
-                                <label className="block text-sm font-medium text-slate-300">Главный бухгалтер</label>
-                                <input type="text" className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                                <label className={`block text-sm font-medium ${t.textMuted}`}>Главный бухгалтер</label>
+                                <input type="text" className={`w-full ${t.input} border ${t.border} rounded-lg px-4 py-3 ${t.text} focus:ring-2 focus:ring-indigo-500 outline-none`}
                                     value={formData.companyDetails?.accountant || ''}
                                     onChange={(e) => setFormData({ ...formData, companyDetails: { ...formData.companyDetails, accountant: e.target.value } as any })}
                                     placeholder="Петрова А.А."
@@ -508,45 +587,45 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
 
                     {/* Telegram Settings */}
                     <div className="space-y-6">
-                        <h3 className="text-xl font-bold text-white border-l-4 border-blue-400 pl-4 flex items-center gap-2">
+                        <h3 className={`text-xl font-bold ${t.text} border-l-4 border-blue-400 pl-4 flex items-center gap-2`}>
                             <Send size={24} className="text-blue-400" />
                             Интеграция с Telegram
                         </h3>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                             <div className="space-y-2">
-                                <label className="block text-sm font-medium text-slate-300">
+                                <label className={`block text-sm font-medium ${t.textMuted}`}>
                                     Bot Token
                                 </label>
-                                <p className="text-xs text-slate-500 mb-2">
+                                <p className={`text-xs ${t.textMuted} mb-2`}>
                                     Токен от @BotFather
                                 </p>
                                 <input
                                     type="password"
-                                    className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm disabled:opacity-60"
+                                    className={`w-full ${t.input} border ${t.border} rounded-lg px-4 py-3 ${t.text} focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm disabled:opacity-60`}
                                     value={isBotFromEnv ? '••••••••••••••••' : (formData.telegramBotToken || '')}
                                     readOnly={isBotFromEnv}
                                     onChange={(e) => setFormData({ ...formData, telegramBotToken: e.target.value })}
                                     placeholder="123456789:ABCdef..."
                                 />
                                 {isBotFromEnv && (
-                                    <p className="text-xs text-slate-500">
+                                    <p className={`text-xs ${t.textMuted}`}>
                                         Bot Token задан через env и скрыт.
                                     </p>
                                 )}
                             </div>
 
                             <div className="space-y-2">
-                                <label className="block text-sm font-medium text-slate-300">
+                                <label className={`block text-sm font-medium ${t.textMuted}`}>
                                     Chat ID
                                 </label>
-                                <p className="text-xs text-slate-500 mb-2">
+                                <p className={`text-xs ${t.textMuted} mb-2`}>
                                     ID вашего чата (можно узнать через @userinfobot)
                                 </p>
                                 <div className="flex gap-2">
                                     <input
                                         type={isChatFromEnv ? 'password' : 'text'}
-                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm disabled:opacity-60"
+                                        className={`w-full ${t.input} border ${t.border} rounded-lg px-4 py-3 ${t.text} focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm disabled:opacity-60`}
                                         value={isChatFromEnv ? '••••••••••' : (formData.telegramChatId || '')}
                                         readOnly={isChatFromEnv}
                                         onChange={(e) => setFormData({ ...formData, telegramChatId: e.target.value })}
@@ -554,14 +633,14 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
                                     />
                                     <button
                                         onClick={handleTestTelegram}
-                                        className="bg-slate-700 hover:bg-slate-600 text-white px-4 rounded-lg transition-colors"
+                                        className={`bg-slate-700 hover:bg-slate-600 text-white px-4 rounded-lg transition-colors`}
                                         title="Отправить тестовое сообщение"
                                     >
                                         <Send size={18} />
                                     </button>
                                 </div>
                                 {isChatFromEnv && (
-                                    <p className="text-xs text-slate-500">
+                                    <p className={`text-xs ${t.textMuted}`}>
                                         Chat ID задан через env и скрыт.
                                     </p>
                                 )}
@@ -571,12 +650,12 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
 
                     <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 flex items-start gap-3">
                         <AlertCircle className="text-amber-500 shrink-0 mt-1" size={20} />
-                        <div className="text-sm text-amber-200/80">
-                            <span className="font-bold text-amber-400">Внимание:</span> Изменение ставки НДС повлияет только на будущие заказы. История существующих заказов останется неизменной для сохранения точности финансового учета.
+                        <div className={`text-sm ${t.textMuted}`}>
+                            <span className={`font-bold ${t.text}`}>Внимание:</span> Изменение ставки НДС повлияет только на будущие заказы. История существующих заказов останется неизменной для сохранения точности финансового учета.
                         </div>
                     </div>
 
-                    <div className="pt-6 flex items-center justify-between border-t border-slate-700">
+                    <div className={`pt-6 flex items-center justify-between border-t ${t.border}`}>
                         <span className={`text-emerald-400 text-sm transition-opacity ${message ? 'opacity-100' : 'opacity-0'}`}>
                             {message}
                         </span>
@@ -593,23 +672,23 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
 
             {/* Tab: Expense Categories */}
             {activeTab === 'expenses' && (
-                <div className="bg-slate-800 rounded-2xl border border-slate-700 shadow-lg overflow-hidden h-[calc(100vh-280px)] max-h-[600px] flex flex-col">
-                    <div className="p-6 border-b border-slate-700 bg-slate-900/50">
-                        <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                <div className={`${t.bgCard} rounded-2xl border ${t.border} shadow-lg overflow-hidden h-[calc(100vh-280px)] max-h-[600px] flex flex-col`}>
+                    <div className={`p-6 border-b ${t.border} ${t.bgCard} bg-opacity-50`}>
+                        <h3 className={`text-xl font-bold ${t.text} flex items-center gap-2`}>
                             <Receipt size={24} className="text-purple-400" />
                             Категории расходов (для PnL)
                         </h3>
-                        <p className="text-sm text-slate-400 mt-1">Настройте категории расходов и их классификацию для отчёта о прибылях и убытках</p>
+                        <p className={`text-sm ${t.textMuted} mt-1`}>Настройте категории расходов и их классификацию для отчёта о прибылях и убытках</p>
                     </div>
 
                     {/* Add new category */}
-                    <div className="p-4 border-b border-slate-700 bg-slate-800/50">
+                    <div className={`p-4 border-b ${t.border} ${t.bgCard} bg-opacity-50`}>
                         <div className="flex gap-3 items-end">
                             <div className="flex-1">
-                                <label className="block text-xs text-slate-400 mb-1">Название расхода</label>
+                                <label className={`block text-xs ${t.textMuted} mb-1`}>Название расхода</label>
                                 <input
                                     type="text"
-                                    className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm"
+                                    className={`w-full ${t.input} border ${t.border} rounded-lg px-3 py-2 ${t.text} text-sm`}
                                     value={newCategoryName}
                                     onChange={(e) => setNewCategoryName(e.target.value)}
                                     placeholder="Например: Аренда офиса"
@@ -617,9 +696,9 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
                                 />
                             </div>
                             <div className="w-48">
-                                <label className="block text-xs text-slate-400 mb-1">Классификация PnL</label>
+                                <label className={`block text-xs ${t.textMuted} mb-1`}>Классификация PnL</label>
                                 <select
-                                    className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm"
+                                    className={`w-full ${t.input} border ${t.border} rounded-lg px-3 py-2 ${t.text} text-sm`}
                                     value={newCategoryPnL}
                                     onChange={(e) => setNewCategoryPnL(e.target.value as ExpensePnLCategory)}
                                 >
@@ -640,32 +719,32 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
                     {/* Categories list - scrollable */}
                     <div className="flex-1 overflow-y-auto">
                         <table className="w-full text-sm">
-                            <thead className="bg-slate-900 text-xs text-slate-400 uppercase sticky top-0">
+                            <thead className={`${t.bgCard} text-xs ${t.textMuted} uppercase sticky top-0`}>
                                 <tr>
                                     <th className="px-4 py-3 text-left">Расход</th>
                                     <th className="px-4 py-3 text-left w-48">Классификация для PnL</th>
                                     <th className="px-4 py-3 w-16"></th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-slate-700/50">
+                            <tbody className={`divide-y ${t.border} divide-opacity-50`}>
                                 {(formData.expenseCategories || []).map((cat) => (
-                                    <tr key={cat.id} className="hover:bg-slate-700/30">
-                                        <td className="px-4 py-2 text-white">{cat.name}</td>
+                                    <tr key={cat.id} className={`hover:${t.hover}`}>
+                                        <td className={`px-4 py-2 ${t.text}`}>{cat.name}</td>
                                         <td className="px-4 py-2">
                                             <select
                                                 className={`px-2 py-1 rounded-lg text-xs font-medium border ${pnlCategoryColor(cat.pnlCategory)} bg-transparent cursor-pointer`}
                                                 value={cat.pnlCategory}
                                                 onChange={(e) => updateCategoryPnL(cat.id, e.target.value as ExpensePnLCategory)}
                                             >
-                                                <option value="administrative" className="bg-slate-800">Административные</option>
-                                                <option value="operational" className="bg-slate-800">Операционные</option>
-                                                <option value="commercial" className="bg-slate-800">Коммерческие</option>
+                                                <option value="administrative" className={t.bgCard}>Административные</option>
+                                                <option value="operational" className={t.bgCard}>Операционные</option>
+                                                <option value="commercial" className={t.bgCard}>Коммерческие</option>
                                             </select>
                                         </td>
                                         <td className="px-4 py-2 text-center">
                                             <button
                                                 onClick={() => removeExpenseCategory(cat.id)}
-                                                className="text-slate-500 hover:text-red-400 transition-colors p-1"
+                                                className={`text-slate-500 hover:text-red-400 transition-colors p-1`}
                                                 title="Удалить"
                                             >
                                                 <Trash2 size={16} />
@@ -675,7 +754,7 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
                                 ))}
                                 {(!formData.expenseCategories || formData.expenseCategories.length === 0) && (
                                     <tr>
-                                        <td colSpan={3} className="px-4 py-8 text-center text-slate-500">
+                                        <td colSpan={3} className={`px-4 py-8 text-center ${t.textMuted}`}>
                                             Нет категорий. Добавьте первую категорию расходов.
                                         </td>
                                     </tr>
@@ -685,9 +764,9 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
                     </div>
 
                     {/* Footer with stats and save button */}
-                    <div className="p-4 border-t border-slate-700 bg-slate-900/50 flex items-center justify-between">
-                        <div className="text-xs text-slate-400">
-                            Всего: <span className="text-white font-medium">{(formData.expenseCategories || []).length}</span>
+                    <div className={`p-4 border-t ${t.border} ${t.bgCard} bg-opacity-50 flex items-center justify-between`}>
+                        <div className={`text-xs ${t.textMuted}`}>
+                            Всего: <span className={`${t.text} font-medium`}>{(formData.expenseCategories || []).length}</span>
                             <span className="mx-2">•</span>
                             <span className="text-blue-400">Адм.: {(formData.expenseCategories || []).filter(c => c.pnlCategory === 'administrative').length}</span>
                             <span className="mx-2">•</span>

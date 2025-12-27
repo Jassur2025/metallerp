@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { Product, ProductType, Unit } from '../types';
 import { geminiService } from '../services/geminiService';
 import { useToast } from '../contexts/ToastContext';
+import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
 import { Plus, Search, Loader2, BrainCircuit, Trash2, DollarSign, Pencil, TrendingUp, Lock } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -16,6 +17,8 @@ interface InventoryProps {
 export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onSaveProducts }) => {
   const { user } = useAuth();
   const toast = useToast();
+  const { theme } = useTheme();
+  const t = getThemeClasses(theme);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -166,14 +169,14 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
     <div className="p-3 sm:p-4 lg:p-6 space-y-4 lg:space-y-6 animate-fade-in h-[calc(100vh-2rem)] flex flex-col">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
-          <h2 className="text-xl sm:text-2xl font-bold text-white">Складской Учет</h2>
-          <p className="text-xs sm:text-sm text-slate-400">Управление остатками труб и профиля (Цены в USD)</p>
+          <h2 className={`text-xl sm:text-2xl font-bold ${t.text}`}>Складской Учет</h2>
+          <p className={`text-xs sm:text-sm ${t.textMuted}`}>Управление остатками труб и профиля (Цены в USD)</p>
         </div>
       </div>
       {(user?.permissions?.canEditProducts !== false) && (
         <button
           onClick={openAddModal}
-          className="bg-primary-600 hover:bg-primary-500 text-white px-3 sm:px-4 py-2 rounded-lg flex items-center justify-center gap-2 transition-colors shadow-lg shadow-primary-600/20 text-sm sm:text-base"
+          className={`${theme === 'light' ? 'bg-[#1A73E8] hover:bg-[#1557B0]' : 'bg-primary-600 hover:bg-primary-500'} text-white px-3 sm:px-4 py-2 rounded-lg flex items-center justify-center gap-2 transition-colors ${t.shadow} text-sm sm:text-base`}
         >
           <Plus size={18} /> <span className="hidden sm:inline">Добавить товар</span><span className="sm:hidden">Добавить</span>
         </button>
@@ -185,11 +188,11 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
       {/* Search + Sort */}
       <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+          <Search className={`absolute left-3 top-1/2 -translate-y-1/2 ${t.textMuted}`} size={20} />
           <input
             type="text"
             placeholder="Поиск по названию или размерам..."
-            className="w-full bg-slate-800 border border-slate-700 text-slate-200 pl-10 pr-4 py-3 rounded-xl focus:ring-2 focus:ring-primary-500 focus:outline-none transition-all"
+            className={`w-full ${t.bgCard} border ${t.borderInput} ${t.text} pl-10 pr-4 py-3 rounded-xl ${t.focusRing} focus:outline-none transition-all ${t.textPlaceholder}`}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
@@ -197,7 +200,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
         <select
           value={sortMode}
           onChange={(e) => setSortMode(e.target.value as typeof sortMode)}
-          className="bg-slate-800 border border-slate-700 text-slate-200 px-3 py-3 rounded-xl focus:ring-2 focus:ring-primary-500 focus:outline-none"
+          className={`${t.bgCard} border ${t.borderInput} ${t.text} px-3 py-3 rounded-xl ${t.focusRing} focus:outline-none`}
         >
           <option value="qty_desc">Остаток: по убыванию</option>
           <option value="qty_asc">Остаток: по возрастанию</option>
@@ -208,10 +211,10 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
       {/* List Container (scrollable because parent content is overflow-hidden) */}
       <div className="flex-1 overflow-y-auto custom-scrollbar pb-2">
         {/* Table - Desktop */}
-        <div className="hidden lg:block bg-slate-800/50 rounded-xl border border-slate-700 overflow-hidden backdrop-blur-sm">
+        <div className={`hidden lg:block ${t.bgCard} rounded-xl border ${t.border} overflow-hidden ${t.shadow}`}>
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-slate-300">
-              <thead className="bg-slate-900/50 text-xs uppercase tracking-wider text-slate-400 font-medium">
+            <table className={`w-full text-left ${t.textSecondary}`}>
+              <thead className={`${t.bgPanelAlt} text-xs uppercase tracking-wider ${t.textMuted} font-medium`}>
                 <tr>
                   <th className="px-6 py-4">Наименование</th>
                   <th className="px-6 py-4">Тип</th>
@@ -223,10 +226,10 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
                   <th className="px-6 py-4 text-center">Действия</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-700">
+              <tbody className={`divide-y ${t.border}`}>
                 {displayedProducts.map((product) => (
-                  <tr key={product.id} className="hover:bg-slate-700/30 transition-colors">
-                    <td className="px-6 py-4 font-medium text-white">
+                  <tr key={product.id} className={`${t.bgCardHover} transition-colors`}>
+                    <td className={`px-6 py-4 font-medium ${t.text}`}>
                       <div>{product.name}</div>
                       {product.origin === 'import' && (
                         <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-500/10 text-purple-400 border border-purple-500/20 mt-1">
@@ -251,25 +254,25 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
                       {user?.permissions?.canViewCostPrice !== false ? (
                         `$${(product.costPrice || 0).toFixed(2)}`
                       ) : (
-                        <span className="text-slate-600 flex justify-end gap-1 items-center"><Lock size={12} /> ***</span>
+                        <span className={`${t.textMuted} flex justify-end gap-1 items-center`}><Lock size={12} /> ***</span>
                       )}
                     </td>
 
-                    <td className="px-6 py-4 text-right font-mono text-emerald-400">
+                    <td className={`px-6 py-4 text-right font-mono ${t.success}`}>
                       ${product.pricePerUnit.toFixed(2)}
                     </td>
                     <td className="px-6 py-4 text-center">
                       <div className="flex items-center justify-center gap-2">
                         <button
                           onClick={() => openEditModal(product)}
-                          className="text-slate-500 hover:text-primary-400 transition-colors p-2 rounded-lg hover:bg-primary-400/10"
+                          className={`${t.textMuted} hover:${t.accent} transition-colors p-2 rounded-lg ${theme === 'light' ? 'hover:bg-blue-50' : 'hover:bg-primary-400/10'}`}
                           title="Редактировать"
                         >
                           <Pencil size={18} />
                         </button>
                         <button
                           onClick={() => handleDelete(product.id)}
-                          className="text-slate-500 hover:text-red-400 transition-colors p-2 rounded-lg hover:bg-red-400/10"
+                          className={`${t.textMuted} hover:text-red-500 transition-colors p-2 rounded-lg ${theme === 'light' ? 'hover:bg-red-50' : 'hover:bg-red-400/10'}`}
                           title="Удалить"
                         >
                           <Trash2 size={18} />
@@ -281,7 +284,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
                 ))}
                 {filteredProducts.length === 0 && (
                   <tr>
-                    <td colSpan={8} className="px-6 py-12 text-center text-slate-500">
+                    <td colSpan={8} className={`px-6 py-12 text-center ${t.textMuted}`}>
                       Товары не найдены
                     </td>
                   </tr>
@@ -294,10 +297,10 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
         {/* Cards - Mobile/Tablet */}
         <div className="lg:hidden space-y-3">
           {displayedProducts.map((product) => (
-            <div key={product.id} className="bg-slate-800/50 rounded-xl border border-slate-700 p-4 space-y-3">
+            <div key={product.id} className={`${t.bgCard} rounded-xl border ${t.border} p-4 space-y-3 ${t.shadow}`}>
               <div className="flex justify-between items-start">
                 <div className="flex-1">
-                  <h3 className="font-medium text-white text-sm sm:text-base">{product.name}</h3>
+                  <h3 className={`font-medium ${t.text} text-sm sm:text-base`}>{product.name}</h3>
                   {product.origin === 'import' && (
                     <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-500/10 text-purple-400 border border-purple-500/20 mt-1">
                       ИМПОРТ
@@ -307,14 +310,14 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
                 <div className="flex gap-2">
                   <button
                     onClick={() => openEditModal(product)}
-                    className="text-slate-500 hover:text-primary-400 transition-colors p-2 rounded-lg hover:bg-primary-400/10"
+                    className={`${t.textMuted} hover:${t.accent} transition-colors p-2 rounded-lg ${theme === 'light' ? 'hover:bg-blue-50' : 'hover:bg-primary-400/10'}`}
                     title="Редактировать"
                   >
                     <Pencil size={18} />
                   </button>
                   <button
                     onClick={() => handleDelete(product.id)}
-                    className="text-slate-500 hover:text-red-400 transition-colors p-2 rounded-lg hover:bg-red-400/10"
+                    className={`${t.textMuted} hover:text-red-500 transition-colors p-2 rounded-lg ${theme === 'light' ? 'hover:bg-red-50' : 'hover:bg-red-400/10'}`}
                     title="Удалить"
                   >
                     <Trash2 size={18} />
@@ -323,7 +326,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
               </div>
               <div className="grid grid-cols-2 gap-3 text-xs sm:text-sm">
                 <div>
-                  <p className="text-slate-400 mb-1">Тип</p>
+                  <p className={`${t.textMuted} mb-1`}>Тип</p>
                   <span className={`px-2 py-1 rounded-full text-xs font-medium border ${product.type === ProductType.PIPE ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
                     product.type === ProductType.PROFILE ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
                       'bg-slate-500/10 text-slate-400 border-slate-500/20'
@@ -332,39 +335,39 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
                   </span>
                 </div>
                 <div>
-                  <p className="text-slate-400 mb-1">Размеры</p>
-                  <p className="text-white">{product.dimensions}</p>
+                  <p className={`${t.textMuted} mb-1`}>Размеры</p>
+                  <p className={t.text}>{product.dimensions}</p>
                 </div>
                 <div>
-                  <p className="text-slate-400 mb-1">Сталь</p>
-                  <p className="text-white">{product.steelGrade}</p>
+                  <p className={`${t.textMuted} mb-1`}>Сталь</p>
+                  <p className={t.text}>{product.steelGrade}</p>
                 </div>
                 <div>
-                  <p className="text-slate-400 mb-1">Остаток</p>
-                  <p className={`font-mono ${product.quantity <= product.minStockLevel ? 'text-red-400' : 'text-slate-200'}`}>
-                    {product.quantity} <span className="text-xs text-slate-500">{product.unit}</span>
+                  <p className={`${t.textMuted} mb-1`}>Остаток</p>
+                  <p className={`font-mono ${product.quantity <= product.minStockLevel ? 'text-red-500' : t.textSecondary}`}>
+                    {product.quantity} <span className={`text-xs ${t.textMuted}`}>{product.unit}</span>
                   </p>
                 </div>
                 <div>
-                  <p className="text-slate-400 mb-1">Себестоимость</p>
-                  <p className="font-mono text-slate-400">
+                  <p className={`${t.textMuted} mb-1`}>Себестоимость</p>
+                  <p className={`font-mono ${t.textMuted}`}>
                     {user?.permissions?.canViewCostPrice !== false ? (
                       `$${(product.costPrice || 0).toFixed(2)}`
                     ) : (
-                      <span className="text-slate-600 flex items-center gap-1"><Lock size={12} /> ***</span>
+                      <span className={`${t.textMuted} flex items-center gap-1`}><Lock size={12} /> ***</span>
                     )}
                   </p>
                 </div>
 
                 <div>
-                  <p className="text-slate-400 mb-1">Цена</p>
-                  <p className="font-mono text-emerald-400">${product.pricePerUnit.toFixed(2)}</p>
+                  <p className={`${t.textMuted} mb-1`}>Цена</p>
+                  <p className={`font-mono ${t.success}`}>${product.pricePerUnit.toFixed(2)}</p>
                 </div>
               </div>
             </div>
           ))}
           {filteredProducts.length === 0 && (
-            <div className="bg-slate-800/50 rounded-xl border border-slate-700 p-12 text-center text-slate-500">
+            <div className={`${t.bgCard} rounded-xl border ${t.border} p-12 text-center ${t.textMuted}`}>
               Товары не найдены
             </div>
           )}
@@ -374,21 +377,21 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
       {/* Pagination */}
       {
         filteredProducts.length > pageSize && (
-          <div className="flex items-center justify-between bg-slate-800 border border-slate-700 rounded-xl px-4 py-3">
+          <div className={`flex items-center justify-between ${t.bgCard} border ${t.border} rounded-xl px-4 py-3`}>
             <button
               onClick={() => setPage(p => Math.max(1, p - 1))}
               disabled={page === 1}
-              className="px-3 py-2 rounded-lg text-sm font-medium border border-slate-600 text-slate-200 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-700 transition-colors"
+              className={`px-3 py-2 rounded-lg text-sm font-medium border ${t.borderInput} ${t.textSecondary} disabled:opacity-50 disabled:cursor-not-allowed ${t.bgCardHover} transition-colors`}
             >
               Назад
             </button>
-            <div className="text-sm text-slate-300">
+            <div className={`text-sm ${t.textSecondary}`}>
               Стр. {page} из {totalPages} • {filteredProducts.length} товаров
             </div>
             <button
               onClick={() => setPage(p => Math.min(totalPages, p + 1))}
               disabled={page === totalPages}
-              className="px-3 py-2 rounded-lg text-sm font-medium border border-slate-600 text-slate-200 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-700 transition-colors"
+              className={`px-3 py-2 rounded-lg text-sm font-medium border ${t.borderInput} ${t.textSecondary} disabled:opacity-50 disabled:cursor-not-allowed ${t.bgCardHover} transition-colors`}
             >
               Вперёд
             </button>
@@ -400,26 +403,26 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
       {
         showAddModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/70 backdrop-blur-sm">
-            <div className="bg-slate-800 rounded-xl sm:rounded-2xl w-full max-w-2xl border border-slate-700 shadow-2xl overflow-hidden flex flex-col max-h-[95vh] sm:max-h-[90vh]">
-              <div className="p-6 border-b border-slate-700 flex justify-between items-center bg-slate-900/50">
-                <h3 className="text-xl font-bold text-white">
+            <div className={`${t.bgCard} rounded-xl sm:rounded-2xl w-full max-w-2xl border ${t.border} shadow-2xl overflow-hidden flex flex-col max-h-[95vh] sm:max-h-[90vh]`}>
+              <div className={`p-6 border-b ${t.border} flex justify-between items-center ${t.bgPanelAlt}`}>
+                <h3 className={`text-xl font-bold ${t.text}`}>
                   {editingId ? 'Редактировать товар' : 'Новый товар'}
                 </h3>
-                <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-white">&times;</button>
+                <button onClick={() => setShowAddModal(false)} className={`${t.textMuted} hover:${t.text}`}>&times;</button>
               </div>
 
               <div className="p-6 overflow-y-auto space-y-6">
                 {/* AI Input Section - Only show for new items */}
                 {!editingId && (
-                  <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-xl p-4 space-y-3">
-                    <div className="flex items-center gap-2 text-indigo-400 font-medium">
+                  <div className={`${t.accentBg} border ${theme === 'light' ? 'border-blue-200' : 'border-indigo-500/20'} rounded-xl p-4 space-y-3`}>
+                    <div className={`flex items-center gap-2 ${t.accent} font-medium`}>
                       <BrainCircuit size={18} />
                       <span>AI Автозаполнение</span>
                     </div>
                     <div className="flex gap-2">
                       <input
                         type="text"
-                        className="flex-1 bg-slate-900/50 border border-slate-600 rounded-lg px-3 py-2 text-sm focus:ring-1 focus:ring-indigo-500 outline-none"
+                        className={`flex-1 ${t.bgInput} border ${t.borderInput} rounded-lg px-3 py-2 text-sm ${t.text} ${t.focusRing} outline-none`}
                         placeholder='Например: "Труба 50мм сталь 20 100м по $3.5"'
                         value={smartInput}
                         onChange={e => setSmartInput(e.target.value)}
@@ -427,7 +430,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
                       <button
                         onClick={handleSmartParse}
                         disabled={isAiLoading}
-                        className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-700 text-white px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center"
+                        className={`${t.buttonPrimary} px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center`}
                       >
                         {isAiLoading ? <Loader2 size={16} className="animate-spin" /> : 'Распознать'}
                       </button>
@@ -438,10 +441,10 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
                 {/* Form Fields */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-1 md:col-span-2">
-                    <label className="text-xs font-medium text-slate-400">Название <span className="text-red-500">*</span></label>
+                    <label className={`text-xs font-medium ${t.textMuted}`}>Название <span className="text-red-500">*</span></label>
                     <input
                       type="text"
-                      className={`w-full bg-slate-700 border rounded-lg px-3 py-2 focus:ring-2 focus:outline-none ${!formData.name && showAddModal ? 'border-red-500/50 focus:ring-red-500' : 'border-slate-600 focus:ring-primary-500'
+                      className={`w-full ${t.bgInput} border rounded-lg px-3 py-2 ${t.text} focus:ring-2 focus:outline-none ${!formData.name && showAddModal ? 'border-red-500/50 focus:ring-red-500' : `${t.borderInput} ${t.focusRing}`
                         }`}
                       placeholder="Введите название товара"
                       value={formData.name || ''}
@@ -453,42 +456,42 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-xs font-medium text-slate-400">Тип</label>
+                    <label className={`text-xs font-medium ${t.textMuted}`}>Тип</label>
                     <select
-                      className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 outline-none"
+                      className={`w-full ${t.bgInput} border ${t.borderInput} rounded-lg px-3 py-2 ${t.text} outline-none`}
                       value={formData.type}
                       onChange={e => setFormData({ ...formData, type: e.target.value as ProductType })}
                     >
-                      {Object.values(ProductType).map(t => (
-                        <option key={t} value={t}>{t}</option>
+                      {Object.values(ProductType).map(pt => (
+                        <option key={pt} value={pt}>{pt}</option>
                       ))}
                     </select>
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-xs font-medium text-slate-400">Размеры</label>
+                    <label className={`text-xs font-medium ${t.textMuted}`}>Размеры</label>
                     <input
                       type="text"
-                      className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 outline-none"
+                      className={`w-full ${t.bgInput} border ${t.borderInput} rounded-lg px-3 py-2 ${t.text} outline-none`}
                       value={formData.dimensions || ''}
                       onChange={e => setFormData({ ...formData, dimensions: e.target.value })}
                     />
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-xs font-medium text-slate-400">Марка стали</label>
+                    <label className={`text-xs font-medium ${t.textMuted}`}>Марка стали</label>
                     <input
                       type="text"
-                      className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 outline-none"
+                      className={`w-full ${t.bgInput} border ${t.borderInput} rounded-lg px-3 py-2 ${t.text} outline-none`}
                       value={formData.steelGrade || ''}
                       onChange={e => setFormData({ ...formData, steelGrade: e.target.value })}
                     />
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-xs font-medium text-slate-400">Ед. измерения</label>
+                    <label className={`text-xs font-medium ${t.textMuted}`}>Ед. измерения</label>
                     <select
-                      className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 outline-none"
+                      className={`w-full ${t.bgInput} border ${t.borderInput} rounded-lg px-3 py-2 ${t.text} outline-none`}
                       value={formData.unit}
                       onChange={e => setFormData({ ...formData, unit: e.target.value as Unit })}
                     >
@@ -501,11 +504,11 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
                   {/* Origin selector removed: Default is Local */}
 
                   <div className="space-y-1 md:col-span-2">
-                    <label className="text-xs font-medium text-slate-400">Количество</label>
+                    <label className={`text-xs font-medium ${t.textMuted}`}>Количество</label>
                     <input
                       type="number"
                       disabled
-                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 outline-none text-slate-500 cursor-not-allowed"
+                      className={`w-full ${theme === 'light' ? 'bg-gray-100 border-gray-200 text-gray-400' : 'bg-slate-800 border-slate-700 text-slate-500'} border rounded-lg px-3 py-2 outline-none cursor-not-allowed`}
                       value={formData.quantity}
                       onChange={e => setFormData({ ...formData, quantity: Number(e.target.value) })}
                     />
@@ -513,13 +516,13 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
 
                   {/* Prices Row */}
                   <div className="space-y-1">
-                    <label className="text-xs font-medium text-slate-400">Себестоимость (USD)</label>
+                    <label className={`text-xs font-medium ${t.textMuted}`}>Себестоимость (USD)</label>
                     <div className="relative">
-                      <TrendingUp className="absolute left-2 top-2.5 text-slate-400" size={14} />
+                      <TrendingUp className={`absolute left-2 top-2.5 ${t.textMuted}`} size={14} />
                       <input
                         type="number"
                         disabled
-                        className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-7 pr-3 py-2 outline-none text-slate-500 cursor-not-allowed"
+                        className={`w-full ${theme === 'light' ? 'bg-gray-100 border-gray-200 text-gray-400' : 'bg-slate-800 border-slate-700 text-slate-500'} border rounded-lg pl-7 pr-3 py-2 outline-none cursor-not-allowed`}
                         placeholder="0.00"
                         value={formData.costPrice}
                         onChange={e => setFormData({ ...formData, costPrice: Number(e.target.value) })}
@@ -528,12 +531,12 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-xs font-medium text-slate-400">Цена продажи (USD)</label>
+                    <label className={`text-xs font-medium ${t.textMuted}`}>Цена продажи (USD)</label>
                     <div className="relative">
-                      <DollarSign className="absolute left-2 top-2.5 text-slate-400" size={14} />
+                      <DollarSign className={`absolute left-2 top-2.5 ${t.textMuted}`} size={14} />
                       <input
                         type="number"
-                        className="w-full bg-slate-700 border border-slate-600 rounded-lg pl-7 pr-3 py-2 outline-none"
+                        className={`w-full ${t.bgInput} border ${t.borderInput} rounded-lg pl-7 pr-3 py-2 ${t.text} outline-none`}
                         placeholder="0.00"
                         value={formData.pricePerUnit}
                         onChange={e => setFormData({ ...formData, pricePerUnit: Number(e.target.value) })}
@@ -543,16 +546,16 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
                 </div>
               </div>
 
-              <div className="p-6 border-t border-slate-700 flex justify-end gap-3 bg-slate-900/50">
+              <div className={`p-6 border-t ${t.border} flex justify-end gap-3 ${t.bgPanelAlt}`}>
                 <button
                   onClick={() => setShowAddModal(false)}
-                  className="px-4 py-2 text-slate-300 hover:text-white transition-colors"
+                  className={`px-4 py-2 ${t.textSecondary} hover:${t.text} transition-colors`}
                 >
                   Отмена
                 </button>
                 <button
                   onClick={handleSaveProduct}
-                  className="bg-primary-600 hover:bg-primary-500 text-white px-6 py-2 rounded-lg font-medium shadow-lg shadow-primary-600/25 transition-all transform active:scale-95"
+                  className={`${t.buttonPrimary} px-6 py-2 rounded-lg font-medium ${t.shadowButton} transition-all transform active:scale-95`}
                 >
                   {editingId ? 'Обновить' : 'Сохранить'}
                 </button>

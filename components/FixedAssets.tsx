@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { FixedAsset, FixedAssetCategory, Transaction } from '../types';
 import { Plus, Trash2, RefreshCw, Landmark, Calendar, DollarSign, TrendingDown, Edit2 } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
+import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
 
 interface FixedAssetsProps {
     assets: FixedAsset[];
@@ -18,6 +19,8 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
     transactions = [], setTransactions, onSaveTransactions,
     defaultExchangeRate = 12800
 }) => {
+    const { theme } = useTheme();
+    const t = getThemeClasses(theme);
     const toast = useToast();
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isRevalModalOpen, setIsRevalModalOpen] = useState(false);
@@ -202,15 +205,15 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
         <div className="p-6 h-full flex flex-col space-y-6">
             <div className="flex justify-between items-end">
                 <div>
-                    <h2 className="text-3xl font-bold text-white tracking-tight flex items-center gap-3">
+                    <h2 className={`text-3xl font-bold ${t.text} tracking-tight flex items-center gap-3`}>
                         <Landmark className="text-indigo-500" size={32} /> Основные Средства
                     </h2>
-                    <p className="text-slate-400 mt-1">Учет и амортизация активов компании</p>
+                    <p className={`${t.textMuted} mt-1`}>Учет и амортизация активов компании</p>
                 </div>
                 <div className="flex gap-3">
                     <button
                         onClick={runMonthlyDepreciation}
-                        className="bg-slate-800 hover:bg-slate-700 text-indigo-400 border border-indigo-500/30 px-4 py-2 rounded-xl flex items-center gap-2 transition-all"
+                        className={`${theme === 'dark' ? 'bg-slate-800' : 'bg-white'} hover:${theme === 'dark' ? 'bg-slate-700' : 'bg-slate-50'} text-indigo-400 border border-indigo-500/30 px-4 py-2 rounded-xl flex items-center gap-2 transition-all`}
                     >
                         <TrendingDown size={20} /> Начислить амортизацию
                     </button>
@@ -225,26 +228,26 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
 
             {/* Stats Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-slate-800 p-4 rounded-xl border border-slate-700">
-                    <p className="text-slate-400 text-sm">Балансовая стоимость</p>
-                    <p className="text-2xl font-mono font-bold text-white">${totalValue.toLocaleString()}</p>
+                <div className={`${t.bgCard} p-4 rounded-xl border ${t.border}`}>
+                    <p className={`${t.textMuted} text-sm`}>Балансовая стоимость</p>
+                    <p className={`text-2xl font-mono font-bold ${t.text}`}>${totalValue.toLocaleString()}</p>
                 </div>
-                <div className="bg-slate-800 p-4 rounded-xl border border-slate-700">
-                    <p className="text-slate-400 text-sm">Накопленная амортизация</p>
+                <div className={`${t.bgCard} p-4 rounded-xl border ${t.border}`}>
+                    <p className={`${t.textMuted} text-sm`}>Накопленная амортизация</p>
                     <p className="text-2xl font-mono font-bold text-amber-400">${totalDepreciation.toLocaleString()}</p>
                 </div>
-                <div className="bg-slate-800 p-4 rounded-xl border border-slate-700">
-                    <p className="text-slate-400 text-sm">Всего объектов</p>
+                <div className={`${t.bgCard} p-4 rounded-xl border ${t.border}`}>
+                    <p className={`${t.textMuted} text-sm`}>Всего объектов</p>
                     <p className="text-2xl font-mono font-bold text-indigo-400">{assets.length}</p>
                 </div>
             </div>
 
             {/* Assets Table */}
-            <div className="flex-1 bg-slate-800 rounded-2xl border border-slate-700 overflow-hidden flex flex-col">
+            <div className={`flex-1 ${t.bgCard} rounded-2xl border ${t.border} overflow-hidden flex flex-col`}>
                 <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
                         <thead>
-                            <tr className="bg-slate-900/50 text-slate-400 text-sm border-b border-slate-700">
+                            <tr className={`${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-100'} ${t.textMuted} text-sm border-b ${t.border}`}>
                                 <th className="p-4 font-medium">Наименование</th>
                                 <th className="p-4 font-medium">Категория</th>
                                 <th className="p-4 font-medium">Дата покупки</th>
@@ -255,27 +258,27 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
                                 <th className="p-4 font-medium text-center">Действия</th>
                             </tr>
                         </thead>
-                        <tbody className="text-slate-200 text-sm divide-y divide-slate-700">
+                        <tbody className={`${t.text} text-sm divide-y ${t.divide}`}>
                             {assets.map(asset => {
                                 const paid = asset.amountPaid ?? asset.purchaseCost;
                                 const isPartial = paid < asset.purchaseCost;
                                 return (
-                                    <tr key={asset.id} className="hover:bg-slate-700/30 transition-colors">
+                                    <tr key={asset.id} className={`${theme === 'dark' ? 'hover:bg-slate-700/30' : 'hover:bg-slate-50'} transition-colors`}>
                                         <td className="p-4 font-medium">{asset.name}</td>
                                         <td className="p-4">
-                                            <span className="bg-slate-700 px-2 py-1 rounded text-xs text-slate-300">{asset.category}</span>
+                                            <span className={`${theme === 'dark' ? 'bg-slate-700 text-slate-300' : 'bg-slate-200 text-slate-700'} px-2 py-1 rounded text-xs`}>{asset.category}</span>
                                         </td>
-                                        <td className="p-4 text-slate-400">{asset.purchaseDate}</td>
-                                        <td className="p-4 text-right font-mono text-slate-400">${asset.purchaseCost.toLocaleString()}</td>
+                                        <td className={`p-4 ${t.textMuted}`}>{asset.purchaseDate}</td>
+                                        <td className={`p-4 text-right font-mono ${t.textMuted}`}>${asset.purchaseCost.toLocaleString()}</td>
                                         <td className="p-4 text-right">
-                                            <div className="font-mono font-bold text-white">${paid.toLocaleString()}</div>
+                                            <div className={`font-mono font-bold ${t.text}`}>${paid.toLocaleString()}</div>
                                             {isPartial && (
                                                 <div className="text-[10px] text-amber-400 mt-0.5">
                                                     Долг: ${(asset.purchaseCost - paid).toLocaleString()}
                                                 </div>
                                             )}
                                         </td>
-                                        <td className="p-4 text-right font-mono font-bold text-white">${asset.currentValue.toLocaleString()}</td>
+                                        <td className={`p-4 text-right font-mono font-bold ${t.text}`}>${asset.currentValue.toLocaleString()}</td>
                                         <td className="p-4 text-center text-amber-400 font-mono">{asset.depreciationRate}%</td>
                                         <td className="p-4 flex justify-center gap-2">
                                             <button
@@ -298,7 +301,7 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
                             })}
                             {assets.length === 0 && (
                                 <tr>
-                                    <td colSpan={8} className="p-8 text-center text-slate-500">
+                                    <td colSpan={8} className={`p-8 text-center ${t.textMuted}`}>
                                         Нет основных средств. Добавьте первое!
                                     </td>
                                 </tr>
@@ -311,22 +314,22 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
             {/* Add Asset Modal */}
             {isModalOpen && (
                 <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-slate-800 rounded-2xl border border-slate-700 w-full max-w-md p-6 shadow-2xl">
-                        <h3 className="text-xl font-bold text-white mb-6">Новое Основное Средство</h3>
+                    <div className={`${t.bgCard} rounded-2xl border ${t.border} w-full max-w-md p-6 shadow-2xl`}>
+                        <h3 className={`text-xl font-bold ${t.text} mb-6`}>Новое Основное Средство</h3>
                         <div className="space-y-4">
                             <div>
-                                <label className="block text-sm font-medium text-slate-400 mb-1">Наименование</label>
+                                <label className={`block text-sm font-medium ${t.textMuted} mb-1`}>Наименование</label>
                                 <input
                                     type="text"
-                                    className="w-full bg-slate-900 border border-slate-600 rounded-xl px-4 py-2 text-white outline-none focus:border-indigo-500"
+                                    className={`w-full ${t.input} border ${t.border} rounded-xl px-4 py-2 ${t.text} outline-none focus:border-indigo-500`}
                                     value={name}
                                     onChange={e => setName(e.target.value)}
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-slate-400 mb-1">Категория</label>
+                                <label className={`block text-sm font-medium ${t.textMuted} mb-1`}>Категория</label>
                                 <select
-                                    className="w-full bg-slate-900 border border-slate-600 rounded-xl px-4 py-2 text-white outline-none focus:border-indigo-500"
+                                    className={`w-full ${t.input} border ${t.border} rounded-xl px-4 py-2 ${t.text} outline-none focus:border-indigo-500`}
                                     value={category}
                                     onChange={e => setCategory(e.target.value as FixedAssetCategory)}
                                 >
@@ -337,10 +340,10 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-slate-400 mb-1">Стоимость (USD)</label>
+                                    <label className={`block text-sm font-medium ${t.textMuted} mb-1`}>Стоимость (USD)</label>
                                     <input
                                         type="number"
-                                        className="w-full bg-slate-900 border border-slate-600 rounded-xl px-4 py-2 text-white outline-none focus:border-indigo-500"
+                                        className={`w-full ${t.input} border ${t.border} rounded-xl px-4 py-2 ${t.text} outline-none focus:border-indigo-500`}
                                         value={purchaseCost}
                                         onChange={e => {
                                             setPurchaseCost(e.target.value);
@@ -349,10 +352,10 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-slate-400 mb-1">Дата покупки</label>
+                                    <label className={`block text-sm font-medium ${t.textMuted} mb-1`}>Дата покупки</label>
                                     <input
                                         type="date"
-                                        className="w-full bg-slate-900 border border-slate-600 rounded-xl px-4 py-2 text-white outline-none focus:border-indigo-500"
+                                        className={`w-full ${t.input} border ${t.border} rounded-xl px-4 py-2 ${t.text} outline-none focus:border-indigo-500`}
                                         value={purchaseDate}
                                         onChange={e => setPurchaseDate(e.target.value)}
                                     />
@@ -360,40 +363,40 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
                             </div>
                             {/* Amount Paid Field */}
                             <div>
-                                <label className="block text-sm font-medium text-slate-400 mb-1">Сумма оплаты (USD)</label>
+                                <label className={`block text-sm font-medium ${t.textMuted} mb-1`}>Сумма оплаты (USD)</label>
                                 <input
                                     type="number"
-                                    className="w-full bg-slate-900 border border-slate-600 rounded-xl px-4 py-2 text-white outline-none focus:border-indigo-500"
+                                    className={`w-full ${t.input} border ${t.border} rounded-xl px-4 py-2 ${t.text} outline-none focus:border-indigo-500`}
                                     value={amountPaid}
                                     onChange={e => setAmountPaid(e.target.value)}
                                     placeholder={purchaseCost || '0'}
                                 />
-                                <p className="text-xs text-slate-500 mt-1">
+                                <p className={`text-xs ${t.textMuted} mt-1`}>
                                     Оставьте пустым для полной оплаты. Разница уходит в кредиторскую задолженность.
                                 </p>
                             </div>
                             {/* Payment Method */}
                             <div>
-                                <label className="block text-sm font-medium text-slate-400 mb-2">Способ оплаты</label>
+                                <label className={`block text-sm font-medium ${t.textMuted} mb-2`}>Способ оплаты</label>
                                 <div className="grid grid-cols-3 gap-2">
                                     <button
                                         type="button"
                                         onClick={() => setPaymentMethod('cash')}
-                                        className={`py-2 rounded-xl text-sm font-medium border transition-all ${paymentMethod === 'cash' ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : 'bg-slate-900 border-slate-600 text-slate-400'}`}
+                                        className={`py-2 rounded-xl text-sm font-medium border transition-all ${paymentMethod === 'cash' ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : `${t.bgCard} ${t.border} ${t.textMuted}`}`}
                                     >
                                         Наличные
                                     </button>
                                     <button
                                         type="button"
                                         onClick={() => setPaymentMethod('bank')}
-                                        className={`py-2 rounded-xl text-sm font-medium border transition-all ${paymentMethod === 'bank' ? 'bg-purple-500/20 border-purple-500 text-purple-400' : 'bg-slate-900 border-slate-600 text-slate-400'}`}
+                                        className={`py-2 rounded-xl text-sm font-medium border transition-all ${paymentMethod === 'bank' ? 'bg-purple-500/20 border-purple-500 text-purple-400' : `${t.bgCard} ${t.border} ${t.textMuted}`}`}
                                     >
                                         Р/С (Банк)
                                     </button>
                                     <button
                                         type="button"
                                         onClick={() => setPaymentMethod('card')}
-                                        className={`py-2 rounded-xl text-sm font-medium border transition-all ${paymentMethod === 'card' ? 'bg-blue-500/20 border-blue-500 text-blue-400' : 'bg-slate-900 border-slate-600 text-slate-400'}`}
+                                        className={`py-2 rounded-xl text-sm font-medium border transition-all ${paymentMethod === 'card' ? 'bg-blue-500/20 border-blue-500 text-blue-400' : `${t.bgCard} ${t.border} ${t.textMuted}`}`}
                                     >
                                         Карта
                                     </button>
@@ -403,19 +406,19 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
                             {/* Currency (only for cash) */}
                             {paymentMethod === 'cash' && (
                                 <div>
-                                    <label className="block text-sm font-medium text-slate-400 mb-2">Валюта оплаты</label>
-                                    <div className="flex bg-slate-900 rounded-xl p-1 border border-slate-600">
+                                    <label className={`block text-sm font-medium ${t.textMuted} mb-2`}>Валюта оплаты</label>
+                                    <div className={`flex ${theme === 'dark' ? 'bg-slate-900' : 'bg-slate-100'} rounded-xl p-1 border ${t.border}`}>
                                         <button
                                             type="button"
                                             onClick={() => setPaymentCurrency('UZS')}
-                                            className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${paymentCurrency === 'UZS' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'}`}
+                                            className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${paymentCurrency === 'UZS' ? 'bg-slate-700 text-white' : `${t.textMuted} hover:${t.text}`}`}
                                         >
                                             Сум (UZS)
                                         </button>
                                         <button
                                             type="button"
                                             onClick={() => setPaymentCurrency('USD')}
-                                            className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${paymentCurrency === 'USD' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'}`}
+                                            className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${paymentCurrency === 'USD' ? 'bg-slate-700 text-white' : `${t.textMuted} hover:${t.text}`}`}
                                         >
                                             Доллар (USD)
                                         </button>
@@ -423,10 +426,10 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
 
                                     {paymentCurrency === 'UZS' && (
                                         <div className="mt-2">
-                                            <label className="block text-xs font-medium text-slate-400 mb-1">Курс обмена (для пересчета)</label>
+                                            <label className={`block text-xs font-medium ${t.textMuted} mb-1`}>Курс обмена (для пересчета)</label>
                                             <input
                                                 type="number"
-                                                className="w-full bg-slate-900 border border-slate-600 rounded-xl px-4 py-2 text-white outline-none focus:border-indigo-500"
+                                                className={`w-full ${t.input} border ${t.border} rounded-xl px-4 py-2 ${t.text} outline-none focus:border-indigo-500`}
                                                 value={customExchangeRate}
                                                 onChange={e => setCustomExchangeRate(e.target.value)}
                                             />
@@ -436,8 +439,8 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
                             )}
 
                             {paymentMethod !== 'cash' && (
-                                <div className="bg-slate-900/50 p-2 rounded-lg border border-slate-700">
-                                    <p className="text-xs text-slate-400">
+                                <div className={`${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-100'} p-2 rounded-lg border ${t.border}`}>
+                                    <p className={`text-xs ${t.textMuted}`}>
                                         {paymentMethod === 'bank' ? 'Р/С (Банк)' : 'Карта'} — оплата только в сумах (UZS)
                                     </p>
                                 </div>
@@ -452,7 +455,7 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
                         <div className="flex gap-3 mt-6">
                             <button
                                 onClick={() => setIsModalOpen(false)}
-                                className="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-3 rounded-xl font-medium transition-all"
+                                className={`flex-1 ${theme === 'dark' ? 'bg-slate-700 hover:bg-slate-600' : 'bg-slate-200 hover:bg-slate-300'} ${t.text} py-3 rounded-xl font-medium transition-all`}
                             >
                                 Отмена
                             </button>
@@ -470,16 +473,16 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
             {/* Revaluation Modal */}
             {isRevalModalOpen && (
                 <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-slate-800 rounded-2xl border border-slate-700 w-full max-w-sm p-6 shadow-2xl">
-                        <h3 className="text-xl font-bold text-white mb-4">Переоценка Актива</h3>
-                        <p className="text-slate-400 text-sm mb-4">
+                    <div className={`${t.bgCard} rounded-2xl border ${t.border} w-full max-w-sm p-6 shadow-2xl`}>
+                        <h3 className={`text-xl font-bold ${t.text} mb-4`}>Переоценка Актива</h3>
+                        <p className={`${t.textMuted} text-sm mb-4`}>
                             Введите новую текущую стоимость для <strong>{selectedAsset?.name}</strong>.
                         </p>
                         <div className="mb-6">
-                            <label className="block text-sm font-medium text-slate-400 mb-1">Новая стоимость (USD)</label>
+                            <label className={`block text-sm font-medium ${t.textMuted} mb-1`}>Новая стоимость (USD)</label>
                             <input
                                 type="number"
-                                className="w-full bg-slate-900 border border-slate-600 rounded-xl px-4 py-2 text-white outline-none focus:border-indigo-500"
+                                className={`w-full ${t.input} border ${t.border} rounded-xl px-4 py-2 ${t.text} outline-none focus:border-indigo-500`}
                                 value={revalValue}
                                 onChange={e => setRevalValue(e.target.value)}
                             />
@@ -487,7 +490,7 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
                         <div className="flex gap-3">
                             <button
                                 onClick={() => setIsRevalModalOpen(false)}
-                                className="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-3 rounded-xl font-medium transition-all"
+                                className={`flex-1 ${theme === 'dark' ? 'bg-slate-700 hover:bg-slate-600' : 'bg-slate-200 hover:bg-slate-300'} ${t.text} py-3 rounded-xl font-medium transition-all`}
                             >
                                 Отмена
                             </button>

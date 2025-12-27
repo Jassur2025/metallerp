@@ -1,6 +1,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { Order } from '../types';
+import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend } from 'recharts';
 import { Users, Briefcase, TrendingUp, Crown, Wallet, Package, X, ChevronRight } from 'lucide-react';
 
@@ -24,6 +25,8 @@ interface StatItem {
 }
 
 export const SalesAnalytics: React.FC<SalesAnalyticsProps> = ({ orders }) => {
+    const { theme } = useTheme();
+    const t = getThemeClasses(theme);
     const [selectedClient, setSelectedClient] = useState<StatItem | null>(null);
 
     // Aggregate Data
@@ -130,38 +133,38 @@ export const SalesAnalytics: React.FC<SalesAnalyticsProps> = ({ orders }) => {
         <div className="p-6 space-y-8 animate-fade-in pb-20">
             <div className="flex justify-between items-center">
                 <div>
-                    <h2 className="text-2xl font-bold text-white tracking-tight">Аналитика Продаж</h2>
-                    <p className="text-slate-400 mt-1">Статистика по клиентам и сотрудникам</p>
+                    <h2 className={`text-2xl font-bold ${t.text} tracking-tight`}>Аналитика Продаж</h2>
+                    <p className={`${t.textMuted} mt-1`}>Статистика по клиентам и сотрудникам</p>
                 </div>
             </div>
 
             {/* Global Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-lg flex items-center gap-4">
-                    <div className="p-3 bg-emerald-500/10 rounded-xl text-emerald-400">
+                <div className={`${t.bgCard} p-6 rounded-2xl border ${t.border} shadow-lg flex items-center gap-4`}>
+                    <div className="p-3 bg-emerald-500/10 rounded-xl text-emerald-500">
                         <TrendingUp size={32} />
                     </div>
                     <div>
-                        <p className="text-slate-400 text-sm">Общая Выручка</p>
-                        <p className="text-2xl font-bold text-white">{formatCurrency(stats.totalRevenue)}</p>
+                        <p className={`${t.textMuted} text-sm`}>Общая Выручка</p>
+                        <p className={`text-2xl font-bold ${t.text}`}>{formatCurrency(stats.totalRevenue)}</p>
                     </div>
                 </div>
-                <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-lg flex items-center gap-4">
-                    <div className="p-3 bg-blue-500/10 rounded-xl text-blue-400">
+                <div className={`${t.bgCard} p-6 rounded-2xl border ${t.border} shadow-lg flex items-center gap-4`}>
+                    <div className="p-3 bg-blue-500/10 rounded-xl text-blue-500">
                         <Users size={32} />
                     </div>
                     <div>
-                        <p className="text-slate-400 text-sm">Активных клиентов</p>
-                        <p className="text-2xl font-bold text-white">{stats.clients.length}</p>
+                        <p className={`${t.textMuted} text-sm`}>Активных клиентов</p>
+                        <p className={`text-2xl font-bold ${t.text}`}>{stats.clients.length}</p>
                     </div>
                 </div>
-                <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-lg flex items-center gap-4">
-                    <div className="p-3 bg-amber-500/10 rounded-xl text-amber-400">
+                <div className={`${t.bgCard} p-6 rounded-2xl border ${t.border} shadow-lg flex items-center gap-4`}>
+                    <div className="p-3 bg-amber-500/10 rounded-xl text-amber-500">
                         <Wallet size={32} />
                     </div>
                     <div>
-                        <p className="text-slate-400 text-sm">Средний чек</p>
-                        <p className="text-2xl font-bold text-white">
+                        <p className={`${t.textMuted} text-sm`}>Средний чек</p>
+                        <p className={`text-2xl font-bold ${t.text}`}>
                             {formatCurrency(stats.averageCheck)}
                         </p>
                     </div>
@@ -171,19 +174,23 @@ export const SalesAnalytics: React.FC<SalesAnalyticsProps> = ({ orders }) => {
             {/* Clients Section */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* Chart */}
-                <div className="lg:col-span-2 bg-slate-800 rounded-2xl border border-slate-700 p-6 shadow-lg">
-                    <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
+                <div className={`lg:col-span-2 ${t.bgCard} rounded-2xl border ${t.border} p-6 shadow-lg`}>
+                    <h3 className={`text-xl font-bold ${t.text} mb-6 flex items-center gap-2`}>
                         <Users size={20} className="text-blue-500" /> Топ-10 Клиентов (Выручка)
                     </h3>
                     <div className="h-[320px] w-full">
                         {stats.clients.length > 0 ? (
                             <ResponsiveContainer width="100%" height="100%">
                                 <BarChart data={stats.clients.slice(0, 10)} layout="vertical" margin={{ left: 10, right: 30 }}>
-                                    <XAxis type="number" stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `$${val}`} />
-                                    <YAxis dataKey="name" type="category" stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} width={100} />
+                                    <XAxis type="number" stroke={theme === 'dark' ? "#64748b" : "#94a3b8"} fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `$${val}`} />
+                                    <YAxis dataKey="name" type="category" stroke={theme === 'dark' ? "#94a3b8" : "#64748b"} fontSize={12} tickLine={false} axisLine={false} width={100} />
                                     <Tooltip
                                         cursor={{ fill: 'transparent' }}
-                                        contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155', color: '#f1f5f9' }}
+                                        contentStyle={{
+                                            backgroundColor: theme === 'dark' ? '#1e293b' : '#ffffff',
+                                            borderColor: theme === 'dark' ? '#334155' : '#e2e8f0',
+                                            color: theme === 'dark' ? '#f1f5f9' : '#0f172a'
+                                        }}
                                         formatter={(value: number) => formatCurrency(value)}
                                     />
                                     <Bar dataKey="totalAmount" radius={[0, 4, 4, 0]} barSize={24}>
@@ -194,7 +201,7 @@ export const SalesAnalytics: React.FC<SalesAnalyticsProps> = ({ orders }) => {
                                 </BarChart>
                             </ResponsiveContainer>
                         ) : (
-                            <div className="flex items-center justify-center h-full text-slate-500">
+                            <div className={`flex items-center justify-center h-full ${t.textMuted}`}>
                                 Нет данных для отображения
                             </div>
                         )}
@@ -202,24 +209,24 @@ export const SalesAnalytics: React.FC<SalesAnalyticsProps> = ({ orders }) => {
                 </div>
 
                 {/* Client Statistics Block (Right Column) */}
-                <div className="bg-slate-800 rounded-2xl border border-slate-700 p-0 shadow-lg flex flex-col overflow-hidden h-[450px]">
-                    <div className="p-6 border-b border-slate-700 bg-gradient-to-r from-slate-800 to-slate-900">
-                        <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                            <Crown className="text-amber-400" size={22} /> Лидеры продаж
+                <div className={`${t.bgCard} rounded-2xl border ${t.border} p-0 shadow-lg flex flex-col overflow-hidden h-[450px]`}>
+                    <div className={`p-6 border-b ${t.border} ${theme === 'dark' ? 'bg-gradient-to-r from-slate-800 to-slate-900' : 'bg-gradient-to-r from-white to-slate-50'}`}>
+                        <h3 className={`text-xl font-bold ${t.text} flex items-center gap-2`}>
+                            <Crown className="text-amber-500" size={22} /> Лидеры продаж
                         </h3>
-                        <p className="text-xs text-slate-400 mt-1">Нажмите на клиента для детализации</p>
+                        <p className={`text-xs ${t.textMuted} mt-1`}>Нажмите на клиента для детализации</p>
                     </div>
 
-                    <div className="p-6 bg-slate-900/30 space-y-4 flex-1 overflow-y-auto custom-scrollbar">
+                    <div className={`p-6 ${theme === 'dark' ? 'bg-slate-900/30' : 'bg-slate-50'} space-y-4 flex-1 overflow-y-auto custom-scrollbar`}>
                         {/* KPI Mini-Grid within the card */}
                         <div className="grid grid-cols-2 gap-3 mb-4">
-                            <div className="bg-slate-700/40 p-3 rounded-lg border border-slate-600/50">
-                                <p className="text-xs text-slate-400">Уникальных</p>
-                                <p className="text-lg font-bold text-white">{stats.clients.length}</p>
+                            <div className={`${theme === 'dark' ? 'bg-slate-700/40' : 'bg-slate-100'} p-3 rounded-lg border ${t.border}`}>
+                                <p className={`text-xs ${t.textMuted}`}>Уникальных</p>
+                                <p className={`text-lg font-bold ${t.text}`}>{stats.clients.length}</p>
                             </div>
-                            <div className="bg-slate-700/40 p-3 rounded-lg border border-slate-600/50">
-                                <p className="text-xs text-slate-400">Сред. чек</p>
-                                <p className="text-lg font-bold text-emerald-400">{formatCurrency(stats.averageCheck)}</p>
+                            <div className={`${theme === 'dark' ? 'bg-slate-700/40' : 'bg-slate-100'} p-3 rounded-lg border ${t.border}`}>
+                                <p className={`text-xs ${t.textMuted}`}>Сред. чек</p>
+                                <p className="text-lg font-bold text-emerald-500">{formatCurrency(stats.averageCheck)}</p>
                             </div>
                         </div>
 
@@ -229,7 +236,7 @@ export const SalesAnalytics: React.FC<SalesAnalyticsProps> = ({ orders }) => {
                                 <div
                                     key={client.name + index}
                                     onClick={() => setSelectedClient(client)}
-                                    className="flex items-center justify-between group cursor-pointer p-2 rounded-lg hover:bg-slate-700/50 transition-all"
+                                    className={`flex items-center justify-between group cursor-pointer p-2 rounded-lg ${theme === 'dark' ? 'hover:bg-slate-700/50' : 'hover:bg-slate-100'} transition-all`}
                                 >
                                     <div className="flex items-center gap-3">
                                         <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm shadow-md shrink-0
@@ -241,17 +248,17 @@ export const SalesAnalytics: React.FC<SalesAnalyticsProps> = ({ orders }) => {
                                             {index + 1}
                                         </div>
                                         <div className="min-w-0">
-                                            <p className="text-sm font-medium text-white group-hover:text-primary-400 transition-colors truncate max-w-[120px]">{client.name}</p>
-                                            <p className="text-xs text-slate-500">{client.ordersCount} заказов</p>
+                                            <p className={`text-sm font-medium ${t.text} group-hover:text-primary-400 transition-colors truncate max-w-[120px]`}>{client.name}</p>
+                                            <p className={`text-xs ${t.textMuted}`}>{client.ordersCount} заказов</p>
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-2 text-right shrink-0">
-                                        <p className="text-sm font-bold text-emerald-400 font-mono">{formatCurrency(client.totalAmount)}</p>
-                                        <ChevronRight size={14} className="text-slate-600 group-hover:text-slate-300" />
+                                        <p className="text-sm font-bold text-emerald-500 font-mono">{formatCurrency(client.totalAmount)}</p>
+                                        <ChevronRight size={14} className={`${t.textMuted} group-hover:text-slate-500`} />
                                     </div>
                                 </div>
                             )) : (
-                                <div className="text-center py-4 text-slate-500 text-sm">
+                                <div className={`text-center py-4 ${t.textMuted} text-sm`}>
                                     Нет данных о продажах
                                 </div>
                             )}
@@ -261,10 +268,10 @@ export const SalesAnalytics: React.FC<SalesAnalyticsProps> = ({ orders }) => {
             </div>
 
             {/* Sellers Section */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 pt-4 border-t border-slate-700">
+            <div className={`grid grid-cols-1 lg:grid-cols-3 gap-6 pt-4 border-t ${t.border}`}>
 
-                <div className="bg-slate-800 rounded-2xl border border-slate-700 p-6 shadow-lg">
-                    <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
+                <div className={`${t.bgCard} rounded-2xl border ${t.border} p-6 shadow-lg`}>
+                    <h3 className={`text-xl font-bold ${t.text} mb-6 flex items-center gap-2`}>
                         <Briefcase size={20} className="text-amber-500" /> Доля продавцов
                     </h3>
                     <div className="h-[250px] w-full">
@@ -285,25 +292,29 @@ export const SalesAnalytics: React.FC<SalesAnalyticsProps> = ({ orders }) => {
                                         ))}
                                     </Pie>
                                     <Tooltip
-                                        contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', color: '#f1f5f9' }}
+                                        contentStyle={{
+                                            backgroundColor: theme === 'dark' ? '#0f172a' : '#ffffff',
+                                            borderColor: theme === 'dark' ? '#334155' : '#e2e8f0',
+                                            color: theme === 'dark' ? '#f1f5f9' : '#0f172a'
+                                        }}
                                         formatter={(value: number) => formatCurrency(value)}
                                     />
                                     <Legend verticalAlign="bottom" height={36} />
                                 </PieChart>
                             </ResponsiveContainer>
                         ) : (
-                            <div className="flex items-center justify-center h-full text-slate-500">
+                            <div className={`flex items-center justify-center h-full ${t.textMuted}`}>
                                 Нет данных
                             </div>
                         )}
                     </div>
                 </div>
 
-                <div className="lg:col-span-2 bg-slate-800 rounded-2xl border border-slate-700 p-6 shadow-lg">
-                    <h3 className="text-xl font-bold text-white mb-6">Рейтинг Продавцов</h3>
+                <div className={`lg:col-span-2 ${t.bgCard} rounded-2xl border ${t.border} p-6 shadow-lg`}>
+                    <h3 className={`text-xl font-bold ${t.text} mb-6`}>Рейтинг Продавцов</h3>
                     <div className="overflow-x-auto">
                         <table className="w-full text-left">
-                            <thead className="bg-slate-900/50 text-xs uppercase text-slate-400">
+                            <thead className={`${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-50'} text-xs uppercase ${t.textMuted}`}>
                                 <tr>
                                     <th className="px-6 py-4">Продавец</th>
                                     <th className="px-6 py-4 text-center">Кол-во заказов</th>
@@ -311,25 +322,25 @@ export const SalesAnalytics: React.FC<SalesAnalyticsProps> = ({ orders }) => {
                                     <th className="px-6 py-4 text-right">Вклад</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-slate-700">
+                            <tbody className={`divide-y ${t.divide}`}>
                                 {stats.sellers.length > 0 ? stats.sellers.map((s, i) => {
                                     const percent = stats.totalRevenue > 0 ? (s.totalAmount / stats.totalRevenue) * 100 : 0;
                                     return (
-                                        <tr key={i} className="hover:bg-slate-700/30 transition-colors">
-                                            <td className="px-6 py-4 font-medium text-white flex items-center gap-2">
+                                        <tr key={i} className={`${theme === 'dark' ? 'hover:bg-slate-700/30' : 'hover:bg-slate-50'} transition-colors`}>
+                                            <td className={`px-6 py-4 font-medium ${t.text} flex items-center gap-2`}>
                                                 <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-md shrink-0`} style={{ backgroundColor: COLORS[i % COLORS.length] }}>
                                                     {s.name.charAt(0).toUpperCase()}
                                                 </div>
                                                 {s.name}
                                             </td>
-                                            <td className="px-6 py-4 text-center text-slate-400">{s.ordersCount}</td>
-                                            <td className="px-6 py-4 text-right font-mono font-bold text-emerald-400">
+                                            <td className={`px-6 py-4 text-center ${t.textMuted}`}>{s.ordersCount}</td>
+                                            <td className="px-6 py-4 text-right font-mono font-bold text-emerald-500">
                                                 {formatCurrency(s.totalAmount)}
                                             </td>
                                             <td className="px-6 py-4 text-right">
                                                 <div className="flex items-center justify-end gap-2">
-                                                    <span className="text-xs text-slate-500">{percent.toFixed(1)}%</span>
-                                                    <div className="w-16 h-2 bg-slate-700 rounded-full overflow-hidden">
+                                                    <span className={`text-xs ${t.textMuted}`}>{percent.toFixed(1)}%</span>
+                                                    <div className={`w-16 h-2 ${theme === 'dark' ? 'bg-slate-700' : 'bg-slate-200'} rounded-full overflow-hidden`}>
                                                         <div className="h-full bg-emerald-500" style={{ width: `${percent}%` }}></div>
                                                     </div>
                                                 </div>
@@ -338,7 +349,7 @@ export const SalesAnalytics: React.FC<SalesAnalyticsProps> = ({ orders }) => {
                                     );
                                 }) : (
                                     <tr>
-                                        <td colSpan={4} className="text-center py-8 text-slate-500">Нет данных о сотрудниках</td>
+                                        <td colSpan={4} className={`text-center py-8 ${t.textMuted}`}>Нет данных о сотрудниках</td>
                                     </tr>
                                 )}
                             </tbody>
@@ -350,63 +361,63 @@ export const SalesAnalytics: React.FC<SalesAnalyticsProps> = ({ orders }) => {
             {/* CLIENT DETAILS MODAL */}
             {selectedClient && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-                    <div className="bg-slate-800 rounded-2xl w-full max-w-3xl border border-slate-700 shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-fade-in">
-                        <div className="p-6 border-b border-slate-700 bg-slate-900/50 flex justify-between items-center">
+                    <div className={`${t.bgCard} rounded-2xl w-full max-w-3xl border ${t.border} shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-fade-in`}>
+                        <div className={`p-6 border-b ${t.border} ${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-50'} flex justify-between items-center`}>
                             <div className="flex items-center gap-3">
-                                <div className="p-2 bg-blue-500/10 rounded-full text-blue-400">
+                                <div className="p-2 bg-blue-500/10 rounded-full text-blue-500">
                                     <Users size={24} />
                                 </div>
                                 <div>
-                                    <h3 className="text-xl font-bold text-white">{selectedClient.name}</h3>
-                                    <p className="text-sm text-slate-400">История покупок</p>
+                                    <h3 className={`text-xl font-bold ${t.text}`}>{selectedClient.name}</h3>
+                                    <p className={`text-sm ${t.textMuted}`}>История покупок</p>
                                 </div>
                             </div>
-                            <button onClick={() => setSelectedClient(null)} className="text-slate-400 hover:text-white p-2 rounded-lg hover:bg-slate-700/50 transition-colors">
+                            <button onClick={() => setSelectedClient(null)} className={`${t.textMuted} ${theme === 'dark' ? 'hover:text-white' : 'hover:text-slate-900'} p-2 rounded-lg ${theme === 'dark' ? 'hover:bg-slate-700/50' : 'hover:bg-slate-100'} transition-colors`}>
                                 <X size={24} />
                             </button>
                         </div>
 
                         <div className="p-6 overflow-y-auto">
                             <div className="grid grid-cols-3 gap-4 mb-6">
-                                <div className="bg-slate-700/30 p-4 rounded-xl border border-slate-700">
-                                    <p className="text-xs text-slate-400 uppercase">Всего заказов</p>
-                                    <p className="text-2xl font-bold text-white mt-1">{selectedClient.ordersCount}</p>
+                                <div className={`${theme === 'dark' ? 'bg-slate-700/30' : 'bg-slate-100'} p-4 rounded-xl border ${t.border}`}>
+                                    <p className={`text-xs ${t.textMuted} uppercase`}>Всего заказов</p>
+                                    <p className={`text-2xl font-bold ${t.text} mt-1`}>{selectedClient.ordersCount}</p>
                                 </div>
-                                <div className="bg-slate-700/30 p-4 rounded-xl border border-slate-700">
-                                    <p className="text-xs text-slate-400 uppercase">Куплено товаров</p>
-                                    <p className="text-2xl font-bold text-blue-400 mt-1">
+                                <div className={`${theme === 'dark' ? 'bg-slate-700/30' : 'bg-slate-100'} p-4 rounded-xl border ${t.border}`}>
+                                    <p className={`text-xs ${t.textMuted} uppercase`}>Куплено товаров</p>
+                                    <p className="text-2xl font-bold text-blue-500 mt-1">
                                         {Object.keys(selectedClient.purchasedProducts).length}
                                     </p>
                                 </div>
-                                <div className="bg-slate-700/30 p-4 rounded-xl border border-slate-700">
-                                    <p className="text-xs text-slate-400 uppercase">Сумма покупок</p>
-                                    <p className="text-2xl font-bold text-emerald-400 mt-1">{formatCurrency(selectedClient.totalAmount)}</p>
+                                <div className={`${theme === 'dark' ? 'bg-slate-700/30' : 'bg-slate-100'} p-4 rounded-xl border ${t.border}`}>
+                                    <p className={`text-xs ${t.textMuted} uppercase`}>Сумма покупок</p>
+                                    <p className="text-2xl font-bold text-emerald-500 mt-1">{formatCurrency(selectedClient.totalAmount)}</p>
                                 </div>
                             </div>
 
-                            <h4 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                                <Package size={18} className="text-slate-400" /> Приобретенная номенклатура
+                            <h4 className={`text-lg font-bold ${t.text} mb-4 flex items-center gap-2`}>
+                                <Package size={18} className={`${t.textMuted}`} /> Приобретенная номенклатура
                             </h4>
 
-                            <div className="border border-slate-700 rounded-xl overflow-hidden">
+                            <div className={`border ${t.border} rounded-xl overflow-hidden`}>
                                 <table className="w-full text-left">
-                                    <thead className="bg-slate-900/50 text-xs uppercase text-slate-400">
+                                    <thead className={`${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-50'} text-xs uppercase ${t.textMuted}`}>
                                         <tr>
                                             <th className="px-4 py-3">Товар</th>
                                             <th className="px-4 py-3 text-right">Кол-во</th>
                                             <th className="px-4 py-3 text-right">Сумма (USD)</th>
                                         </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-slate-700">
+                                    <tbody className={`divide-y ${t.divide}`}>
                                         {(Object.values(selectedClient.purchasedProducts) as ProductStat[])
                                             .sort((a, b) => b.total - a.total)
                                             .map((product, idx) => (
-                                                <tr key={idx} className="hover:bg-slate-700/30">
-                                                    <td className="px-4 py-3 font-medium text-slate-200">{product.name}</td>
-                                                    <td className="px-4 py-3 text-right font-mono text-slate-400">
+                                                <tr key={idx} className={`${theme === 'dark' ? 'hover:bg-slate-700/30' : 'hover:bg-slate-50'}`}>
+                                                    <td className={`px-4 py-3 font-medium ${t.text}`}>{product.name}</td>
+                                                    <td className={`px-4 py-3 text-right font-mono ${t.textMuted}`}>
                                                         {product.quantity} <span className="text-xs">{product.unit}</span>
                                                     </td>
-                                                    <td className="px-4 py-3 text-right font-mono font-bold text-emerald-400">
+                                                    <td className="px-4 py-3 text-right font-mono font-bold text-emerald-500">
                                                         {formatCurrency(product.total)}
                                                     </td>
                                                 </tr>

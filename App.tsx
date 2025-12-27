@@ -39,6 +39,7 @@ const PriceList = lazy(() => import('./components/PriceList').then(m => ({ defau
 import { Login } from './components/Login';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ToastProvider, useToast } from './contexts/ToastContext';
+import { ThemeProvider } from './contexts/ThemeContext';
 import { Product, Order, AppSettings, Expense, FixedAsset, Client, Employee, Transaction, Purchase, JournalEvent, WorkflowOrder } from './types';
 import { sheetsService } from './services/sheetsService';
 import { SUPER_ADMIN_EMAILS, IS_DEV_MODE } from './constants';
@@ -1107,7 +1108,12 @@ const AppContent: React.FC = () => {
   };
 
   return (
-    <div className="flex h-screen bg-slate-900 text-slate-100 font-sans overflow-hidden">
+    <ThemeProvider theme={settings.theme || 'dark'}>
+    <div className={`flex h-screen font-sans overflow-hidden ${
+      settings.theme === 'light' 
+        ? 'bg-[#F8F9FA] text-slate-800' 
+        : 'bg-slate-900 text-slate-100'
+    }`}>
       {/* Mobile Overlay */}
       {isSidebarOpen && (
         <div
@@ -1119,14 +1125,28 @@ const AppContent: React.FC = () => {
       {/* Sidebar */}
       <aside
         className={`${isSidebarOpen ? 'w-64 translate-x-0' : '-translate-x-full lg:translate-x-0 w-20'
-          } fixed lg:relative h-full bg-slate-800 border-r border-slate-700 transition-all duration-300 flex flex-col z-40 lg:z-20`}
+          } fixed lg:relative h-full ${
+            settings.theme === 'light'
+              ? 'bg-white border-r border-slate-200 shadow-sm'
+              : 'bg-slate-800 border-r border-slate-700'
+          } transition-all duration-300 flex flex-col z-40 lg:z-20`}
       >
         {/* Header */}
-        <div className="p-4 flex items-center justify-between border-b border-slate-700 h-16">
-          {isSidebarOpen && <span className="font-bold text-xl tracking-tight text-white">Metal ERP</span>}
+        <div className={`p-4 flex items-center justify-between h-16 ${
+          settings.theme === 'light' 
+            ? 'border-b border-slate-200' 
+            : 'border-b border-slate-700'
+        }`}>
+          {isSidebarOpen && <span className={`font-bold text-xl tracking-tight ${
+            settings.theme === 'light' ? 'text-slate-800' : 'text-white'
+          }`}>Metal ERP</span>}
           <button
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            className="p-2 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-white transition-colors"
+            className={`p-2 rounded-lg transition-colors ${
+              settings.theme === 'light'
+                ? 'hover:bg-slate-100 text-slate-600 hover:text-slate-800'
+                : 'hover:bg-slate-700 text-slate-400 hover:text-white'
+            }`}
           >
             {isSidebarOpen ? <X size={20} /> : <Menu size={20} />}
           </button>
@@ -1141,6 +1161,7 @@ const AppContent: React.FC = () => {
               onClick={() => setActiveTab('dashboard')}
               isOpen={isSidebarOpen}
               onMobileClose={() => setIsSidebarOpen(false)}
+              theme={settings.theme}
             />
           )}
           <SidebarItem
@@ -1150,6 +1171,7 @@ const AppContent: React.FC = () => {
             onClick={() => setActiveTab('inventory')}
             isOpen={isSidebarOpen}
             onMobileClose={() => setIsSidebarOpen(false)}
+            theme={settings.theme}
           />
           {checkPermission('import') && (
             <SidebarItem
@@ -1159,6 +1181,7 @@ const AppContent: React.FC = () => {
               onClick={() => setActiveTab('import')}
               isOpen={isSidebarOpen}
               onMobileClose={() => setIsSidebarOpen(false)}
+              theme={settings.theme}
             />
           )}
           {checkPermission('sales') && (
@@ -1169,6 +1192,7 @@ const AppContent: React.FC = () => {
               onClick={() => setActiveTab('sales')}
               isOpen={isSidebarOpen}
               onMobileClose={() => setIsSidebarOpen(false)}
+              theme={settings.theme}
             />
           )}
           {checkPermission('workflow') && (
@@ -1179,6 +1203,7 @@ const AppContent: React.FC = () => {
               onClick={() => setActiveTab('workflow')}
               isOpen={isSidebarOpen}
               onMobileClose={() => setIsSidebarOpen(false)}
+              theme={settings.theme}
             />
           )}
           {checkPermission('reports') && (
@@ -1189,6 +1214,7 @@ const AppContent: React.FC = () => {
               onClick={() => setActiveTab('reports')}
               isOpen={isSidebarOpen}
               onMobileClose={() => setIsSidebarOpen(false)}
+              theme={settings.theme}
             />
           )}
           {checkPermission('crm') && (
@@ -1199,6 +1225,7 @@ const AppContent: React.FC = () => {
               onClick={() => setActiveTab('crm')}
               isOpen={isSidebarOpen}
               onMobileClose={() => setIsSidebarOpen(false)}
+              theme={settings.theme}
             />
           )}
           {checkPermission('staff') && (
@@ -1209,6 +1236,7 @@ const AppContent: React.FC = () => {
               onClick={() => setActiveTab('staff')}
               isOpen={isSidebarOpen}
               onMobileClose={() => setIsSidebarOpen(false)}
+              theme={settings.theme}
             />
           )}
           {checkPermission('fixedAssets') && (
@@ -1219,6 +1247,7 @@ const AppContent: React.FC = () => {
               onClick={() => setActiveTab('fixedAssets')}
               isOpen={isSidebarOpen}
               onMobileClose={() => setIsSidebarOpen(false)}
+              theme={settings.theme}
             />
           )}
           {checkPermission('balance') && (
@@ -1229,6 +1258,7 @@ const AppContent: React.FC = () => {
               onClick={() => setActiveTab('balance')}
               isOpen={isSidebarOpen}
               onMobileClose={() => setIsSidebarOpen(false)}
+              theme={settings.theme}
             />
           )}
           {checkPermission('journal') && (
@@ -1239,6 +1269,7 @@ const AppContent: React.FC = () => {
               onClick={() => setActiveTab('journal')}
               isOpen={isSidebarOpen}
               onMobileClose={() => setIsSidebarOpen(false)}
+              theme={settings.theme}
             />
           )}
           <SidebarItem
@@ -1248,6 +1279,7 @@ const AppContent: React.FC = () => {
             onClick={() => setActiveTab('priceList')}
             isOpen={isSidebarOpen}
             onMobileClose={() => setIsSidebarOpen(false)}
+            theme={settings.theme}
           />
           <div className="my-4 border-t border-slate-700 mx-4"></div>
           <SidebarItem
@@ -1257,25 +1289,42 @@ const AppContent: React.FC = () => {
             onClick={() => setActiveTab('settings')}
             isOpen={isSidebarOpen}
             onMobileClose={() => setIsSidebarOpen(false)}
+            theme={settings.theme}
           />
         </nav>
 
         {/* Footer */}
-        <div className="p-4 border-t border-slate-700 bg-slate-800/50">
+        <div className={`p-4 ${
+          settings.theme === 'light'
+            ? 'border-t border-slate-200 bg-slate-50'
+            : 'border-t border-slate-700 bg-slate-800/50'
+        }`}>
           {isSidebarOpen && (
             <div className="flex items-center gap-3 mb-3 px-2">
-              <div className="w-8 h-8 rounded-full bg-indigo-500 flex items-center justify-center text-xs font-bold">
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
+                settings.theme === 'light'
+                  ? 'bg-[#1A73E8] text-white'
+                  : 'bg-indigo-500 text-white'
+              }`}>
                 {user.email?.charAt(0).toUpperCase()}
               </div>
               <div className="overflow-hidden">
-                <p className="text-sm font-medium text-white truncate">{user.displayName || 'Пользователь'}</p>
-                <p className="text-xs text-slate-400 truncate">{user.email}</p>
+                <p className={`text-sm font-medium truncate ${
+                  settings.theme === 'light' ? 'text-slate-800' : 'text-white'
+                }`}>{user.displayName || 'Пользователь'}</p>
+                <p className={`text-xs truncate ${
+                  settings.theme === 'light' ? 'text-slate-500' : 'text-slate-400'
+                }`}>{user.email}</p>
               </div>
             </div>
           )}
           <button
             onClick={logout}
-            className={`w-full flex items-center ${isSidebarOpen ? 'justify-start px-4' : 'justify-center'} gap-3 p-2 rounded-lg text-red-400 hover:bg-red-500/10 transition-colors`}
+            className={`w-full flex items-center ${isSidebarOpen ? 'justify-start px-4' : 'justify-center'} gap-3 p-2 rounded-lg transition-colors ${
+              settings.theme === 'light'
+                ? 'text-red-600 hover:bg-red-50'
+                : 'text-red-400 hover:bg-red-500/10'
+            }`}
             title="Выйти"
           >
             <LogOut size={20} />
@@ -1287,15 +1336,25 @@ const AppContent: React.FC = () => {
       {/* Main Content */}
       <main className="flex-1 flex flex-col overflow-hidden relative w-full lg:w-auto">
         {/* Header */}
-        <header className="h-16 bg-slate-800 border-b border-slate-700 flex items-center justify-between px-4 lg:px-6 z-10">
+        <header className={`h-16 flex items-center justify-between px-4 lg:px-6 z-10 ${
+          settings.theme === 'light'
+            ? 'bg-white border-b border-slate-200 shadow-sm'
+            : 'bg-slate-800 border-b border-slate-700'
+        }`}>
           {/* Mobile Menu Button */}
           <button
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            className="lg:hidden p-2 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-white transition-colors mr-2"
+            className={`lg:hidden p-2 rounded-lg transition-colors mr-2 ${
+              settings.theme === 'light'
+                ? 'hover:bg-slate-100 text-slate-600 hover:text-slate-800'
+                : 'hover:bg-slate-700 text-slate-400 hover:text-white'
+            }`}
           >
             <Menu size={24} />
           </button>
-          <h1 className="text-lg lg:text-xl font-bold text-white truncate">
+          <h1 className={`text-lg lg:text-xl font-bold truncate ${
+            settings.theme === 'light' ? 'text-slate-800' : 'text-white'
+          }`}>
             {activeTab === 'dashboard' && 'Обзор показателей'}
             {activeTab === 'inventory' && 'Управление складом'}
             {activeTab === 'import' && 'Закуп и Импорт'}
@@ -1320,12 +1379,19 @@ const AppContent: React.FC = () => {
               <button
                 onClick={handleSaveAll}
                 disabled={isLoading || !accessToken}
-                className={`flex items-center gap-1 lg:gap-2 px-2 lg:px-4 py-2 rounded-lg font-medium transition-all text-sm lg:text-base ${isLoading
-                  ? 'bg-slate-700 text-slate-400 cursor-wait'
-                  : !accessToken
-                    ? 'bg-slate-600 text-slate-300 cursor-not-allowed opacity-60'
-                    : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/20'
-                  }`}
+                className={`flex items-center gap-1 lg:gap-2 px-2 lg:px-4 py-2 rounded-lg font-medium transition-all text-sm lg:text-base ${
+                  isLoading
+                    ? settings.theme === 'light'
+                      ? 'bg-slate-200 text-slate-500 cursor-wait'
+                      : 'bg-slate-700 text-slate-400 cursor-wait'
+                    : !accessToken
+                      ? settings.theme === 'light'
+                        ? 'bg-slate-300 text-slate-500 cursor-not-allowed opacity-60'
+                        : 'bg-slate-600 text-slate-300 cursor-not-allowed opacity-60'
+                      : settings.theme === 'light'
+                        ? 'bg-[#1A73E8] hover:bg-[#1557B0] text-white shadow-md'
+                        : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/20'
+                }`}
                 title={!accessToken ? 'Войдите в систему для сохранения в Google Sheets' : 'Сохранить в Google Sheets'}
               >
                 <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
@@ -1339,11 +1405,14 @@ const AppContent: React.FC = () => {
         </header>
 
         {/* Content Area */}
-        <div className="flex-1 overflow-hidden bg-slate-900 relative">
+        <div className={`flex-1 overflow-hidden relative ${
+          settings.theme === 'light' ? 'bg-[#F8F9FA]' : 'bg-slate-900'
+        }`}>
           {renderContent()}
         </div>
       </main>
     </div>
+    </ThemeProvider>
   );
 };
 
@@ -1354,9 +1423,10 @@ interface SidebarItemProps {
   onClick: () => void;
   isOpen: boolean;
   onMobileClose?: () => void;
+  theme?: 'light' | 'dark';
 }
 
-const SidebarItem = ({ icon, label, active, onClick, isOpen, onMobileClose }: SidebarItemProps) => {
+const SidebarItem = ({ icon, label, active, onClick, isOpen, onMobileClose, theme = 'dark' }: SidebarItemProps) => {
   const handleClick = () => {
     onClick();
     // Close sidebar only on mobile/tablet (below lg)
@@ -1368,13 +1438,18 @@ const SidebarItem = ({ icon, label, active, onClick, isOpen, onMobileClose }: Si
   return (
     <button
       onClick={handleClick}
-      className={`w-full flex items-center ${isOpen ? 'justify-start px-4' : 'justify-center'} gap-3 py-3 transition-all relative group ${active
-        ? 'text-white bg-gradient-to-r from-indigo-600/20 to-transparent border-r-2 border-indigo-500'
-        : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
-        }`}
+      className={`w-full flex items-center ${isOpen ? 'justify-start px-4' : 'justify-center'} gap-3 py-3 transition-all relative group ${
+        active
+          ? theme === 'light'
+            ? 'text-[#1A73E8] bg-blue-50 rounded-lg mx-2 font-medium'
+            : 'text-white bg-gradient-to-r from-indigo-600/20 to-transparent border-r-2 border-indigo-500'
+          : theme === 'light'
+            ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg mx-2'
+            : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
+      }`}
       title={!isOpen ? label : ''}
     >
-      <div className={`${active ? 'text-indigo-400' : ''} `}>{icon}</div>
+      <div className={`${active ? (theme === 'light' ? 'text-[#1A73E8]' : 'text-indigo-400') : ''} `}>{icon}</div>
       {isOpen && <span className="font-medium">{label}</span>}
       {!isOpen && (
         <div className="absolute left-16 bg-slate-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50 border border-slate-700 shadow-xl">

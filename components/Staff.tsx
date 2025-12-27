@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Employee, UserRole } from '../types';
 import { useToast } from '../contexts/ToastContext';
+import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
 import { Plus, Search, Edit2, Phone, Mail, Briefcase, Calendar, DollarSign, User, Shield, CheckCircle, XCircle, Trash2 } from 'lucide-react';
 
 
@@ -26,6 +27,8 @@ const ROLE_LABELS: Record<UserRole, string> = {
 };
 
 export const Staff: React.FC<StaffProps> = ({ employees, onSave }) => {
+    const { theme } = useTheme();
+    const t = getThemeClasses(theme);
     const toast = useToast();
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
@@ -135,8 +138,8 @@ export const Staff: React.FC<StaffProps> = ({ employees, onSave }) => {
         <div className="h-full overflow-y-auto overflow-x-hidden p-4 sm:p-6 space-y-4 sm:space-y-6 animate-fade-in pb-24 custom-scrollbar" style={{ WebkitOverflowScrolling: 'touch' }}>
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-0">
                 <div>
-                    <h2 className="text-xl sm:text-2xl font-bold text-white">Управление Сотрудниками</h2>
-                    <p className="text-xs sm:text-sm text-slate-400">Персонал и распределение ролей</p>
+                    <h2 className={`text-xl sm:text-2xl font-bold ${t.text}`}>Управление Сотрудниками</h2>
+                    <p className={`text-xs sm:text-sm ${t.textMuted}`}>Персонал и распределение ролей</p>
                 </div>
                 <button
                     onClick={() => handleOpenModal()}
@@ -150,20 +153,20 @@ export const Staff: React.FC<StaffProps> = ({ employees, onSave }) => {
 
             {/* Stats Cards */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-                <div className="bg-slate-800 p-4 rounded-xl border border-slate-700">
-                    <p className="text-slate-400 text-sm">Всего сотрудников</p>
-                    <p className="text-2xl font-bold text-white mt-1">{stats.total}</p>
+                <div className={`${t.bgCard} p-4 rounded-xl border ${t.border}`}>
+                    <p className={`${t.textMuted} text-sm`}>Всего сотрудников</p>
+                    <p className={`text-2xl font-bold ${t.text} mt-1`}>{stats.total}</p>
                 </div>
-                <div className="bg-slate-800 p-4 rounded-xl border border-slate-700">
-                    <p className="text-slate-400 text-sm">Активных</p>
+                <div className={`${t.bgCard} p-4 rounded-xl border ${t.border}`}>
+                    <p className={`${t.textMuted} text-sm`}>Активных</p>
                     <p className="text-2xl font-bold text-emerald-400 mt-1">{stats.active}</p>
                 </div>
-                <div className="bg-slate-800 p-4 rounded-xl border border-slate-700">
-                    <p className="text-slate-400 text-sm">Администраторов</p>
+                <div className={`${t.bgCard} p-4 rounded-xl border ${t.border}`}>
+                    <p className={`${t.textMuted} text-sm`}>Администраторов</p>
                     <p className="text-2xl font-bold text-purple-400 mt-1">{stats.byRole.admin || 0}</p>
                 </div>
-                <div className="bg-slate-800 p-4 rounded-xl border border-slate-700">
-                    <p className="text-slate-400 text-sm">Продажи</p>
+                <div className={`${t.bgCard} p-4 rounded-xl border ${t.border}`}>
+                    <p className={`${t.textMuted} text-sm`}>Продажи</p>
                     <p className="text-2xl font-bold text-amber-400 mt-1">{stats.byRole.sales || 0}</p>
                 </div>
             </div>
@@ -171,19 +174,19 @@ export const Staff: React.FC<StaffProps> = ({ employees, onSave }) => {
             {/* Filters */}
             <div className="flex flex-col sm:flex-row gap-4">
                 <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+                    <Search className={`absolute left-3 top-1/2 -translate-y-1/2 ${t.textMuted}`} size={20} />
                     <input
                         type="text"
                         placeholder="Поиск по имени, email или должности..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-10 pr-4 py-3 text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none"
+                        className={`w-full ${t.input} border ${t.border} rounded-lg pl-10 pr-4 py-3 ${t.text} focus:ring-2 focus:ring-purple-500 focus:border-transparent outline-none`}
                     />
                 </div>
                 <select
                     value={filterRole}
                     onChange={(e) => setFilterRole(e.target.value as UserRole | 'all')}
-                    className="bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-purple-500 outline-none"
+                    className={`${t.input} border ${t.border} rounded-lg px-4 py-3 ${t.text} focus:ring-2 focus:ring-purple-500 outline-none`}
                 >
                     <option value="all">Все роли</option>
                     <option value="admin">Администратор</option>
@@ -195,7 +198,7 @@ export const Staff: React.FC<StaffProps> = ({ employees, onSave }) => {
                 <select
                     value={filterStatus}
                     onChange={(e) => setFilterStatus(e.target.value as 'all' | 'active' | 'inactive')}
-                    className="bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 text-white focus:ring-2 focus:ring-purple-500 outline-none"
+                    className={`${t.input} border ${t.border} rounded-lg px-4 py-3 ${t.text} focus:ring-2 focus:ring-purple-500 outline-none`}
                 >
                     <option value="all">Все статусы</option>
                     <option value="active">Активные</option>
@@ -206,21 +209,21 @@ export const Staff: React.FC<StaffProps> = ({ employees, onSave }) => {
             {/* Employees Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 pb-4">
                 {filteredEmployees.map(employee => (
-                    <div key={employee.id} className="bg-slate-800 rounded-xl border border-slate-700 p-5 hover:border-slate-600 transition-all shadow-lg">
+                    <div key={employee.id} className={`${t.bgCard} rounded-xl border ${t.border} p-5 hover:border-purple-500/50 transition-all shadow-lg`}>
                         <div className="flex justify-between items-start mb-4">
                             <div className="flex items-center gap-3">
                                 <div className="w-12 h-12 rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center text-white font-bold text-lg">
                                     {employee.name.charAt(0).toUpperCase()}
                                 </div>
                                 <div>
-                                    <h3 className="font-bold text-white text-lg">{employee.name}</h3>
-                                    <p className="text-slate-400 text-sm">{employee.position}</p>
+                                    <h3 className={`font-bold ${t.text} text-lg`}>{employee.name}</h3>
+                                    <p className={`${t.textMuted} text-sm`}>{employee.position}</p>
                                 </div>
                             </div>
                             <div className="flex gap-2">
                                 <button
                                     onClick={() => handleOpenModal(employee)}
-                                    className="p-2 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-white transition-colors"
+                                    className={`p-2 ${theme === 'dark' ? 'hover:bg-slate-700' : 'hover:bg-slate-200'} rounded-lg ${t.textMuted} hover:${t.text} transition-colors`}
                                     title="Редактировать"
                                 >
                                     <Edit2 size={16} />
@@ -237,23 +240,23 @@ export const Staff: React.FC<StaffProps> = ({ employees, onSave }) => {
 
 
                         <div className="space-y-2 mb-4">
-                            <div className="flex items-center gap-2 text-sm text-slate-400">
+                            <div className={`flex items-center gap-2 text-sm ${t.textMuted}`}>
                                 <Mail size={14} />
                                 {employee.email}
                             </div>
                             {employee.phone && (
-                                <div className="flex items-center gap-2 text-sm text-slate-400">
+                                <div className={`flex items-center gap-2 text-sm ${t.textMuted}`}>
                                     <Phone size={14} />
                                     {employee.phone}
                                 </div>
                             )}
-                            <div className="flex items-center gap-2 text-sm text-slate-400">
+                            <div className={`flex items-center gap-2 text-sm ${t.textMuted}`}>
                                 <Calendar size={14} />
                                 Принят: {new Date(employee.hireDate).toLocaleDateString('ru-RU')}
                             </div>
                         </div>
 
-                        <div className="flex items-center justify-between pt-4 border-t border-slate-700">
+                        <div className={`flex items-center justify-between pt-4 border-t ${t.border}`}>
                             <span className={`px-3 py-1 rounded-full text-xs font-medium border ${ROLE_COLORS[employee.role]}`}>
                                 <Shield size={12} className="inline mr-1" />
                                 {ROLE_LABELS[employee.role]}
@@ -277,9 +280,9 @@ export const Staff: React.FC<StaffProps> = ({ employees, onSave }) => {
             {/* Modal */}
             {isModalOpen && (
                 <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-slate-800 rounded-2xl w-full max-w-2xl border border-slate-700 shadow-2xl animate-scale-in max-h-[90vh] overflow-y-auto">
-                        <div className="p-6 border-b border-slate-700 sticky top-0 bg-slate-800 z-10">
-                            <h3 className="text-xl font-bold text-white">
+                    <div className={`${t.bgCard} rounded-2xl w-full max-w-2xl border ${t.border} shadow-2xl animate-scale-in max-h-[90vh] overflow-y-auto`}>
+                        <div className={`p-6 border-b ${t.border} sticky top-0 ${t.bgCard} z-10`}>
+                            <h3 className={`text-xl font-bold ${t.text}`}>
                                 {editingEmployee ? 'Редактировать сотрудника' : 'Новый сотрудник'}
                             </h3>
                         </div>
@@ -287,22 +290,22 @@ export const Staff: React.FC<StaffProps> = ({ employees, onSave }) => {
                         <div className="p-6 space-y-4">
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-slate-400 mb-1">Имя *</label>
+                                    <label className={`block text-sm font-medium ${t.textMuted} mb-1`}>Имя *</label>
                                     <input
                                         type="text"
                                         value={formData.name}
                                         onChange={e => setFormData({ ...formData, name: e.target.value })}
-                                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-purple-500 outline-none"
+                                        className={`w-full ${t.input} border ${t.border} rounded-lg px-4 py-2 ${t.text} focus:ring-2 focus:ring-purple-500 outline-none`}
                                         placeholder="Иван Иванов"
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-slate-400 mb-1">Email (Gmail) *</label>
+                                    <label className={`block text-sm font-medium ${t.textMuted} mb-1`}>Email (Gmail) *</label>
                                     <input
                                         type="email"
                                         value={formData.email}
                                         onChange={e => setFormData({ ...formData, email: e.target.value })}
-                                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-purple-500 outline-none"
+                                        className={`w-full ${t.input} border ${t.border} rounded-lg px-4 py-2 ${t.text} focus:ring-2 focus:ring-purple-500 outline-none`}
                                         placeholder="ivan@gmail.com"
                                     />
                                 </div>
@@ -310,22 +313,22 @@ export const Staff: React.FC<StaffProps> = ({ employees, onSave }) => {
 
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-slate-400 mb-1">Телефон</label>
+                                    <label className={`block text-sm font-medium ${t.textMuted} mb-1`}>Телефон</label>
                                     <input
                                         type="text"
                                         value={formData.phone}
                                         onChange={e => setFormData({ ...formData, phone: e.target.value })}
-                                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-purple-500 outline-none"
+                                        className={`w-full ${t.input} border ${t.border} rounded-lg px-4 py-2 ${t.text} focus:ring-2 focus:ring-purple-500 outline-none`}
                                         placeholder="+998 90 123 45 67"
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-slate-400 mb-1">Должность *</label>
+                                    <label className={`block text-sm font-medium ${t.textMuted} mb-1`}>Должность *</label>
                                     <input
                                         type="text"
                                         value={formData.position}
                                         onChange={e => setFormData({ ...formData, position: e.target.value })}
-                                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-purple-500 outline-none"
+                                        className={`w-full ${t.input} border ${t.border} rounded-lg px-4 py-2 ${t.text} focus:ring-2 focus:ring-purple-500 outline-none`}
                                         placeholder="Менеджер по продажам"
                                     />
                                 </div>
@@ -333,11 +336,11 @@ export const Staff: React.FC<StaffProps> = ({ employees, onSave }) => {
 
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-slate-400 mb-1">Роль *</label>
+                                    <label className={`block text-sm font-medium ${t.textMuted} mb-1`}>Роль *</label>
                                     <select
                                         value={formData.role}
                                         onChange={e => setFormData({ ...formData, role: e.target.value as UserRole })}
-                                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-purple-500 outline-none"
+                                        className={`w-full ${t.input} border ${t.border} rounded-lg px-4 py-2 ${t.text} focus:ring-2 focus:ring-purple-500 outline-none`}
                                     >
                                         <option value="admin">Администратор</option>
                                         <option value="manager">Менеджер</option>
@@ -347,11 +350,11 @@ export const Staff: React.FC<StaffProps> = ({ employees, onSave }) => {
                                     </select>
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-slate-400 mb-1">Статус</label>
+                                    <label className={`block text-sm font-medium ${t.textMuted} mb-1`}>Статус</label>
                                     <select
                                         value={formData.status}
                                         onChange={e => setFormData({ ...formData, status: e.target.value as 'active' | 'inactive' })}
-                                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-purple-500 outline-none"
+                                        className={`w-full ${t.input} border ${t.border} rounded-lg px-4 py-2 ${t.text} focus:ring-2 focus:ring-purple-500 outline-none`}
                                     >
                                         <option value="active">Активен</option>
                                         <option value="inactive">Неактивен</option>
@@ -361,38 +364,38 @@ export const Staff: React.FC<StaffProps> = ({ employees, onSave }) => {
 
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-slate-400 mb-1">Дата найма</label>
+                                    <label className={`block text-sm font-medium ${t.textMuted} mb-1`}>Дата найма</label>
                                     <input
                                         type="date"
                                         value={formData.hireDate}
                                         onChange={e => setFormData({ ...formData, hireDate: e.target.value })}
-                                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-purple-500 outline-none"
+                                        className={`w-full ${t.input} border ${t.border} rounded-lg px-4 py-2 ${t.text} focus:ring-2 focus:ring-purple-500 outline-none`}
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-slate-400 mb-1">Зарплата (USD)</label>
+                                    <label className={`block text-sm font-medium ${t.textMuted} mb-1`}>Зарплата (USD)</label>
                                     <input
                                         type="number"
                                         value={formData.salary}
                                         onChange={e => setFormData({ ...formData, salary: Number(e.target.value) })}
-                                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-purple-500 outline-none"
+                                        className={`w-full ${t.input} border ${t.border} rounded-lg px-4 py-2 ${t.text} focus:ring-2 focus:ring-purple-500 outline-none`}
                                     />
                                 </div>
                             </div>
 
                             <div>
-                                <label className="block text-sm font-medium text-slate-400 mb-1">Заметки</label>
+                                <label className={`block text-sm font-medium ${t.textMuted} mb-1`}>Заметки</label>
                                 <textarea
                                     value={formData.notes}
                                     onChange={e => setFormData({ ...formData, notes: e.target.value })}
-                                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-purple-500 outline-none h-24 resize-none"
+                                    className={`w-full ${t.input} border ${t.border} rounded-lg px-4 py-2 ${t.text} focus:ring-2 focus:ring-purple-500 outline-none h-24 resize-none`}
                                     placeholder="Дополнительная информация..."
                                 />
                             </div>
 
                             {/* Permissions */}
-                            <div className="border-t border-slate-700 pt-4">
-                                <label className="block text-sm font-medium text-slate-400 mb-3">Права доступа (View)</label>
+                            <div className={`border-t ${t.border} pt-4`}>
+                                <label className={`block text-sm font-medium ${t.textMuted} mb-3`}>Права доступа (View)</label>
                                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                                     {[
                                         { key: 'dashboard', label: 'Дашборд' },
@@ -410,7 +413,7 @@ export const Staff: React.FC<StaffProps> = ({ employees, onSave }) => {
                                         <label key={module.key} className="flex items-center gap-2 cursor-pointer group">
                                             <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${formData.permissions?.[module.key as keyof typeof formData.permissions] === true
                                                 ? 'bg-purple-600 border-purple-600'
-                                                : 'border-slate-600 group-hover:border-slate-500'
+                                                : `${t.border} group-hover:border-slate-400`
                                                 }`}>
                                                 {formData.permissions?.[module.key as keyof typeof formData.permissions] === true && (
                                                     <CheckCircle size={12} className="text-white" />
@@ -426,21 +429,21 @@ export const Staff: React.FC<StaffProps> = ({ employees, onSave }) => {
                                                     setFormData({ ...formData, permissions: newPermissions });
                                                 }}
                                             />
-                                            <span className={`text-sm ${formData.permissions?.[module.key as keyof typeof formData.permissions] === true ? 'text-white' : 'text-slate-500'}`}>
+                                            <span className={`text-sm ${formData.permissions?.[module.key as keyof typeof formData.permissions] === true ? t.text : t.textMuted}`}>
                                                 {module.label}
                                             </span>
                                         </label>
                                     ))}
                                 </div>
-                                <p className="text-xs text-slate-500 mt-2">
+                                <p className={`text-xs ${t.textMuted} mt-2`}>
                                     * По умолчанию доступ закрыт. Отметьте модули, которые должен видеть сотрудник.
                                 </p>
                             </div>
                         </div>
 
                         {/* Granular Permissions */}
-                        <div className="border-t border-slate-700 pt-4">
-                            <label className="block text-sm font-medium text-slate-400 mb-3">Специальные права (Actions)</label>
+                        <div className={`border-t ${t.border} pt-4 p-6`}>
+                            <label className={`block text-sm font-medium ${t.textMuted} mb-3`}>Специальные права (Actions)</label>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 {[
                                     { key: 'canViewCostPrice', label: 'Видеть себестоимость (Inventory)' },
@@ -452,7 +455,7 @@ export const Staff: React.FC<StaffProps> = ({ employees, onSave }) => {
                                     <label key={perm.key} className="flex items-center gap-2 cursor-pointer group">
                                         <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${formData.permissions?.[perm.key as keyof typeof formData.permissions] === true
                                             ? 'bg-amber-600 border-amber-600'
-                                            : 'border-slate-600 group-hover:border-slate-500'
+                                            : `${t.border} group-hover:border-slate-400`
                                             }`}>
                                             {formData.permissions?.[perm.key as keyof typeof formData.permissions] === true && (
                                                 <CheckCircle size={12} className="text-white" />
@@ -468,7 +471,7 @@ export const Staff: React.FC<StaffProps> = ({ employees, onSave }) => {
                                                 setFormData({ ...formData, permissions: newPermissions });
                                             }}
                                         />
-                                        <span className={`text-sm ${formData.permissions?.[perm.key as keyof typeof formData.permissions] === true ? 'text-white' : 'text-slate-500'}`}>
+                                        <span className={`text-sm ${formData.permissions?.[perm.key as keyof typeof formData.permissions] === true ? t.text : t.textMuted}`}>
                                             {perm.label}
                                         </span>
                                     </label>
@@ -477,10 +480,10 @@ export const Staff: React.FC<StaffProps> = ({ employees, onSave }) => {
                         </div>
 
 
-                        <div className="p-6 border-t border-slate-700 flex justify-end gap-3 bg-slate-900/50">
+                        <div className={`p-6 border-t ${t.border} flex justify-end gap-3 ${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-100'}`}>
                             <button
                                 onClick={() => setIsModalOpen(false)}
-                                className="px-4 py-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700 transition-colors"
+                                className={`px-4 py-2 rounded-lg ${t.textMuted} hover:${t.text} hover:${theme === 'dark' ? 'bg-slate-700' : 'bg-slate-200'} transition-colors`}
                             >
                                 Отмена
                             </button>

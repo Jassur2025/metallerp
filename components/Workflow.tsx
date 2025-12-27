@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Product, WorkflowOrder, OrderItem, Order, Client, Transaction, AppSettings, Employee, JournalEvent } from '../types';
 import { useToast } from '../contexts/ToastContext';
+import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
 import { Plus, Trash2, Search, ClipboardList, BadgeCheck, Send, AlertTriangle, Wallet, Building2, CreditCard, XCircle, RotateCcw, Edit3 } from 'lucide-react';
 
 interface WorkflowProps {
@@ -50,6 +51,8 @@ export const Workflow: React.FC<WorkflowProps> = ({
   onNavigateToProcurement
 }) => {
   const toast = useToast();
+  const { theme } = useTheme();
+  const t = getThemeClasses(theme);
 
   const currentEmployee = useMemo(
     () => employees.find(e => e.email?.toLowerCase() === (currentUserEmail || '').toLowerCase()),
@@ -71,9 +74,6 @@ export const Workflow: React.FC<WorkflowProps> = ({
   const [exchangeRate, setExchangeRate] = useState(settings.defaultExchangeRate || 12800);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [paymentCurrency, setPaymentCurrency] = useState<Currency>('UZS');
-  
-  // Discount state
-  const [discountPercent, setDiscountPercent] = useState<number>(0);
 
   const toUZS = (usd: number) => Math.round(usd * (exchangeRate || 1));
 
@@ -107,13 +107,19 @@ export const Workflow: React.FC<WorkflowProps> = ({
     }));
   };
 
+  const updatePrice = (productId: string, price: number) => {
+    setCart(prev => prev.map(i => {
+      if (i.productId !== productId) return i;
+      const validPrice = Math.max(0, price);
+      return { ...i, priceAtSale: validPrice, total: i.quantity * validPrice };
+    }));
+  };
+
   const removeItem = (productId: string) => setCart(prev => prev.filter(i => i.productId !== productId));
 
   const subtotalUSD = cart.reduce((s, i) => s + i.total, 0);
-  const discountAmountUSD = subtotalUSD * (discountPercent / 100);
-  const afterDiscountUSD = subtotalUSD - discountAmountUSD;
-  const vatAmountUSD = afterDiscountUSD * ((settings.vatRate || 0) / 100);
-  const totalUSD = afterDiscountUSD + vatAmountUSD;
+  const vatAmountUSD = subtotalUSD * ((settings.vatRate || 0) / 100);
+  const totalUSD = subtotalUSD + vatAmountUSD;
   const totalUZS = toUZS(totalUSD);
 
   const getMissingItems = (items: OrderItem[]) => {
@@ -164,8 +170,6 @@ export const Workflow: React.FC<WorkflowProps> = ({
       createdBy: currentEmployee?.name || currentEmployee?.email || currentUserEmail || 'sales',
       items: cart,
       subtotalAmount: subtotalUSD,
-      discountPercent: discountPercent || undefined,
-      discountAmount: discountAmountUSD || undefined,
       vatRateSnapshot: settings.vatRate,
       vatAmount: vatAmountUSD,
       totalAmount: totalUSD,
@@ -197,7 +201,6 @@ export const Workflow: React.FC<WorkflowProps> = ({
     setNotes('');
     setPaymentMethod('cash');
     setPaymentCurrency('UZS');
-    setDiscountPercent(0);
   };
 
   const approveAndConvert = async (wf: WorkflowOrder) => {
@@ -326,7 +329,6 @@ export const Workflow: React.FC<WorkflowProps> = ({
     setExchangeRate(wf.exchangeRate);
     setPaymentMethod(wf.paymentMethod as PaymentMethod);
     setPaymentCurrency((wf.paymentCurrency || 'UZS') as Currency);
-    setDiscountPercent(wf.discountPercent || 0);
     setTab('create');
   };
 
@@ -359,8 +361,6 @@ export const Workflow: React.FC<WorkflowProps> = ({
       customerPhone: customerPhone.trim() || undefined,
       items: cart,
       subtotalAmount: subtotalUSD,
-      discountPercent: discountPercent || undefined,
-      discountAmount: discountAmountUSD || undefined,
       vatRateSnapshot: settings.vatRate,
       vatAmount: vatAmountUSD,
       totalAmount: totalUSD,
@@ -405,7 +405,6 @@ export const Workflow: React.FC<WorkflowProps> = ({
     setNotes('');
     setPaymentMethod('cash');
     setPaymentCurrency('UZS');
-    setDiscountPercent(0);
     setTab('queue');
   };
 
@@ -417,7 +416,6 @@ export const Workflow: React.FC<WorkflowProps> = ({
     setNotes('');
     setPaymentMethod('cash');
     setPaymentCurrency('UZS');
-    setDiscountPercent(0);
   };
 
   const statusBadge = (s: WorkflowOrder['status']) => {
@@ -454,27 +452,39 @@ export const Workflow: React.FC<WorkflowProps> = ({
     <div className="p-4 space-y-4 animate-fade-in h-[calc(100vh-80px)] flex flex-col">
       <div className="flex items-center justify-between flex-shrink-0">
         <div>
-          <h2 className="text-2xl font-bold text-white tracking-tight flex items-center gap-2">
-            <ClipboardList className="text-primary-500" size={24} /> Workflow
+          <h2 className={`text-2xl font-bold tracking-tight flex items-center gap-2 ${t.text}`}>
+            <ClipboardList className={t.accent} size={24} /> Workflow
           </h2>
-          <p className="text-slate-400 text-sm">Продажи → касса/закуп</p>
+          <p className={`text-sm ${t.textMuted}`}>Продажи → касса/закуп</p>
         </div>
-        <div className="flex gap-1 bg-slate-800 border border-slate-700 rounded-lg p-1">
+        <div className={`flex gap-1 ${t.bgCard} border ${t.border} rounded-lg p-1`}>
           <button
             onClick={() => setTab('create')}
-            className={`px-3 py-1.5 rounded-md text-sm font-medium ${tab === 'create' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'}`}
+            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+              tab === 'create' 
+                ? theme === 'light' ? 'bg-[#1A73E8] text-white' : 'bg-slate-700 text-white'
+                : t.textMuted + ' hover:' + t.text
+            }`}
           >
             Создать
           </button>
           <button
             onClick={() => setTab('queue')}
-            className={`px-3 py-1.5 rounded-md text-sm font-medium ${tab === 'queue' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'}`}
+            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+              tab === 'queue' 
+                ? theme === 'light' ? 'bg-[#1A73E8] text-white' : 'bg-slate-700 text-white'
+                : t.textMuted + ' hover:' + t.text
+            }`}
           >
             Очередь ({queue.length})
           </button>
           <button
             onClick={() => setTab('cancelled')}
-            className={`px-3 py-1.5 rounded-md text-sm font-medium ${tab === 'cancelled' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white'}`}
+            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+              tab === 'cancelled' 
+                ? 'bg-red-500 text-white' 
+                : t.textMuted + ' hover:' + t.text
+            }`}
           >
             <span className="flex items-center gap-1">
               <XCircle size={12} /> Аннул. {cancelledOrders.length > 0 && `(${cancelledOrders.length})`}
@@ -486,14 +496,14 @@ export const Workflow: React.FC<WorkflowProps> = ({
       {tab === 'create' && (
         <div className="flex-1 flex flex-col min-h-0">
         {editingOrder && (
-          <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 flex items-center justify-between mb-3 flex-shrink-0">
+          <div className={`${t.warningBg} border ${theme === 'light' ? 'border-amber-200' : 'border-amber-500/30'} rounded-lg p-3 flex items-center justify-between mb-3 flex-shrink-0`}>
             <div className="flex items-center gap-2">
-              <Edit3 className="text-amber-400" size={16} />
+              <Edit3 className={t.warning} size={16} />
               <div>
-                <div className="text-amber-400 font-medium text-sm">Редактирование #{editingOrder.id}</div>
+                <div className={`${t.warning} font-medium text-sm`}>Редактирование #{editingOrder.id}</div>
               </div>
             </div>
-            <button onClick={cancelEdit} className="px-3 py-1 bg-slate-700 hover:bg-slate-600 text-white rounded text-sm">
+            <button onClick={cancelEdit} className={`px-3 py-1 ${t.bgButton} ${t.text} rounded text-sm`}>
               Отмена
             </button>
           </div>
@@ -502,11 +512,11 @@ export const Workflow: React.FC<WorkflowProps> = ({
           {/* Product List - 3 columns */}
           <div className="lg:col-span-3 flex flex-col min-h-0">
             <div className="relative mb-3 flex-shrink-0">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+              <Search className={`absolute left-3 top-1/2 -translate-y-1/2 ${t.textMuted}`} size={16} />
               <input
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-9 pr-4 py-2 text-white outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+                className={`w-full ${t.bgInput} border ${t.borderInput} rounded-lg pl-9 pr-4 py-2 ${t.text} outline-none ${t.focusRing} text-sm ${t.textPlaceholder}`}
                 placeholder="Поиск товара..."
               />
             </div>
@@ -514,21 +524,21 @@ export const Workflow: React.FC<WorkflowProps> = ({
             <div className="flex-1 overflow-y-auto custom-scrollbar pr-2" style={{ maxHeight: 'calc(100vh - 220px)' }}>
               <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2">
                 {filteredProducts.slice(0, 60).map(p => (
-                  <div key={p.id} className="bg-slate-800 border border-slate-700 rounded-lg p-2 hover:border-primary-500/50 transition-colors">
+                  <div key={p.id} className={`${t.bgCard} border ${t.border} rounded-lg p-2 transition-colors ${theme === 'light' ? 'hover:border-[#1A73E8]/50 hover:shadow-md' : 'hover:border-primary-500/50'}`}>
                     <div className="flex justify-between items-start mb-1">
                       <div className="flex-1 min-w-0">
-                        <div className="text-white font-medium text-xs truncate">{p.name}</div>
-                        <div className="text-[10px] text-slate-400 truncate">{p.dimensions} • {p.steelGrade}</div>
+                        <div className={`font-medium text-xs truncate ${t.text}`}>{p.name}</div>
+                        <div className={`text-[10px] truncate ${t.textMuted}`}>{p.dimensions} • {p.steelGrade}</div>
                       </div>
                       <div className="text-right ml-1">
-                        <div className="text-emerald-400 font-mono font-bold text-xs">${p.pricePerUnit.toFixed(2)}</div>
+                        <div className={`${t.success} font-mono font-bold text-xs`}>${p.pricePerUnit.toFixed(2)}</div>
                       </div>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-[10px] text-slate-500">Ост: {p.quantity}</span>
+                      <span className={`text-[10px] ${t.textMuted}`}>Ост: {p.quantity}</span>
                       <button
                         onClick={() => addToCart(p)}
-                        className="bg-slate-700 hover:bg-primary-600 text-white px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 transition-colors"
+                        className={`${theme === 'light' ? 'bg-slate-100 hover:bg-[#1A73E8] hover:text-white text-slate-700' : 'bg-slate-700 hover:bg-primary-600 text-white'} px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 transition-colors`}
                       >
                         <Plus size={10} /> Добавить
                       </button>
@@ -540,16 +550,16 @@ export const Workflow: React.FC<WorkflowProps> = ({
           </div>
 
           {/* Cart - 1 column */}
-          <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden flex flex-col min-h-0" style={{ maxHeight: 'calc(100vh - 160px)' }}>
-            <div className="p-3 border-b border-slate-700 bg-slate-900/50 flex-shrink-0">
-              <div className="text-white font-bold text-sm">Заявка ({cart.length})</div>
+          <div className={`${t.bgCard} border ${t.border} rounded-xl overflow-hidden flex flex-col min-h-0 ${t.shadow}`} style={{ maxHeight: 'calc(100vh - 160px)' }}>
+            <div className={`p-3 border-b ${t.border} ${t.bgPanelAlt} flex-shrink-0`}>
+              <div className={`${t.text} font-bold text-sm`}>Заявка ({cart.length})</div>
             </div>
 
-            <div className="p-3 space-y-2 flex-shrink-0 border-b border-slate-700">
+            <div className={`p-3 space-y-2 flex-shrink-0 border-b ${t.border}`}>
               <input
                 value={customerName}
                 onChange={(e) => setCustomerName(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-white outline-none text-sm"
+                className={`w-full ${t.bgInput} border ${t.borderInput} rounded px-2 py-1.5 ${t.text} outline-none text-sm ${t.focusRing} ${t.textPlaceholder}`}
                 placeholder="Клиент"
                 list="wf-clients"
               />
@@ -560,121 +570,101 @@ export const Workflow: React.FC<WorkflowProps> = ({
                 <input
                   value={customerPhone}
                   onChange={(e) => setCustomerPhone(e.target.value)}
-                  className="bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-white outline-none text-xs"
+                  className={`${t.bgInput} border ${t.borderInput} rounded px-2 py-1.5 ${t.text} outline-none text-xs ${t.focusRing} ${t.textPlaceholder}`}
                   placeholder="Телефон"
                 />
                 <input
                   value={exchangeRate}
                   onChange={(e) => setExchangeRate(Number(e.target.value))}
-                  className="bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-white outline-none font-mono text-xs"
+                  className={`${t.bgInput} border ${t.borderInput} rounded px-2 py-1.5 ${t.text} outline-none font-mono text-xs ${t.focusRing}`}
                   placeholder="Курс"
                   type="number"
                 />
               </div>
 
               <div className="grid grid-cols-4 gap-1">
-                <button onClick={() => setPaymentMethod('cash')} className={`px-1 py-1.5 rounded text-[10px] border ${paymentMethod === 'cash' ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300' : 'bg-slate-900 border-slate-700 text-slate-400'}`}>
+                <button onClick={() => setPaymentMethod('cash')} className={`px-1 py-1.5 rounded text-[10px] border transition-colors ${paymentMethod === 'cash' ? 'bg-emerald-500/20 border-emerald-500 text-emerald-600' : `${t.bgInput} ${t.borderInput} ${t.textMuted}`}`}>
                   Нал
                 </button>
-                <button onClick={() => setPaymentMethod('bank')} className={`px-1 py-1.5 rounded text-[10px] border ${paymentMethod === 'bank' ? 'bg-purple-500/20 border-purple-500 text-purple-300' : 'bg-slate-900 border-slate-700 text-slate-400'}`}>
+                <button onClick={() => setPaymentMethod('bank')} className={`px-1 py-1.5 rounded text-[10px] border transition-colors ${paymentMethod === 'bank' ? 'bg-purple-500/20 border-purple-500 text-purple-600' : `${t.bgInput} ${t.borderInput} ${t.textMuted}`}`}>
                   Банк
                 </button>
-                <button onClick={() => setPaymentMethod('card')} className={`px-1 py-1.5 rounded text-[10px] border ${paymentMethod === 'card' ? 'bg-blue-500/20 border-blue-500 text-blue-300' : 'bg-slate-900 border-slate-700 text-slate-400'}`}>
+                <button onClick={() => setPaymentMethod('card')} className={`px-1 py-1.5 rounded text-[10px] border transition-colors ${paymentMethod === 'card' ? 'bg-blue-500/20 border-blue-500 text-blue-600' : `${t.bgInput} ${t.borderInput} ${t.textMuted}`}`}>
                   Карта
                 </button>
-                <button onClick={() => setPaymentMethod('debt')} className={`px-1 py-1.5 rounded text-[10px] border ${paymentMethod === 'debt' ? 'bg-red-500/20 border-red-500 text-red-300' : 'bg-slate-900 border-slate-700 text-slate-400'}`}>
+                <button onClick={() => setPaymentMethod('debt')} className={`px-1 py-1.5 rounded text-[10px] border transition-colors ${paymentMethod === 'debt' ? 'bg-red-500/20 border-red-500 text-red-600' : `${t.bgInput} ${t.borderInput} ${t.textMuted}`}`}>
                   Долг
                 </button>
               </div>
 
               {paymentMethod === 'cash' && (
                 <div className="flex gap-1">
-                  <button onClick={() => setPaymentCurrency('UZS')} className={`flex-1 py-1 rounded text-[10px] border ${paymentCurrency === 'UZS' ? 'bg-slate-700 border-slate-600 text-white' : 'bg-slate-900 border-slate-700 text-slate-400'}`}>UZS</button>
-                  <button onClick={() => setPaymentCurrency('USD')} className={`flex-1 py-1 rounded text-[10px] border ${paymentCurrency === 'USD' ? 'bg-slate-700 border-slate-600 text-white' : 'bg-slate-900 border-slate-700 text-slate-400'}`}>USD</button>
+                  <button onClick={() => setPaymentCurrency('UZS')} className={`flex-1 py-1 rounded text-[10px] border transition-colors ${paymentCurrency === 'UZS' ? `${t.bgButton} ${t.borderInput} ${t.text}` : `${t.bgInput} ${t.borderInput} ${t.textMuted}`}`}>UZS</button>
+                  <button onClick={() => setPaymentCurrency('USD')} className={`flex-1 py-1 rounded text-[10px] border transition-colors ${paymentCurrency === 'USD' ? `${t.bgButton} ${t.borderInput} ${t.text}` : `${t.bgInput} ${t.borderInput} ${t.textMuted}`}`}>USD</button>
                 </div>
               )}
             </div>
 
             <div className="flex-1 overflow-y-auto custom-scrollbar px-3 py-2 space-y-1">
               {cart.length === 0 ? (
-                <div className="text-slate-500 text-center py-4 text-sm">Корзина пуста</div>
+                <div className={`${t.textMuted} text-center py-4 text-sm`}>Корзина пуста</div>
               ) : cart.map(it => (
-                <div key={it.productId} className="bg-slate-900 border border-slate-700 rounded-lg p-2">
+                <div key={it.productId} className={`${t.bgPanelAlt} border ${t.border} rounded-lg p-2`}>
                   <div className="flex justify-between items-start">
                     <div className="flex-1 min-w-0">
-                      <div className="text-white text-xs font-medium truncate">{it.productName}</div>
+                      <div className={`${t.text} text-xs font-medium truncate`}>{it.productName}</div>
                       {it.dimensions && it.dimensions !== '-' && (
-                        <div className="text-[10px] text-slate-400">{it.dimensions}</div>
+                        <div className={`text-[10px] ${t.textMuted}`}>{it.dimensions}</div>
                       )}
                     </div>
-                    <button onClick={() => removeItem(it.productId)} className="text-slate-400 hover:text-red-400 ml-1">
+                    <button onClick={() => removeItem(it.productId)} className={`${t.textMuted} hover:text-red-500 ml-1`}>
                       <Trash2 size={12} />
                     </button>
                   </div>
-                  <div className="flex justify-between items-center mt-1">
-                    <input
-                      type="number"
-                      className="w-14 bg-slate-800 border border-slate-700 rounded px-1 py-0.5 text-white font-mono text-xs"
-                      value={it.quantity}
-                      onChange={(e) => updateQty(it.productId, Number(e.target.value))}
-                    />
-                    <div className="text-emerald-300 font-mono font-bold text-xs">${it.total.toFixed(2)}</div>
+                  <div className="grid grid-cols-3 gap-1 mt-1">
+                    <div>
+                      <div className={`text-[9px] ${t.textMuted} mb-0.5`}>Кол-во</div>
+                      <input
+                        type="number"
+                        className={`w-full ${t.bgInput} border ${t.borderInput} rounded px-1 py-0.5 ${t.text} font-mono text-xs`}
+                        value={it.quantity}
+                        onChange={(e) => updateQty(it.productId, Number(e.target.value))}
+                      />
+                    </div>
+                    <div>
+                      <div className={`text-[9px] ${t.textMuted} mb-0.5`}>Цена $</div>
+                      <input
+                        type="number"
+                        step="0.01"
+                        className={`w-full ${t.bgInput} border ${t.borderInput} rounded px-1 py-0.5 ${t.text} font-mono text-xs`}
+                        value={it.priceAtSale}
+                        onChange={(e) => updatePrice(it.productId, Number(e.target.value))}
+                      />
+                    </div>
+                    <div>
+                      <div className={`text-[9px] ${t.textMuted} mb-0.5`}>Сумма</div>
+                      <div className={`${t.success} font-mono font-bold text-xs py-0.5`}>${it.total.toFixed(2)}</div>
+                    </div>
                   </div>
                 </div>
               ))}
             </div>
 
-            <div className="p-3 border-t border-slate-700 bg-slate-900/50 space-y-1 flex-shrink-0">
-              {/* Discount Section */}
-              <div className="mb-2 pb-2 border-b border-slate-700">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-[10px] text-slate-400">Скидка</span>
-                  {discountPercent > 0 && (
-                    <button onClick={() => setDiscountPercent(0)} className="text-[10px] text-red-400 hover:text-red-300">✕ Сбросить</button>
-                  )}
-                </div>
-                <div className="flex gap-1 flex-wrap">
-                  {[1, 2, 3, 5, 10].map(p => (
-                    <button
-                      key={p}
-                      onClick={() => setDiscountPercent(p)}
-                      className={`px-2 py-1 rounded text-[10px] font-bold ${discountPercent === p ? 'bg-orange-500 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}
-                    >
-                      {p}%
-                    </button>
-                  ))}
-                  <input
-                    type="number"
-                    value={discountPercent || ''}
-                    onChange={(e) => setDiscountPercent(Math.min(100, Math.max(0, Number(e.target.value))))}
-                    placeholder="%"
-                    className="w-12 bg-slate-700 border border-slate-600 rounded px-1 py-1 text-white text-[10px] font-mono text-center"
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-between text-xs text-slate-300">
+            <div className={`p-3 border-t ${t.border} ${t.bgPanelAlt} space-y-1 flex-shrink-0`}>
+              <div className={`flex justify-between text-xs ${t.textSecondary}`}>
                 <span>Подытог</span><span className="font-mono">${subtotalUSD.toFixed(2)}</span>
               </div>
-              {discountPercent > 0 && (
-                <div className="flex justify-between text-xs text-orange-400">
-                  <span>Скидка ({discountPercent}%)</span><span className="font-mono">-${discountAmountUSD.toFixed(2)}</span>
-                </div>
-              )}
-              <div className="flex justify-between text-xs text-amber-300">
+              <div className={`flex justify-between text-xs ${t.warning}`}>
                 <span>НДС ({settings.vatRate}%)</span><span className="font-mono">+${vatAmountUSD.toFixed(2)}</span>
               </div>
-              <div className="flex justify-between font-bold text-white text-sm">
+              <div className={`flex justify-between font-bold ${t.text} text-sm`}>
                 <span>ИТОГО</span>
-                <div className="text-right">
-                  {discountPercent > 0 && <span className="text-[10px] text-slate-400 line-through mr-2">${(subtotalUSD + subtotalUSD * (settings.vatRate / 100)).toFixed(2)}</span>}
-                  <span className="font-mono">{totalUZS.toLocaleString()} сум</span>
-                </div>
+                <span className="font-mono">{totalUZS.toLocaleString()} сум</span>
               </div>
               {editingOrder ? (
                 <button
                   onClick={resubmitOrder}
-                  className="w-full mt-2 bg-amber-600 hover:bg-amber-500 text-white py-2 rounded-lg font-bold flex items-center justify-center gap-1 text-sm"
+                  className="w-full mt-2 bg-amber-500 hover:bg-amber-600 text-white py-2 rounded-lg font-bold flex items-center justify-center gap-1 text-sm"
                 >
                   <RotateCcw size={14} /> Переотправить
                 </button>
@@ -682,7 +672,13 @@ export const Workflow: React.FC<WorkflowProps> = ({
                 <button
                   onClick={submitWorkflowOrder}
                   disabled={!isSales}
-                  className="w-full mt-2 bg-primary-600 hover:bg-primary-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-white py-2 rounded-lg font-bold flex items-center justify-center gap-1 text-sm"
+                  className={`w-full mt-2 py-2 rounded-lg font-bold flex items-center justify-center gap-1 text-sm transition-colors ${
+                    !isSales 
+                      ? `${t.bgButton} cursor-not-allowed ${t.textMuted}` 
+                      : theme === 'light' 
+                        ? 'bg-[#1A73E8] hover:bg-[#1557B0] text-white'
+                        : 'bg-primary-600 hover:bg-primary-500 text-white'
+                  }`}
                 >
                   <Send size={14} /> Отправить
                 </button>
@@ -697,40 +693,40 @@ export const Workflow: React.FC<WorkflowProps> = ({
         <div className="flex-1 overflow-y-auto custom-scrollbar" style={{ maxHeight: 'calc(100vh - 140px)' }}>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
             {queue.map(wf => (
-              <div key={wf.id} className="bg-slate-800 border border-slate-700 rounded-xl p-3">
+              <div key={wf.id} className={`${t.bgCard} border ${t.border} rounded-xl p-3 ${t.shadow}`}>
                 <div className="flex justify-between items-start">
                   <div>
-                    <div className="text-white font-bold text-sm">{wf.customerName}</div>
-                    <div className="text-[10px] text-slate-400">{new Date(wf.date).toLocaleString('ru-RU')}</div>
-                    <div className="text-[10px] text-slate-500">ID: {wf.id}</div>
+                    <div className={`${t.text} font-bold text-sm`}>{wf.customerName}</div>
+                    <div className={`text-[10px] ${t.textMuted}`}>{new Date(wf.date).toLocaleString('ru-RU')}</div>
+                    <div className={`text-[10px] ${t.textMuted}`}>ID: {wf.id}</div>
                   </div>
                   <span className={statusBadge(wf.status)}>{statusLabel(wf.status)}</span>
                 </div>
 
                 <div className="mt-2 space-y-0.5 text-xs">
                   {wf.items.slice(0, 3).map((it, idx) => (
-                    <div key={idx} className="flex justify-between text-slate-300">
+                    <div key={idx} className={`flex justify-between ${t.textSecondary}`}>
                       <span className="truncate max-w-[160px]">
                         {it.productName}
-                        <span className="text-slate-400 ml-1">× {it.quantity}</span>
+                        <span className={`${t.textMuted} ml-1`}>× {it.quantity}</span>
                       </span>
-                      <span className="font-mono text-slate-400 text-[10px]">{toUZS(it.total).toLocaleString()}</span>
+                      <span className={`font-mono ${t.textMuted} text-[10px]`}>{toUZS(it.total).toLocaleString()}</span>
                     </div>
                   ))}
-                  {wf.items.length > 3 && <div className="text-[10px] text-slate-500">+ ещё {wf.items.length - 3}</div>}
+                  {wf.items.length > 3 && <div className={`text-[10px] ${t.textMuted}`}>+ ещё {wf.items.length - 3}</div>}
                 </div>
 
                 <div className="mt-2 flex items-center justify-between">
-                  <div className="font-mono font-bold text-emerald-300 text-sm">{wf.totalAmountUZS.toLocaleString()} сум</div>
+                  <div className={`font-mono font-bold ${t.success} text-sm`}>{wf.totalAmountUZS.toLocaleString()} сум</div>
                   {wf.status === 'sent_to_procurement' && (
-                    <button onClick={onNavigateToProcurement} className="px-2 py-1 rounded bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[10px] font-medium">
+                    <button onClick={onNavigateToProcurement} className={`px-2 py-1 rounded ${t.warningBg} border ${theme === 'light' ? 'border-amber-200' : 'border-amber-500/20'} ${t.warning} text-[10px] font-medium`}>
                       В закуп
                     </button>
                   )}
                 </div>
 
                 {isCashier && wf.status === 'sent_to_cash' && (
-                  <button onClick={() => approveAndConvert(wf)} className="w-full mt-2 bg-emerald-600 hover:bg-emerald-500 text-white py-2 rounded-lg font-bold flex items-center justify-center gap-1 text-sm">
+                  <button onClick={() => approveAndConvert(wf)} className="w-full mt-2 bg-emerald-500 hover:bg-emerald-600 text-white py-2 rounded-lg font-bold flex items-center justify-center gap-1 text-sm">
                     <BadgeCheck size={14} /> Подтвердить
                   </button>
                 )}
@@ -739,30 +735,30 @@ export const Workflow: React.FC<WorkflowProps> = ({
           </div>
 
           {queue.length === 0 && (
-            <div className="text-center text-slate-500 py-8">Заявок нет</div>
+            <div className={`text-center ${t.textMuted} py-8`}>Заявок нет</div>
           )}
         </div>
       )}
 
       {tab === 'cancelled' && (
         <div className="flex-1 overflow-y-auto custom-scrollbar" style={{ maxHeight: 'calc(100vh - 140px)' }}>
-          <div className="bg-red-500/5 border border-red-500/20 rounded-lg p-3 mb-3">
-            <div className="flex items-center gap-2 text-red-400 text-sm">
+          <div className={`${t.dangerBg} border ${theme === 'light' ? 'border-red-200' : 'border-red-500/20'} rounded-lg p-3 mb-3`}>
+            <div className={`flex items-center gap-2 ${t.danger} text-sm`}>
               <XCircle size={14} />
               <span className="font-medium">Аннулированные заказы</span>
             </div>
-            <p className="text-xs text-slate-400 mt-1">Можно отредактировать и переотправить.</p>
+            <p className={`text-xs ${t.textMuted} mt-1`}>Можно отредактировать и переотправить.</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
             {cancelledOrders.map(wf => (
-              <div key={wf.id} className="bg-slate-800 border border-red-500/30 rounded-xl p-3">
+<div key={wf.id} className={`${t.bgCard} border ${theme === 'light' ? 'border-red-200' : 'border-red-500/30'} rounded-xl p-3 ${t.shadow}`}>
                 <div className="flex justify-between items-start">
                   <div>
-                    <div className="text-white font-bold text-sm">{wf.customerName}</div>
-                    <div className="text-[10px] text-slate-400">{new Date(wf.date).toLocaleString('ru-RU')}</div>
+                    <div className={`${t.text} font-bold text-sm`}>{wf.customerName}</div>
+                    <div className={`text-[10px] ${t.textMuted}`}>{new Date(wf.date).toLocaleString('ru-RU')}</div>
                     {wf.cancellationReason && (
-                      <div className="text-[10px] text-red-400 mt-1 bg-red-500/10 px-1.5 py-0.5 rounded truncate max-w-[180px]">
+                      <div className={`text-[10px] ${t.danger} mt-1 ${t.dangerBg} px-1.5 py-0.5 rounded truncate max-w-[180px]`}>
                         {wf.cancellationReason}
                       </div>
                     )}
@@ -772,20 +768,20 @@ export const Workflow: React.FC<WorkflowProps> = ({
 
                 <div className="mt-2 space-y-0.5 text-xs">
                   {wf.items.slice(0, 3).map((it, idx) => (
-                    <div key={idx} className="flex justify-between text-slate-300">
+                    <div key={idx} className={`flex justify-between ${t.textSecondary}`}>
                       <span className="truncate max-w-[160px]">
                         {it.productName} × {it.quantity}
                       </span>
-                      <span className="font-mono text-slate-400 text-[10px]">{toUZS(it.total).toLocaleString()}</span>
+                      <span className={`font-mono ${t.textMuted} text-[10px]`}>{toUZS(it.total).toLocaleString()}</span>
                     </div>
                   ))}
-                  {wf.items.length > 3 && <div className="text-[10px] text-slate-500">+ ещё {wf.items.length - 3}</div>}
+                  {wf.items.length > 3 && <div className={`text-[10px] ${t.textMuted}`}>+ ещё {wf.items.length - 3}</div>}
                 </div>
 
-                <div className="mt-2 font-mono font-bold text-slate-400 line-through text-sm">{wf.totalAmountUZS.toLocaleString()} сум</div>
+                <div className={`mt-2 font-mono font-bold ${t.textMuted} line-through text-sm`}>{wf.totalAmountUZS.toLocaleString()} сум</div>
 
                 {isSales && (
-                  <button onClick={() => startEditCancelled(wf)} className="w-full mt-2 bg-amber-600 hover:bg-amber-500 text-white py-2 rounded-lg font-bold flex items-center justify-center gap-1 text-sm">
+                  <button onClick={() => startEditCancelled(wf)} className="w-full mt-2 bg-amber-500 hover:bg-amber-600 text-white py-2 rounded-lg font-bold flex items-center justify-center gap-1 text-sm">
                     <Edit3 size={14} /> Редактировать
                   </button>
                 )}
@@ -794,7 +790,7 @@ export const Workflow: React.FC<WorkflowProps> = ({
           </div>
 
           {cancelledOrders.length === 0 && (
-            <div className="text-center text-slate-500 py-8">Аннулированных заказов нет</div>
+            <div className={`text-center ${t.textMuted} py-8`}>Аннулированных заказов нет</div>
           )}
         </div>
       )}

@@ -3,6 +3,7 @@ import { Order, Expense } from '../types';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, Cell } from 'recharts';
 import { TrendingUp, DollarSign, Printer, FileSpreadsheet, Download } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
+import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
 
 const isDev = import.meta.env.DEV;
 const errorDev = (...args: unknown[]) => { if (isDev) console.error(...args); };
@@ -14,6 +15,8 @@ interface PnLProps {
 }
 
 export const PnL: React.FC<PnLProps> = ({ orders, expenses, defaultExchangeRate = 12600 }) => {
+    const { theme } = useTheme();
+    const t = getThemeClasses(theme);
     const toast = useToast();
     const [timeRange, setTimeRange] = useState<'all' | 'currentMonth' | 'lastMonth'>('currentMonth');
     const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
@@ -233,8 +236,8 @@ export const PnL: React.FC<PnLProps> = ({ orders, expenses, defaultExchangeRate 
         <div className="p-6 space-y-8 animate-fade-in pb-20 print:p-0 print:pb-0 print:text-black">
             <div className="flex flex-col md:flex-row justify-between md:items-center gap-4 print:items-start">
                 <div>
-                    <h2 className="text-3xl font-bold text-white tracking-tight print:text-black">P&L Отчет</h2>
-                    <p className="text-slate-400 mt-1 print:text-gray-600">Прибыли и убытки (USD) - {
+                    <h2 className={`text-3xl font-bold ${t.text} tracking-tight print:text-black`}>P&L Отчет</h2>
+                    <p className={`${t.textMuted} mt-1 print:text-gray-600`}>Прибыли и убытки (USD) - {
                         timeRange === 'all' ? 'За все время' :
                             timeRange === 'currentMonth' ? 'За этот месяц' : 'За прошлый месяц'
                     }</p>
@@ -243,7 +246,7 @@ export const PnL: React.FC<PnLProps> = ({ orders, expenses, defaultExchangeRate 
                 <div className="flex items-center gap-2 print:hidden">
                     <button
                         onClick={handleExportExcel}
-                        className="bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/50 px-3 py-2 rounded-lg flex items-center gap-2 transition-all"
+                        className="bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-500 border border-emerald-500/50 px-3 py-2 rounded-lg flex items-center gap-2 transition-all"
                         title="Экспорт в Excel"
                     >
                         <FileSpreadsheet size={18} />
@@ -253,7 +256,7 @@ export const PnL: React.FC<PnLProps> = ({ orders, expenses, defaultExchangeRate 
                     <button
                         onClick={handleDownloadPDF}
                         disabled={isGeneratingPdf}
-                        className="bg-slate-700 hover:bg-slate-600 text-slate-200 px-3 py-2 rounded-lg flex items-center gap-2 transition-all"
+                        className={`${t.bgButtonSecondary} ${t.text} px-3 py-2 rounded-lg flex items-center gap-2 transition-all`}
                         title="Скачать PDF файл"
                     >
                         {isGeneratingPdf ? (
@@ -266,29 +269,29 @@ export const PnL: React.FC<PnLProps> = ({ orders, expenses, defaultExchangeRate 
 
                     <button
                         onClick={handlePrint}
-                        className="bg-slate-700 hover:bg-slate-600 text-slate-200 px-3 py-2 rounded-lg flex items-center gap-2 transition-all"
+                        className={`${t.bgButtonSecondary} ${t.text} px-3 py-2 rounded-lg flex items-center gap-2 transition-all`}
                         title="Печать / Сохранить как PDF (Браузер)"
                     >
                         <Printer size={18} />
                         <span className="hidden sm:inline">Печать</span>
                     </button>
 
-                    <div className="bg-slate-800 p-1 rounded-lg border border-slate-700 flex ml-2">
+                    <div className={`${t.bgCard} p-1 rounded-lg border ${t.border} flex ml-2`}>
                         <button
                             onClick={() => setTimeRange('currentMonth')}
-                            className={`px-3 py-2 rounded-md text-xs font-medium transition-all ${timeRange === 'currentMonth' ? 'bg-slate-700 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                            className={`px-3 py-2 rounded-md text-xs font-medium transition-all ${timeRange === 'currentMonth' ? `${t.bgButton} ${t.text} shadow` : `${t.textMuted} hover:${t.text}`}`}
                         >
                             Этот месяц
                         </button>
                         <button
                             onClick={() => setTimeRange('lastMonth')}
-                            className={`px-3 py-2 rounded-md text-xs font-medium transition-all ${timeRange === 'lastMonth' ? 'bg-slate-700 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                            className={`px-3 py-2 rounded-md text-xs font-medium transition-all ${timeRange === 'lastMonth' ? `${t.bgButton} ${t.text} shadow` : `${t.textMuted} hover:${t.text}`}`}
                         >
                             Прошлый
                         </button>
                         <button
                             onClick={() => setTimeRange('all')}
-                            className={`px-3 py-2 rounded-md text-xs font-medium transition-all ${timeRange === 'all' ? 'bg-slate-700 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                            className={`px-3 py-2 rounded-md text-xs font-medium transition-all ${timeRange === 'all' ? `${t.bgButton} ${t.text} shadow` : `${t.textMuted} hover:${t.text}`}`}
                         >
                             Все время
                         </button>
@@ -300,59 +303,75 @@ export const PnL: React.FC<PnLProps> = ({ orders, expenses, defaultExchangeRate 
             <div id="pnl-report-content" className="space-y-8 print:space-y-4">
                 {/* KPI Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 print:grid-cols-4 print:gap-4">
-                    <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-lg print:bg-white print:border-gray-300 print:shadow-none">
-                        <p className="text-slate-400 text-sm font-medium uppercase print:text-gray-600">Чистая выручка</p>
-                        <h3 className="text-3xl font-bold text-blue-400 mt-2 font-mono print:text-black">{formatCurrency(revenue)}</h3>
-                        <p className="text-xs text-slate-500 mt-1">Без учета НДС</p>
+                    <div className={`${t.bgCard} p-6 rounded-2xl border ${t.border} shadow-lg print:bg-white print:border-gray-300 print:shadow-none`}>
+                        <p className={`${t.textMuted} text-sm font-medium uppercase print:text-gray-600`}>Чистая выручка</p>
+                        <h3 className="text-3xl font-bold text-blue-500 mt-2 font-mono print:text-black">{formatCurrency(revenue)}</h3>
+                        <p className={`text-xs ${t.textMuted} mt-1`}>Без учета НДС</p>
                     </div>
 
-                    <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-lg print:bg-white print:border-gray-300 print:shadow-none">
-                        <p className="text-slate-400 text-sm font-medium uppercase print:text-gray-600">Валовая прибыль</p>
+                    <div className={`${t.bgCard} p-6 rounded-2xl border ${t.border} shadow-lg print:bg-white print:border-gray-300 print:shadow-none`}>
+                        <p className={`${t.textMuted} text-sm font-medium uppercase print:text-gray-600`}>Валовая прибыль</p>
                         <div className="flex items-end gap-2 mt-2">
-                            <h3 className="text-3xl font-bold text-purple-400 font-mono print:text-black">{formatCurrency(grossProfit)}</h3>
-                            <span className="text-sm text-slate-500 mb-1">({grossMargin.toFixed(1)}%)</span>
+                            <h3 className="text-3xl font-bold text-purple-500 font-mono print:text-black">{formatCurrency(grossProfit)}</h3>
+                            <span className={`text-sm ${t.textMuted} mb-1`}>({grossMargin.toFixed(1)}%)</span>
                         </div>
-                        <p className="text-xs text-slate-500 mt-1">Выручка - Себестоимость</p>
+                        <p className={`text-xs ${t.textMuted} mt-1`}>Выручка - Себестоимость</p>
                     </div>
 
-                    <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-lg print:bg-white print:border-gray-300 print:shadow-none">
-                        <p className="text-slate-400 text-sm font-medium uppercase print:text-gray-600">Операц. Расходы</p>
-                        <h3 className="text-3xl font-bold text-red-400 mt-2 font-mono print:text-black">{formatCurrency(operatingExpenses)}</h3>
-                        <p className="text-xs text-slate-500 mt-1">OPEX</p>
+                    <div className={`${t.bgCard} p-6 rounded-2xl border ${t.border} shadow-lg print:bg-white print:border-gray-300 print:shadow-none`}>
+                        <p className={`${t.textMuted} text-sm font-medium uppercase print:text-gray-600`}>Операц. Расходы</p>
+                        <h3 className="text-3xl font-bold text-red-500 mt-2 font-mono print:text-black">{formatCurrency(operatingExpenses)}</h3>
+                        <p className={`text-xs ${t.textMuted} mt-1`}>OPEX</p>
                     </div>
 
-                    <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-lg relative overflow-hidden print:bg-white print:border-gray-300 print:shadow-none">
+                    <div className={`${t.bgCard} p-6 rounded-2xl border ${t.border} shadow-lg relative overflow-hidden print:bg-white print:border-gray-300 print:shadow-none`}>
                         <div className="absolute right-0 top-0 p-4 opacity-5 print:hidden">
                             <DollarSign size={100} />
                         </div>
-                        <p className="text-slate-400 text-sm font-medium uppercase print:text-gray-600">Чистая Прибыль</p>
+                        <p className={`${t.textMuted} text-sm font-medium uppercase print:text-gray-600`}>Чистая Прибыль</p>
                         <div className="flex items-end gap-2 mt-2">
-                            <h3 className={`text-3xl font-bold font-mono ${netProfit >= 0 ? 'text-emerald-400 print:text-black' : 'text-red-400 print:text-black'}`}>
+                            <h3 className={`text-3xl font-bold font-mono ${netProfit >= 0 ? 'text-emerald-500 print:text-black' : 'text-red-500 print:text-black'}`}>
                                 {formatCurrency(netProfit)}
                             </h3>
-                            <span className="text-sm text-slate-500 mb-1">({netProfitMargin.toFixed(1)}%)</span>
+                            <span className={`text-sm ${t.textMuted} mb-1`}>({netProfitMargin.toFixed(1)}%)</span>
                         </div>
-                        <p className="text-xs text-slate-500 mt-1">Bottom Line</p>
+                        <p className={`text-xs ${t.textMuted} mt-1`}>Bottom Line</p>
                     </div>
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 print:block">
                     {/* Waterfall Chart - Keep in print if possible, but often responsive charts struggle in print. Tailwind print: modifiers can help if needed */}
-                    <div className="lg:col-span-2 bg-slate-800 rounded-2xl border border-slate-700 p-6 shadow-lg print:bg-white print:border-gray-300 print:shadow-none print:mb-6 print:break-inside-avoid">
-                        <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2 print:text-black">
+                    <div className={`lg:col-span-2 ${t.bgCard} rounded-2xl border ${t.border} p-6 shadow-lg print:bg-white print:border-gray-300 print:shadow-none print:mb-6 print:break-inside-avoid`}>
+                        <h3 className={`text-xl font-bold ${t.text} mb-6 flex items-center gap-2 print:text-black`}>
                             <TrendingUp size={20} className="text-emerald-500 print:text-black" /> Структура Прибыли
                         </h3>
                         <div className="h-[350px] w-full">
                             <ResponsiveContainer width="100%" height="100%">
                                 <BarChart data={chartData}>
-                                    <XAxis dataKey="name" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
-                                    <YAxis stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `$${val}`} />
+                                    <XAxis 
+                                        dataKey="name" 
+                                        stroke={theme === 'dark' ? "#64748b" : "#94a3b8"} 
+                                        fontSize={11} 
+                                        tickLine={false} 
+                                        axisLine={false} 
+                                    />
+                                    <YAxis 
+                                        stroke={theme === 'dark' ? "#64748b" : "#94a3b8"} 
+                                        fontSize={12} 
+                                        tickLine={false} 
+                                        axisLine={false} 
+                                        tickFormatter={(val) => `$${val}`} 
+                                    />
                                     <Tooltip
-                                        contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155', color: '#f1f5f9' }}
+                                        contentStyle={{ 
+                                            backgroundColor: theme === 'dark' ? '#1e293b' : '#ffffff', 
+                                            borderColor: theme === 'dark' ? '#334155' : '#e2e8f0', 
+                                            color: theme === 'dark' ? '#f1f5f9' : '#0f172a' 
+                                        }}
                                         cursor={{ fill: 'transparent' }}
                                         formatter={(value: number) => formatCurrency(Math.abs(value))}
                                     />
-                                    <ReferenceLine y={0} stroke="#475569" />
+                                    <ReferenceLine y={0} stroke={theme === 'dark' ? "#475569" : "#cbd5e1"} />
                                     <Bar dataKey="start" stackId="a" fill="transparent" />
                                     <Bar dataKey="size" stackId="a">
                                         {chartData.map((entry, index) => (
@@ -366,18 +385,18 @@ export const PnL: React.FC<PnLProps> = ({ orders, expenses, defaultExchangeRate 
                     </div>
 
                     {/* Detailed Breakdown Table */}
-                    <div className="bg-slate-800 rounded-2xl border border-slate-700 p-6 shadow-lg flex flex-col print:bg-white print:border-gray-300 print:shadow-none print:break-inside-avoid">
-                        <h3 className="text-xl font-bold text-white mb-6 print:text-black">Детализация</h3>
+                    <div className={`${t.bgCard} rounded-2xl border ${t.border} p-6 shadow-lg flex flex-col print:bg-white print:border-gray-300 print:shadow-none print:break-inside-avoid`}>
+                        <h3 className={`text-xl font-bold ${t.text} mb-6 print:text-black`}>Детализация</h3>
 
                         <div className="flex-1 overflow-y-auto custom-scrollbar space-y-4">
 
                             {/* Revenue Section */}
                             <div>
                                 <div className="flex justify-between items-center mb-2">
-                                    <span className="font-bold text-blue-400 print:text-black">ВЫРУЧКА (Продажи)</span>
-                                    <span className="font-mono text-white print:text-black">{formatCurrency(revenue)}</span>
+                                    <span className="font-bold text-blue-500 print:text-black">ВЫРУЧКА (Продажи)</span>
+                                    <span className={`font-mono ${t.text} print:text-black`}>{formatCurrency(revenue)}</span>
                                 </div>
-                                <div className="pl-4 text-sm text-slate-400 space-y-1 border-l-2 border-slate-700 print:text-gray-600 print:border-gray-300">
+                                <div className={`pl-4 text-sm ${t.textMuted} space-y-1 border-l-2 ${t.border} print:text-gray-600 print:border-gray-300`}>
                                     <div className="flex justify-between">
                                         <span>Продажа товара</span>
                                         <span>{formatCurrency(revenue)}</span>
@@ -388,10 +407,10 @@ export const PnL: React.FC<PnLProps> = ({ orders, expenses, defaultExchangeRate 
                             {/* COGS Section */}
                             <div>
                                 <div className="flex justify-between items-center mb-2">
-                                    <span className="font-bold text-amber-400 print:text-black">(-) СЕБЕСТОИМОСТЬ</span>
-                                    <span className="font-mono text-white print:text-black">{formatCurrency(cogs)}</span>
+                                    <span className="font-bold text-amber-500 print:text-black">(-) СЕБЕСТОИМОСТЬ</span>
+                                    <span className={`font-mono ${t.text} print:text-black`}>{formatCurrency(cogs)}</span>
                                 </div>
-                                <div className="pl-4 text-sm text-slate-400 space-y-1 border-l-2 border-slate-700 print:text-gray-600 print:border-gray-300">
+                                <div className={`pl-4 text-sm ${t.textMuted} space-y-1 border-l-2 ${t.border} print:text-gray-600 print:border-gray-300`}>
                                     <div className="flex justify-between">
                                         <span>Закупочная стоимость</span>
                                         <span>{formatCurrency(cogs)}</span>
@@ -399,23 +418,23 @@ export const PnL: React.FC<PnLProps> = ({ orders, expenses, defaultExchangeRate 
                                 </div>
                             </div>
 
-                            <div className="border-t border-slate-700 my-2 print:border-gray-300"></div>
+                            <div className={`border-t ${t.border} my-2 print:border-gray-300`}></div>
 
                             {/* Gross Profit */}
-                            <div className="flex justify-between items-center bg-slate-700/30 p-2 rounded print:bg-gray-100">
-                                <span className="font-bold text-purple-400 print:text-black">(=) ВАЛОВАЯ ПРИБЫЛЬ</span>
-                                <span className="font-mono text-white font-bold print:text-black">{formatCurrency(grossProfit)}</span>
+                            <div className={`flex justify-between items-center ${theme === 'dark' ? 'bg-slate-700/30' : 'bg-slate-100'} p-2 rounded print:bg-gray-100`}>
+                                <span className="font-bold text-purple-500 print:text-black">(=) ВАЛОВАЯ ПРИБЫЛЬ</span>
+                                <span className={`font-mono ${t.text} font-bold print:text-black`}>{formatCurrency(grossProfit)}</span>
                             </div>
 
                             {/* OPEX Section */}
                             <div className="mt-4">
                                 <div className="flex justify-between items-center mb-2">
-                                    <span className="font-bold text-red-400 print:text-black">(-) РАСХОДЫ (OPEX)</span>
-                                    <span className="font-mono text-white print:text-black">{formatCurrency(operatingExpenses)}</span>
+                                    <span className="font-bold text-red-500 print:text-black">(-) РАСХОДЫ (OPEX)</span>
+                                    <span className={`font-mono ${t.text} print:text-black`}>{formatCurrency(operatingExpenses)}</span>
                                 </div>
-                                <div className="pl-4 text-sm text-slate-400 space-y-1 border-l-2 border-slate-700 print:text-gray-600 print:border-gray-300">
+                                <div className={`pl-4 text-sm ${t.textMuted} space-y-1 border-l-2 ${t.border} print:text-gray-600 print:border-gray-300`}>
                                     {filteredData.expenses.length === 0 ? (
-                                        <span className="text-slate-600 italic">Нет расходов за период</span>
+                                        <span className={`${t.textMuted} italic`}>Нет расходов за период</span>
                                     ) : (
                                         filteredData.expenses.map(e => (
                                             <div key={e.id} className="flex justify-between">
@@ -427,7 +446,7 @@ export const PnL: React.FC<PnLProps> = ({ orders, expenses, defaultExchangeRate 
                                                             : safeNumber(e.amount)
                                                     )}
                                                     {e.currency === 'UZS' && (
-                                                        <span className="text-xs text-slate-500 ml-1">
+                                                        <span className={`text-xs ${t.textMuted} ml-1`}>
                                                             ({safeNumber(e.amount).toLocaleString()} UZS)
                                                         </span>
                                                     )}
@@ -438,12 +457,12 @@ export const PnL: React.FC<PnLProps> = ({ orders, expenses, defaultExchangeRate 
                                 </div>
                             </div>
 
-                            <div className="border-t border-slate-700 my-2 print:border-gray-300"></div>
+                            <div className={`border-t ${t.border} my-2 print:border-gray-300`}></div>
 
                             {/* Net Profit */}
-                            <div className="flex justify-between items-center bg-emerald-500/10 p-3 rounded border border-emerald-500/20 print:bg-green-50 print:border-green-200">
-                                <span className="font-bold text-emerald-400 print:text-black">(=) ЧИСТАЯ ПРИБЫЛЬ</span>
-                                <span className="font-mono text-emerald-300 font-bold text-lg print:text-black">{formatCurrency(netProfit)}</span>
+                            <div className={`flex justify-between items-center ${theme === 'dark' ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-emerald-100 border-emerald-200'} p-3 rounded border print:bg-green-50 print:border-green-200`}>
+                                <span className={`font-bold ${theme === 'dark' ? 'text-emerald-400' : 'text-emerald-700'} print:text-black`}>(=) ЧИСТАЯ ПРИБЫЛЬ</span>
+                                <span className={`font-mono ${theme === 'dark' ? 'text-emerald-300' : 'text-emerald-700'} font-bold text-lg print:text-black`}>{formatCurrency(netProfit)}</span>
                             </div>
 
                         </div>

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { ShoppingCart, Trash2, User, Plus, CheckCircle, FileText, Printer, Percent, Tag } from 'lucide-react';
 import { OrderItem, Client, Employee, Order, AppSettings } from '../../types';
 import { PaymentMethod, Currency, FlyingItem } from './types';
+import { useTheme, getThemeClasses } from '../../contexts/ThemeContext';
 
 interface CartPanelProps {
   cart: OrderItem[];
@@ -75,6 +76,8 @@ export const CartPanel: React.FC<CartPanelProps> = ({
   onTotalChange,
   originalTotalUSD = 0
 }) => {
+  const { theme } = useTheme();
+  const t = getThemeClasses(theme);
   const [showDiscountPanel, setShowDiscountPanel] = useState(false);
   const [customRoundedValue, setCustomRoundedValue] = useState<string>('');
 
@@ -120,43 +123,43 @@ export const CartPanel: React.FC<CartPanelProps> = ({
   };
 
   return (
-    <div className="hidden lg:flex bg-slate-800 border border-slate-700 rounded-2xl flex-col shadow-2xl shadow-black/20 overflow-hidden h-full">
-      <div id="cart-target" className="p-6 border-b border-slate-700 bg-slate-900/50 relative transition-colors duration-300 flex justify-between items-center">
-        <h3 className="text-xl font-bold text-white flex items-center gap-2 z-10">
-          <ShoppingCart className={`text-primary-500 transition-transform duration-300 ${flyingItems.length > 0 ? 'scale-110' : 'scale-100'}`} /> Корзина
+    <div className={`hidden lg:flex ${t.bgCard} border ${t.border} rounded-2xl flex-col ${t.shadow} overflow-hidden h-full`}>
+      <div id="cart-target" className={`p-6 border-b ${t.border} ${t.bgPanelAlt} relative transition-colors duration-300 flex justify-between items-center`}>
+        <h3 className={`text-xl font-bold ${t.text} flex items-center gap-2 z-10`}>
+          <ShoppingCart className={`${t.accent} transition-transform duration-300 ${flyingItems.length > 0 ? 'scale-110' : 'scale-100'}`} /> Корзина
         </h3>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {cart.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-slate-500 gap-2 opacity-50">
+          <div className={`h-full flex flex-col items-center justify-center ${t.textMuted} gap-2 opacity-50`}>
             <ShoppingCart size={48} />
             <p>Корзина пуста</p>
           </div>
         ) : (
           cart.map(item => (
-            <div key={item.productId} className="bg-slate-700/30 border border-slate-700 rounded-xl p-3 flex flex-col gap-2 animate-fade-in">
+            <div key={item.productId} className={`${t.bgPanelAlt} border ${t.border} rounded-xl p-3 flex flex-col gap-2 animate-fade-in`}>
               <div className="flex justify-between">
-                <span className="font-medium text-slate-200 text-sm truncate max-w-[180px]">{item.productName}</span>
-                <button onClick={() => removeFromCart(item.productId)} className="text-slate-500 hover:text-red-400">
+                <span className={`font-medium ${t.textSecondary} text-sm truncate max-w-[180px]`}>{item.productName}</span>
+                <button onClick={() => removeFromCart(item.productId)} className={`${t.textMuted} hover:text-red-500`}>
                   <Trash2 size={16} />
                 </button>
               </div>
               <div className="flex justify-between items-end">
-                <div className="flex items-center gap-2 bg-slate-900 rounded-lg p-1">
+                <div className={`flex items-center gap-2 ${t.bgInput} rounded-lg p-1`}>
                   <input
                     type="number"
-                    className="w-16 bg-transparent text-center text-sm text-white outline-none"
+                    className={`w-16 bg-transparent text-center text-sm ${t.text} outline-none`}
                     value={item.quantity}
                     onChange={e => updateQuantity(item.productId, Number(e.target.value))}
                   />
-                  <span className="text-xs text-slate-500 pr-2">{item.unit}</span>
+                  <span className={`text-xs ${t.textMuted} pr-2`}>{item.unit}</span>
                 </div>
                 <div className="text-right">
-                  <span className="font-mono font-bold text-slate-300 block">
+                  <span className={`font-mono font-bold ${t.textSecondary} block`}>
                     {toUZS(item.total).toLocaleString()} сўм
                   </span>
-                  <span className="text-xs text-slate-500">${item.total.toFixed(2)}</span>
+                  <span className={`text-xs ${t.textMuted}`}>${item.total.toFixed(2)}</span>
                 </div>
               </div>
             </div>
@@ -164,16 +167,16 @@ export const CartPanel: React.FC<CartPanelProps> = ({
         )}
       </div>
 
-      <div className="p-6 bg-slate-900 border-t border-slate-700 space-y-4">
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-2">
-            <label className="text-xs font-medium text-slate-400 uppercase flex items-center gap-1"><User size={12} /> Клиент</label>
-            <div className="flex gap-2">
+      <div className={`p-3 ${t.bgPanelAlt} border-t ${t.border} space-y-2`}>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-1">
+            <label className={`text-[10px] font-medium ${t.textMuted} uppercase flex items-center gap-1`}><User size={10} /> Клиент</label>
+            <div className="flex gap-1">
               <div className="relative flex-1">
                 <input
                   type="text"
-                  placeholder="Поиск или выбор клиента..."
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-primary-500 outline-none"
+                  placeholder="Клиент..."
+                  className={`w-full ${t.bgInput} border ${t.borderInput} rounded-lg px-2 py-1.5 ${t.text} text-xs ${t.focusRing} outline-none`}
                   value={customerName}
                   onChange={e => setCustomerName(e.target.value)}
                   list="clients-list"
@@ -186,22 +189,22 @@ export const CartPanel: React.FC<CartPanelProps> = ({
               </div>
               <button
                 onClick={onOpenClientModal}
-                className="bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg px-3 text-slate-400 hover:text-white transition-colors"
+                className={`${t.bgButton} border ${t.borderInput} rounded-lg px-2 ${t.textMuted} hover:${t.text} transition-colors`}
                 title="Новый клиент"
               >
-                <Plus size={16} />
+                <Plus size={14} />
               </button>
             </div>
           </div>
-          <div className="space-y-2">
-            <label className="text-xs font-medium text-slate-400 uppercase flex items-center gap-1"><User size={12} /> Продавец</label>
-            <div className="flex gap-2">
+          <div className="space-y-1">
+            <label className={`text-[10px] font-medium ${t.textMuted} uppercase flex items-center gap-1`}><User size={10} /> Продавец</label>
+            <div className="flex gap-1">
               <select
-                className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-primary-500 outline-none appearance-none"
+                className={`flex-1 ${t.bgInput} border ${t.borderInput} rounded-lg px-2 py-1.5 ${t.text} text-xs ${t.focusRing} outline-none appearance-none`}
                 value={sellerName}
                 onChange={e => setSellerName(e.target.value)}
               >
-                <option value="">Выберите продавца</option>
+                <option value="">Продавец...</option>
                 {employees
                   .filter(e => ['sales', 'manager', 'admin'].includes(e.role) && e.status === 'active')
                   .map(e => (
@@ -211,46 +214,46 @@ export const CartPanel: React.FC<CartPanelProps> = ({
               </select>
               <button
                 onClick={onNavigateToStaff}
-                className="bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg px-3 text-slate-400 hover:text-white transition-colors"
+                className={`${theme === 'light' ? 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-600' : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-400 hover:text-white'} border rounded-lg px-2 transition-colors`}
                 title="Добавить сотрудника"
               >
-                <Plus size={16} />
+                <Plus size={14} />
               </button>
             </div>
           </div>
         </div>
 
         {/* Payment Method Selector */}
-        <div className="space-y-2">
-          <label className="text-xs font-medium text-slate-400 uppercase">Способ оплаты</label>
-          <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-1">
+          <label className={`text-[10px] font-medium ${t.textMuted} uppercase`}>Способ оплаты</label>
+          <div className="grid grid-cols-2 gap-1.5">
             <button
               onClick={() => setPaymentMethod('cash')}
-              className={`px-2 py-2 rounded-lg text-xs font-medium border transition-all ${paymentMethod === 'cash' ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : 'bg-slate-800 border-slate-600 text-slate-400 hover:bg-slate-700'}`}
+              className={`px-2 py-1.5 rounded-lg text-[10px] font-bold border transition-all ${paymentMethod === 'cash' ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : (theme === 'light' ? 'bg-slate-100 border-slate-200 text-slate-600 hover:bg-slate-200' : 'bg-slate-800 border-slate-600 text-slate-400 hover:bg-slate-700')}`}
             >
               Наличные
             </button>
             <button
               onClick={() => setPaymentMethod('card')}
-              className={`px-2 py-2 rounded-lg text-xs font-medium border transition-all ${paymentMethod === 'card' ? 'bg-blue-500/20 border-blue-500 text-blue-400' : 'bg-slate-800 border-slate-600 text-slate-400 hover:bg-slate-700'}`}
+              className={`px-2 py-1.5 rounded-lg text-[10px] font-bold border transition-all ${paymentMethod === 'card' ? 'bg-blue-500/20 border-blue-500 text-blue-400' : (theme === 'light' ? 'bg-slate-100 border-slate-200 text-slate-600 hover:bg-slate-200' : 'bg-slate-800 border-slate-600 text-slate-400 hover:bg-slate-700')}`}
             >
               Карта (UZS)
             </button>
             <button
               onClick={() => setPaymentMethod('bank')}
-              className={`px-2 py-2 rounded-lg text-xs font-medium border transition-all ${paymentMethod === 'bank' ? 'bg-purple-500/20 border-purple-500 text-purple-400' : 'bg-slate-800 border-slate-600 text-slate-400 hover:bg-slate-700'}`}
+              className={`px-2 py-1.5 rounded-lg text-[10px] font-bold border transition-all ${paymentMethod === 'bank' ? 'bg-purple-500/20 border-purple-500 text-purple-400' : (theme === 'light' ? 'bg-slate-100 border-slate-200 text-slate-600 hover:bg-slate-200' : 'bg-slate-800 border-slate-600 text-slate-400 hover:bg-slate-700')}`}
             >
               Перечисление (UZS)
             </button>
             <button
               onClick={() => setPaymentMethod('debt')}
-              className={`px-2 py-2 rounded-lg text-xs font-medium border transition-all ${paymentMethod === 'debt' ? 'bg-red-500/20 border-red-500 text-red-400' : 'bg-slate-800 border-slate-600 text-slate-400 hover:bg-slate-700'}`}
+              className={`px-2 py-1.5 rounded-lg text-[10px] font-bold border transition-all ${paymentMethod === 'debt' ? 'bg-red-500/20 border-red-500 text-red-400' : (theme === 'light' ? 'bg-slate-100 border-slate-200 text-slate-600 hover:bg-slate-200' : 'bg-slate-800 border-slate-600 text-slate-400 hover:bg-slate-700')}`}
             >
               Долг (USD)
             </button>
             <button
               onClick={() => setPaymentMethod('mixed')}
-              className={`px-2 py-2 rounded-lg text-xs font-medium border transition-all col-span-2 ${paymentMethod === 'mixed' ? 'bg-amber-500/20 border-amber-500 text-amber-400' : 'bg-slate-800 border-slate-600 text-slate-400 hover:bg-slate-700'}`}
+              className={`px-2 py-1.5 rounded-lg text-[10px] font-bold border transition-all col-span-2 ${paymentMethod === 'mixed' ? 'bg-amber-500/20 border-amber-500 text-amber-400' : (theme === 'light' ? 'bg-slate-100 border-slate-200 text-slate-600 hover:bg-slate-200' : 'bg-slate-800 border-slate-600 text-slate-400 hover:bg-slate-700')}`}
             >
               Смешанная оплата (Частично)
             </button>
@@ -258,16 +261,16 @@ export const CartPanel: React.FC<CartPanelProps> = ({
 
           {/* Currency Selector for Cash */}
           {paymentMethod === 'cash' && (
-            <div className="flex gap-2 mt-2 animate-fade-in">
+            <div className="flex gap-1.5 mt-1 animate-fade-in">
               <button
                 onClick={() => setPaymentCurrency('UZS')}
-                className={`flex-1 py-1 rounded text-xs border ${paymentCurrency === 'UZS' ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : 'bg-slate-800 border-slate-600 text-slate-400'}`}
+                className={`flex-1 py-1 rounded text-[10px] font-bold border ${paymentCurrency === 'UZS' ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : (theme === 'light' ? 'bg-slate-100 border-slate-200 text-slate-600' : 'bg-slate-800 border-slate-600 text-slate-400')}`}
               >
                 В Сумах (UZS)
               </button>
               <button
                 onClick={() => setPaymentCurrency('USD')}
-                className={`flex-1 py-1 rounded text-xs border ${paymentCurrency === 'USD' ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : 'bg-slate-800 border-slate-600 text-slate-400'}`}
+                className={`flex-1 py-1 rounded text-[10px] font-bold border ${paymentCurrency === 'USD' ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : (theme === 'light' ? 'bg-slate-100 border-slate-200 text-slate-600' : 'bg-slate-800 border-slate-600 text-slate-400')}`}
               >
                 В Долларах (USD)
               </button>
@@ -277,30 +280,30 @@ export const CartPanel: React.FC<CartPanelProps> = ({
 
         {/* Discount Section */}
         {cart.length > 0 && (
-          <div className="space-y-2">
+          <div className="space-y-1">
             <button
               onClick={() => setShowDiscountPanel(!showDiscountPanel)}
-              className={`w-full flex items-center justify-between px-3 py-2 rounded-lg border transition-all ${
+              className={`w-full flex items-center justify-between px-2 py-1.5 rounded-lg border transition-all ${
                 discountPercent > 0 
                   ? 'bg-orange-500/20 border-orange-500 text-orange-400' 
-                  : 'bg-slate-800 border-slate-600 text-slate-400 hover:bg-slate-700'
+                  : (theme === 'light' ? 'bg-slate-100 border-slate-200 text-slate-600 hover:bg-slate-200' : 'bg-slate-800 border-slate-600 text-slate-400 hover:bg-slate-700')
               }`}
             >
-              <span className="flex items-center gap-2 text-sm font-medium">
-                <Tag size={16} />
+              <span className="flex items-center gap-2 text-xs font-medium">
+                <Tag size={14} />
                 {discountPercent > 0 
                   ? `Скидка: ${discountPercent.toFixed(1)}% (-${discountAmountUZS.toLocaleString()} сўм)`
                   : 'Добавить скидку'
                 }
               </span>
-              <Percent size={16} />
+              <Percent size={14} />
             </button>
 
             {showDiscountPanel && (
-              <div className="bg-slate-800/50 rounded-xl p-3 space-y-3 border border-slate-700 animate-fade-in">
+              <div className={`${theme === 'light' ? 'bg-slate-50 border-slate-200' : 'bg-slate-800/50 border-slate-700'} rounded-xl p-3 space-y-3 border animate-fade-in`}>
                 {/* Quick Discount Buttons */}
                 <div className="space-y-1">
-                  <label className="text-[10px] font-medium text-slate-500 uppercase">Быстрая скидка %</label>
+                  <label className={`text-[10px] font-medium ${t.textMuted} uppercase`}>Быстрая скидка %</label>
                   <div className="flex gap-1.5 flex-wrap">
                     {quickDiscounts.map(d => (
                       <button
@@ -309,7 +312,7 @@ export const CartPanel: React.FC<CartPanelProps> = ({
                         className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
                           Math.abs(discountPercent - d) < 0.1
                             ? 'bg-orange-500 text-white' 
-                            : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                            : (theme === 'light' ? 'bg-slate-200 text-slate-600 hover:bg-slate-300' : 'bg-slate-700 text-slate-300 hover:bg-slate-600')
                         }`}
                       >
                         {d}%
@@ -317,7 +320,7 @@ export const CartPanel: React.FC<CartPanelProps> = ({
                     ))}
                     <button
                       onClick={() => onDiscountChange?.(0)}
-                      className="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-700 text-red-400 hover:bg-red-500/20 transition-all"
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold ${theme === 'light' ? 'bg-slate-200 text-red-500 hover:bg-red-100' : 'bg-slate-700 text-red-400 hover:bg-red-500/20'} transition-all`}
                     >
                       ✕
                     </button>
@@ -326,13 +329,13 @@ export const CartPanel: React.FC<CartPanelProps> = ({
 
                 {/* Round To Options */}
                 <div className="space-y-1">
-                  <label className="text-[10px] font-medium text-slate-500 uppercase">Округлить до (UZS)</label>
+                  <label className={`text-[10px] font-medium ${t.textMuted} uppercase`}>Округлить до (UZS)</label>
                   <div className="flex gap-1.5 flex-wrap">
                     {getRoundOptions().map(val => (
                       <button
                         key={val}
                         onClick={() => handleRoundTo(val)}
-                        className="px-2 py-1.5 rounded-lg text-xs font-mono font-bold bg-slate-700 text-slate-300 hover:bg-blue-500/20 hover:text-blue-400 transition-all"
+                        className={`px-2 py-1.5 rounded-lg text-xs font-mono font-bold ${theme === 'light' ? 'bg-slate-200 text-slate-600 hover:bg-blue-100 hover:text-blue-600' : 'bg-slate-700 text-slate-300 hover:bg-blue-500/20 hover:text-blue-400'} transition-all`}
                       >
                         {val.toLocaleString()}
                       </button>
@@ -342,12 +345,12 @@ export const CartPanel: React.FC<CartPanelProps> = ({
 
                 {/* Custom Value Input */}
                 <div className="space-y-1">
-                  <label className="text-[10px] font-medium text-slate-500 uppercase">Своя сумма (UZS)</label>
+                  <label className={`text-[10px] font-medium ${t.textMuted} uppercase`}>Своя сумма (UZS)</label>
                   <div className="flex gap-2">
                     <input
                       type="number"
                       placeholder="Введите сумму..."
-                      className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-3 py-1.5 text-white text-sm focus:border-blue-500 outline-none"
+                      className={`flex-1 ${t.bgInput} border ${t.borderInput} rounded-lg px-3 py-1.5 ${t.text} text-sm ${t.focusRing} outline-none`}
                       value={customRoundedValue}
                       onChange={(e) => setCustomRoundedValue(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && handleCustomRound()}
@@ -355,7 +358,7 @@ export const CartPanel: React.FC<CartPanelProps> = ({
                     <button
                       onClick={handleCustomRound}
                       disabled={!customRoundedValue}
-                      className="px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:text-slate-500 text-white transition-all"
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:text-slate-500 text-white transition-all`}
                     >
                       OK
                     </button>
@@ -366,10 +369,10 @@ export const CartPanel: React.FC<CartPanelProps> = ({
           </div>
         )}
 
-        <div className="flex flex-col gap-2 pt-2 border-t border-slate-800 text-sm">
+        <div className={`flex flex-col gap-1 pt-2 border-t ${t.border} text-xs`}>
           <div className="flex justify-between items-center">
-            <span className="text-slate-400">Подытог (без НДС):</span>
-            <span className="font-mono text-slate-300">${subtotalUSD.toFixed(2)}</span>
+            <span className={t.textMuted}>Подытог (без НДС):</span>
+            <span className={`font-mono ${t.textSecondary}`}>${subtotalUSD.toFixed(2)}</span>
           </div>
           <div className="flex justify-between items-center text-amber-400">
             <span className="">НДС ({settings.vatRate}%):</span>
@@ -382,27 +385,27 @@ export const CartPanel: React.FC<CartPanelProps> = ({
             </div>
           )}
           {discountPercent > 0 && (
-            <div className="flex justify-between items-center text-slate-500 text-xs">
+            <div className={`flex justify-between items-center ${t.textMuted} text-[10px]`}>
               <span className="">Было:</span>
               <span className="font-mono line-through">${originalTotalUSD.toFixed(2)} / {toUZS(originalTotalUSD).toLocaleString()} сўм</span>
             </div>
           )}
-          <div className="flex justify-between items-center pt-2 border-t border-slate-800">
-            <span className="text-slate-200 font-bold">ИТОГО (USD):</span>
-            <span className="font-mono text-slate-200 font-bold">${totalAmountUSD.toFixed(2)}</span>
+          <div className={`flex justify-between items-center pt-1 border-t ${t.border}`}>
+            <span className={`${t.text} font-bold`}>ИТОГО (USD):</span>
+            <span className={`font-mono ${t.text} font-bold`}>${totalAmountUSD.toFixed(2)}</span>
           </div>
-          <div className="flex justify-between items-center pt-1">
-            <span className="text-slate-200 font-bold">К оплате (UZS):</span>
-            <span className={`text-2xl font-bold font-mono ${discountPercent > 0 ? 'text-orange-400' : 'text-emerald-400'}`}>{totalAmountUZS.toLocaleString()}</span>
+          <div className={`flex justify-between items-center pt-0.5`}>
+            <span className={`${t.text} font-bold`}>К оплате (UZS):</span>
+            <span className={`text-xl font-bold font-mono ${discountPercent > 0 ? 'text-orange-400' : 'text-emerald-400'}`}>{totalAmountUZS.toLocaleString()}</span>
           </div>
         </div>
 
         <button
           onClick={onCompleteOrder}
           disabled={cart.length === 0 || !customerName}
-          className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-white py-3 rounded-xl font-bold text-lg flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-600/20"
+          className={`w-full ${theme === 'light' ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-emerald-600 hover:bg-emerald-500'} disabled:bg-slate-700 disabled:cursor-not-allowed text-white py-2.5 rounded-xl font-bold text-base flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-600/20`}
         >
-          <CheckCircle size={20} />
+          <CheckCircle size={18} />
           {paymentMethod === 'debt' ? 'Оформить в долг' : 'Оформить и оплатить'}
         </button>
 
@@ -411,21 +414,21 @@ export const CartPanel: React.FC<CartPanelProps> = ({
           <div className="flex gap-2 mt-2">
             <button
               onClick={() => onShowReceipt(lastOrder)}
-              className="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-2 rounded-xl font-medium text-sm flex items-center justify-center gap-2 transition-all shadow-lg shadow-blue-600/20"
+              className={`flex-1 ${theme === 'light' ? 'bg-blue-500 hover:bg-blue-600' : 'bg-blue-600 hover:bg-blue-500'} text-white py-2 rounded-xl font-medium text-sm flex items-center justify-center gap-2 transition-all shadow-lg shadow-blue-600/20`}
             >
               <FileText size={16} />
               Просмотр чека
             </button>
             <button
               onClick={() => onPrintInvoice(lastOrder)}
-              className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white py-2 rounded-xl font-medium text-sm flex items-center justify-center gap-2 transition-all shadow-lg shadow-indigo-600/20"
+              className={`flex-1 ${theme === 'light' ? 'bg-indigo-500 hover:bg-indigo-600' : 'bg-indigo-600 hover:bg-indigo-500'} text-white py-2 rounded-xl font-medium text-sm flex items-center justify-center gap-2 transition-all shadow-lg shadow-indigo-600/20`}
             >
               <FileText size={16} />
               Счет
             </button>
             <button
               onClick={() => onPrintWaybill(lastOrder)}
-              className="flex-1 bg-purple-600 hover:bg-purple-500 text-white py-2 rounded-xl font-medium text-sm flex items-center justify-center gap-2 transition-all shadow-lg shadow-purple-600/20"
+              className={`flex-1 ${theme === 'light' ? 'bg-purple-500 hover:bg-purple-600' : 'bg-purple-600 hover:bg-purple-500'} text-white py-2 rounded-xl font-medium text-sm flex items-center justify-center gap-2 transition-all shadow-lg shadow-purple-600/20`}
             >
               <FileText size={16} />
               Накладная

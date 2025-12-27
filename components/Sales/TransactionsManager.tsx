@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Transaction } from '../../types';
+import { useTheme, getThemeClasses } from '../../contexts/ThemeContext';
 import { 
   Trash2, 
   Edit3, 
@@ -29,6 +30,9 @@ export const TransactionsManager: React.FC<TransactionsManagerProps> = ({
   onSaveTransactions,
   exchangeRate
 }) => {
+  const { theme } = useTheme();
+  const t = getThemeClasses(theme);
+
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<string>('all');
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -99,13 +103,13 @@ export const TransactionsManager: React.FC<TransactionsManagerProps> = ({
 
   const getTypeColor = (type: string) => {
     switch (type) {
-      case 'client_payment': return 'bg-emerald-500/20 text-emerald-400';
-      case 'supplier_payment': return 'bg-red-500/20 text-red-400';
-      case 'client_return': return 'bg-orange-500/20 text-orange-400';
-      case 'client_refund': return 'bg-blue-500/20 text-blue-400';
-      case 'debt_obligation': return 'bg-purple-500/20 text-purple-400';
-      case 'expense': return 'bg-red-500/20 text-red-400';
-      default: return 'bg-slate-500/20 text-slate-400';
+      case 'client_payment': return 'bg-emerald-500/20 text-emerald-500';
+      case 'supplier_payment': return 'bg-red-500/20 text-red-500';
+      case 'client_return': return 'bg-orange-500/20 text-orange-500';
+      case 'client_refund': return 'bg-blue-500/20 text-blue-500';
+      case 'debt_obligation': return 'bg-purple-500/20 text-purple-500';
+      case 'expense': return 'bg-red-500/20 text-red-500';
+      default: return `bg-slate-500/20 ${t.textMuted}`;
     }
   };
 
@@ -130,31 +134,31 @@ export const TransactionsManager: React.FC<TransactionsManagerProps> = ({
   };
 
   return (
-    <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
+    <div className={`${t.bgCard} rounded-xl border ${t.border} overflow-hidden`}>
       {/* Header */}
-      <div className="p-4 border-b border-slate-700 bg-slate-900/50">
-        <h3 className="text-lg font-bold text-white mb-3">Управление транзакциями</h3>
+      <div className={`p-4 border-b ${t.border} ${t.bgPanel}`}>
+        <h3 className={`text-lg font-bold ${t.text} mb-3`}>Управление транзакциями</h3>
         
         <div className="flex flex-col sm:flex-row gap-3">
           {/* Search */}
           <div className="relative flex-1">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search size={16} className={`absolute left-3 top-1/2 -translate-y-1/2 ${t.textMuted}`} />
             <input
               type="text"
               placeholder="Поиск..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+              className={`w-full pl-9 pr-4 py-2 ${t.bgCard} border ${t.border} rounded-lg ${t.text} text-sm focus:ring-2 focus:ring-primary-500 outline-none`}
             />
           </div>
           
           {/* Filter */}
           <div className="relative">
-            <Filter size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Filter size={16} className={`absolute left-3 top-1/2 -translate-y-1/2 ${t.textMuted}`} />
             <select
               value={filterType}
               onChange={(e) => setFilterType(e.target.value)}
-              className="pl-9 pr-8 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white text-sm focus:ring-2 focus:ring-primary-500 outline-none appearance-none cursor-pointer"
+              className={`pl-9 pr-8 py-2 ${t.bgCard} border ${t.border} rounded-lg ${t.text} text-sm focus:ring-2 focus:ring-primary-500 outline-none appearance-none cursor-pointer`}
             >
               <option value="all">Все типы</option>
               <option value="client_payment">Оплаты клиентов</option>
@@ -168,14 +172,14 @@ export const TransactionsManager: React.FC<TransactionsManagerProps> = ({
       </div>
 
       {/* Stats */}
-      <div className="p-3 border-b border-slate-700 bg-slate-800/50 grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className={`p-3 border-b ${t.border} ${t.bgPanelAlt} grid grid-cols-2 sm:grid-cols-4 gap-3`}>
         <div className="text-center">
-          <p className="text-xs text-slate-400">Всего</p>
-          <p className="text-lg font-bold text-white">{transactions.length}</p>
+          <p className={`text-xs ${t.textMuted}`}>Всего</p>
+          <p className={`text-lg font-bold ${t.text}`}>{transactions.length}</p>
         </div>
         <div className="text-center">
-          <p className="text-xs text-slate-400">Приход (USD)</p>
-          <p className="text-lg font-bold text-emerald-400">
+          <p className={`text-xs ${t.textMuted}`}>Приход (USD)</p>
+          <p className="text-lg font-bold text-emerald-500">
             ${transactions
               .filter(t => isIncome(t.type) && t.currency === 'USD')
               .reduce((sum, t) => sum + t.amount, 0)
@@ -183,8 +187,8 @@ export const TransactionsManager: React.FC<TransactionsManagerProps> = ({
           </p>
         </div>
         <div className="text-center">
-          <p className="text-xs text-slate-400">Расход (USD)</p>
-          <p className="text-lg font-bold text-red-400">
+          <p className={`text-xs ${t.textMuted}`}>Расход (USD)</p>
+          <p className="text-lg font-bold text-red-500">
             ${transactions
               .filter(t => !isIncome(t.type) && t.currency === 'USD')
               .reduce((sum, t) => sum + t.amount, 0)
@@ -192,15 +196,15 @@ export const TransactionsManager: React.FC<TransactionsManagerProps> = ({
           </p>
         </div>
         <div className="text-center">
-          <p className="text-xs text-slate-400">Найдено</p>
-          <p className="text-lg font-bold text-blue-400">{filteredTransactions.length}</p>
+          <p className={`text-xs ${t.textMuted}`}>Найдено</p>
+          <p className="text-lg font-bold text-blue-500">{filteredTransactions.length}</p>
         </div>
       </div>
 
       {/* Table */}
-      <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
+      <div className="overflow-x-auto max-h-[400px] overflow-y-auto custom-scrollbar">
         <table className="w-full text-sm">
-          <thead className="bg-slate-900 text-xs uppercase text-slate-400 sticky top-0">
+          <thead className={`${t.bgPanel} text-xs uppercase ${t.textMuted} sticky top-0`}>
             <tr>
               <th className="px-4 py-3 text-left">Дата</th>
               <th className="px-4 py-3 text-left">Тип</th>
@@ -210,16 +214,16 @@ export const TransactionsManager: React.FC<TransactionsManagerProps> = ({
               <th className="px-4 py-3 text-center">Действия</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-700">
+          <tbody className={`divide-y ${t.divide}`}>
             {filteredTransactions.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-slate-400">
+                <td colSpan={6} className={`px-4 py-8 text-center ${t.textMuted}`}>
                   Транзакции не найдены
                 </td>
               </tr>
             ) : (
               filteredTransactions.map(t => (
-                <tr key={t.id} className="hover:bg-slate-700/30 transition-colors">
+                <tr key={t.id} className={`${theme === 'light' ? 'hover:bg-slate-50' : 'hover:bg-slate-700/30'} transition-colors`}>
                   {editingId === t.id ? (
                     // Edit Mode
                     <>
@@ -228,14 +232,14 @@ export const TransactionsManager: React.FC<TransactionsManagerProps> = ({
                           type="date"
                           value={editData.date?.split('T')[0] || ''}
                           onChange={(e) => setEditData({ ...editData, date: e.target.value })}
-                          className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-white text-xs"
+                          className={`w-full px-2 py-1 ${t.bgCard} border ${t.border} rounded ${t.text} text-xs`}
                         />
                       </td>
                       <td className="px-4 py-2">
                         <select
                           value={editData.type || ''}
                           onChange={(e) => setEditData({ ...editData, type: e.target.value as Transaction['type'] })}
-                          className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-white text-xs"
+                          className={`w-full px-2 py-1 ${t.bgCard} border ${t.border} rounded ${t.text} text-xs`}
                         >
                           <option value="client_payment">Оплата клиента</option>
                           <option value="supplier_payment">Оплата поставщику</option>
@@ -247,7 +251,7 @@ export const TransactionsManager: React.FC<TransactionsManagerProps> = ({
                         <select
                           value={editData.method || ''}
                           onChange={(e) => setEditData({ ...editData, method: e.target.value as Transaction['method'] })}
-                          className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-white text-xs"
+                          className={`w-full px-2 py-1 ${t.bgCard} border ${t.border} rounded ${t.text} text-xs`}
                         >
                           <option value="cash">Наличные</option>
                           <option value="bank">Банк</option>
@@ -260,12 +264,12 @@ export const TransactionsManager: React.FC<TransactionsManagerProps> = ({
                             type="number"
                             value={editData.amount || 0}
                             onChange={(e) => setEditData({ ...editData, amount: Number(e.target.value) })}
-                            className="w-20 px-2 py-1 bg-slate-700 border border-slate-600 rounded text-white text-xs"
+                            className={`w-20 px-2 py-1 ${t.bgCard} border ${t.border} rounded ${t.text} text-xs`}
                           />
                           <select
                             value={editData.currency || 'USD'}
                             onChange={(e) => setEditData({ ...editData, currency: e.target.value as 'USD' | 'UZS' })}
-                            className="px-2 py-1 bg-slate-700 border border-slate-600 rounded text-white text-xs"
+                            className={`px-2 py-1 ${t.bgCard} border ${t.border} rounded ${t.text} text-xs`}
                           >
                             <option value="USD">USD</option>
                             <option value="UZS">UZS</option>
@@ -277,20 +281,20 @@ export const TransactionsManager: React.FC<TransactionsManagerProps> = ({
                           type="text"
                           value={editData.description || ''}
                           onChange={(e) => setEditData({ ...editData, description: e.target.value })}
-                          className="w-full px-2 py-1 bg-slate-700 border border-slate-600 rounded text-white text-xs"
+                          className={`w-full px-2 py-1 ${t.bgCard} border ${t.border} rounded ${t.text} text-xs`}
                         />
                       </td>
                       <td className="px-4 py-2">
                         <div className="flex justify-center gap-1">
                           <button
                             onClick={handleSaveEdit}
-                            className="p-1.5 bg-emerald-500/20 text-emerald-400 rounded hover:bg-emerald-500/30 transition-colors"
+                            className="p-1.5 bg-emerald-500/20 text-emerald-500 rounded hover:bg-emerald-500/30 transition-colors"
                           >
                             <Check size={14} />
                           </button>
                           <button
                             onClick={handleCancelEdit}
-                            className="p-1.5 bg-slate-500/20 text-slate-400 rounded hover:bg-slate-500/30 transition-colors"
+                            className={`p-1.5 bg-slate-500/20 ${t.textMuted} rounded hover:bg-slate-500/30 transition-colors`}
                           >
                             <X size={14} />
                           </button>
@@ -300,7 +304,7 @@ export const TransactionsManager: React.FC<TransactionsManagerProps> = ({
                   ) : (
                     // View Mode
                     <>
-                      <td className="px-4 py-3 text-slate-300 text-xs">
+                      <td className={`px-4 py-3 ${t.textSecondary} text-xs`}>
                         {new Date(t.date).toLocaleDateString()}
                       </td>
                       <td className="px-4 py-3">
@@ -309,18 +313,18 @@ export const TransactionsManager: React.FC<TransactionsManagerProps> = ({
                         </span>
                       </td>
                       <td className="px-4 py-3">
-                        <div className="flex items-center gap-1 text-slate-400">
+                        <div className={`flex items-center gap-1 ${t.textMuted}`}>
                           {getMethodIcon(t.method)}
                           <span className="text-xs capitalize">{t.method}</span>
                         </div>
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <div className={`flex items-center justify-end gap-1 font-mono ${isIncome(t.type) ? 'text-emerald-400' : 'text-red-400'}`}>
+                        <div className={`flex items-center justify-end gap-1 font-mono ${isIncome(t.type) ? 'text-emerald-500' : 'text-red-500'}`}>
                           {isIncome(t.type) ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
                           {formatAmount(t)}
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-slate-400 text-xs max-w-[200px] truncate" title={t.description}>
+                      <td className={`px-4 py-3 ${t.textMuted} text-xs max-w-[200px] truncate`} title={t.description}>
                         {t.description || '-'}
                       </td>
                       <td className="px-4 py-3">
@@ -343,14 +347,14 @@ export const TransactionsManager: React.FC<TransactionsManagerProps> = ({
                           <div className="flex justify-center gap-1">
                             <button
                               onClick={() => handleEdit(t)}
-                              className="p-1.5 bg-blue-500/20 text-blue-400 rounded hover:bg-blue-500/30 transition-colors"
+                              className="p-1.5 bg-blue-500/20 text-blue-500 rounded hover:bg-blue-500/30 transition-colors"
                               title="Редактировать"
                             >
                               <Edit3 size={14} />
                             </button>
                             <button
                               onClick={() => setDeleteConfirmId(t.id)}
-                              className="p-1.5 bg-red-500/20 text-red-400 rounded hover:bg-red-500/30 transition-colors"
+                              className="p-1.5 bg-red-500/20 text-red-500 rounded hover:bg-red-500/30 transition-colors"
                               title="Удалить"
                             >
                               <Trash2 size={14} />
@@ -368,8 +372,8 @@ export const TransactionsManager: React.FC<TransactionsManagerProps> = ({
       </div>
 
       {/* Warning */}
-      <div className="p-3 border-t border-slate-700 bg-amber-500/10">
-        <div className="flex items-start gap-2 text-xs text-amber-400">
+      <div className="p-3 border-t border-amber-500/20 bg-amber-500/10">
+        <div className={`flex items-start gap-2 text-xs ${theme === 'light' ? 'text-slate-600' : 'text-amber-500'}`}>
           <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
           <p>
             <strong>Внимание:</strong> Удаление или изменение транзакций повлияет на баланс кассы. 

@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Order, Product, Transaction } from '../types';
+import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
 import { Table, Search, Download, Filter, Calendar, User, ShoppingCart, Package, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface SalesStatisticsProps {
@@ -26,6 +27,8 @@ interface SalesRow {
 }
 
 export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, products, transactions }) => {
+  const { theme } = useTheme();
+  const t = getThemeClasses(theme);
   const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCustomer, setFilterCustomer] = useState('');
@@ -246,11 +249,11 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+          <h2 className={`text-2xl font-bold ${t.text} flex items-center gap-2`}>
             <Table className="text-blue-500" />
             Детальная статистика продаж
           </h2>
-          <p className="text-slate-400 text-sm mt-1">Полная таблица всех продаж для сверок</p>
+          <p className={`${t.textMuted} text-sm mt-1`}>Полная таблица всех продаж для сверок</p>
         </div>
         <button
           onClick={exportToCSV}
@@ -263,38 +266,38 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
 
       {/* Statistics Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
+        <div className={`${t.bgCard} rounded-xl p-4 border ${t.border}`}>
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs text-slate-400 uppercase mb-1">Всего продаж</p>
-              <p className="text-2xl font-bold text-white">{filteredRows.length}</p>
+              <p className={`text-xs ${t.textMuted} uppercase mb-1`}>Всего продаж</p>
+              <p className={`text-2xl font-bold ${t.text}`}>{filteredRows.length}</p>
             </div>
-            <ShoppingCart className="text-blue-400" size={32} />
+            <ShoppingCart className="text-blue-500" size={32} />
           </div>
         </div>
-        <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
+        <div className={`${t.bgCard} rounded-xl p-4 border ${t.border}`}>
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs text-slate-400 uppercase mb-1">Сумма продаж</p>
-              <p className="text-2xl font-bold text-emerald-400">${totalSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+              <p className={`text-xs ${t.textMuted} uppercase mb-1`}>Сумма продаж</p>
+              <p className="text-2xl font-bold text-emerald-500">${totalSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
             </div>
-            <Package className="text-emerald-400" size={32} />
+            <Package className="text-emerald-500" size={32} />
           </div>
         </div>
-        <div className="bg-slate-800 rounded-xl p-4 border border-slate-700">
+        <div className={`${t.bgCard} rounded-xl p-4 border ${t.border}`}>
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs text-slate-400 uppercase mb-1">Уникальных заказов</p>
-              <p className="text-2xl font-bold text-purple-400">{uniqueOrders}</p>
+              <p className={`text-xs ${t.textMuted} uppercase mb-1`}>Уникальных заказов</p>
+              <p className="text-2xl font-bold text-purple-500">{uniqueOrders}</p>
             </div>
-            <Calendar className="text-purple-400" size={32} />
+            <Calendar className="text-purple-500" size={32} />
           </div>
         </div>
       </div>
 
       {/* Filters */}
-      <div className="bg-slate-800 rounded-xl p-4 border border-slate-700 space-y-4">
-        <div className="flex items-center gap-2 text-slate-300">
+      <div className={`${t.bgCard} rounded-xl p-4 border ${t.border} space-y-4`}>
+        <div className={`flex items-center gap-2 ${t.textMuted}`}>
           <Filter size={18} />
           <span className="font-medium">Фильтры</span>
         </div>
@@ -302,13 +305,13 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Search */}
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+            <Search className={`absolute left-3 top-1/2 -translate-y-1/2 ${t.textMuted}`} size={18} />
             <input
               type="text"
               placeholder="Поиск..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className={`w-full pl-10 pr-4 py-2 ${t.input} border ${t.border} rounded-lg ${t.text} text-sm focus:outline-none focus:ring-2 focus:ring-blue-500`}
             />
           </div>
 
@@ -316,7 +319,7 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
           <select
             value={filterCustomer}
             onChange={(e) => setFilterCustomer(e.target.value)}
-            className="bg-slate-900 border border-slate-700 rounded-lg text-white text-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className={`${t.input} border ${t.border} rounded-lg ${t.text} text-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500`}
           >
             <option value="">Все клиенты</option>
             {uniqueCustomers.map(customer => (
@@ -328,7 +331,7 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
           <select
             value={filterSeller}
             onChange={(e) => setFilterSeller(e.target.value)}
-            className="bg-slate-900 border border-slate-700 rounded-lg text-white text-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className={`${t.input} border ${t.border} rounded-lg ${t.text} text-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500`}
           >
             <option value="">Все продавцы</option>
             {uniqueSellers.map(seller => (
@@ -340,7 +343,7 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
           <select
             value={filterProduct}
             onChange={(e) => setFilterProduct(e.target.value)}
-            className="bg-slate-900 border border-slate-700 rounded-lg text-white text-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className={`${t.input} border ${t.border} rounded-lg ${t.text} text-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500`}
           >
             <option value="">Все товары</option>
             {uniqueProducts.map(product => (
@@ -352,7 +355,7 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
           <select
             value={filterPaymentMethod}
             onChange={(e) => setFilterPaymentMethod(e.target.value)}
-            className="bg-slate-900 border border-slate-700 rounded-lg text-white text-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className={`${t.input} border ${t.border} rounded-lg ${t.text} text-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500`}
           >
             <option value="">Все методы оплаты</option>
             <option value="cash">Наличные</option>
@@ -363,24 +366,24 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
 
           {/* Date From */}
           <div className="relative">
-            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+            <Calendar className={`absolute left-3 top-1/2 -translate-y-1/2 ${t.textMuted}`} size={18} />
             <input
               type="date"
               value={dateFrom}
               onChange={(e) => setDateFrom(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className={`w-full pl-10 pr-4 py-2 ${t.input} border ${t.border} rounded-lg ${t.text} text-sm focus:outline-none focus:ring-2 focus:ring-blue-500`}
               placeholder="От"
             />
           </div>
 
           {/* Date To */}
           <div className="relative">
-            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+            <Calendar className={`absolute left-3 top-1/2 -translate-y-1/2 ${t.textMuted}`} size={18} />
             <input
               type="date"
               value={dateTo}
               onChange={(e) => setDateTo(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className={`w-full pl-10 pr-4 py-2 ${t.input} border ${t.border} rounded-lg ${t.text} text-sm focus:outline-none focus:ring-2 focus:ring-blue-500`}
               placeholder="До"
             />
           </div>
@@ -388,13 +391,13 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
       </div>
 
       {/* Table */}
-      <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
+      <div className={`${t.bgCard} rounded-xl border ${t.border} overflow-hidden`}>
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-slate-900/50">
+            <thead className={`${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-50'}`}>
               <tr>
                 <th
-                  className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase cursor-pointer hover:bg-slate-700/50 transition-colors"
+                  className={`px-4 py-3 text-left text-xs font-medium ${t.textMuted} uppercase cursor-pointer ${theme === 'dark' ? 'hover:bg-slate-700/50' : 'hover:bg-slate-100'} transition-colors`}
                   onClick={() => handleSort('date')}
                 >
                   <div className="flex items-center gap-2">
@@ -403,7 +406,7 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
                   </div>
                 </th>
                 <th
-                  className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase cursor-pointer hover:bg-slate-700/50 transition-colors"
+                  className={`px-4 py-3 text-left text-xs font-medium ${t.textMuted} uppercase cursor-pointer ${theme === 'dark' ? 'hover:bg-slate-700/50' : 'hover:bg-slate-100'} transition-colors`}
                   onClick={() => handleSort('customer')}
                 >
                   <div className="flex items-center gap-2">
@@ -412,7 +415,7 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
                   </div>
                 </th>
                 <th
-                  className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase cursor-pointer hover:bg-slate-700/50 transition-colors"
+                  className={`px-4 py-3 text-left text-xs font-medium ${t.textMuted} uppercase cursor-pointer ${theme === 'dark' ? 'hover:bg-slate-700/50' : 'hover:bg-slate-100'} transition-colors`}
                   onClick={() => handleSort('seller')}
                 >
                   <div className="flex items-center gap-2">
@@ -421,11 +424,11 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
                     {sortBy === 'seller' && (sortOrder === 'asc' ? '↑' : '↓')}
                   </div>
                 </th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-slate-400 uppercase">
+                <th className={`px-4 py-3 text-center text-xs font-medium ${t.textMuted} uppercase`}>
                   Размер
                 </th>
                 <th
-                  className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase cursor-pointer hover:bg-slate-700/50 transition-colors"
+                  className={`px-4 py-3 text-left text-xs font-medium ${t.textMuted} uppercase cursor-pointer ${theme === 'dark' ? 'hover:bg-slate-700/50' : 'hover:bg-slate-100'} transition-colors`}
                   onClick={() => handleSort('product')}
                 >
                   <div className="flex items-center gap-2">
@@ -433,10 +436,10 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
                     {sortBy === 'product' && (sortOrder === 'asc' ? '↑' : '↓')}
                   </div>
                 </th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-slate-400 uppercase">Кол-во</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-slate-400 uppercase">Цена</th>
+                <th className={`px-4 py-3 text-right text-xs font-medium ${t.textMuted} uppercase`}>Кол-во</th>
+                <th className={`px-4 py-3 text-right text-xs font-medium ${t.textMuted} uppercase`}>Цена</th>
                 <th
-                  className="px-4 py-3 text-right text-xs font-medium text-slate-400 uppercase cursor-pointer hover:bg-slate-700/50 transition-colors"
+                  className={`px-4 py-3 text-right text-xs font-medium ${t.textMuted} uppercase cursor-pointer ${theme === 'dark' ? 'hover:bg-slate-700/50' : 'hover:bg-slate-100'} transition-colors`}
                   onClick={() => handleSort('total')}
                 >
                   <div className="flex items-center justify-end gap-2">
@@ -444,15 +447,15 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
                     {sortBy === 'total' && (sortOrder === 'asc' ? '↑' : '↓')}
                   </div>
                 </th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-slate-400 uppercase">Валюта</th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-slate-400 uppercase">Оплата</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">ID заказа</th>
+                <th className={`px-4 py-3 text-center text-xs font-medium ${t.textMuted} uppercase`}>Валюта</th>
+                <th className={`px-4 py-3 text-center text-xs font-medium ${t.textMuted} uppercase`}>Оплата</th>
+                <th className={`px-4 py-3 text-left text-xs font-medium ${t.textMuted} uppercase`}>ID заказа</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-700">
+            <tbody className={`divide-y ${t.divide}`}>
               {filteredRows.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="px-4 py-12 text-center text-slate-500">
+                  <td colSpan={11} className={`px-4 py-12 text-center ${t.textMuted}`}>
                     <Package className="w-12 h-12 mx-auto mb-3 opacity-20" />
                     <p>Нет данных для отображения</p>
                   </td>
@@ -465,40 +468,40 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
 
                   return (
                     <React.Fragment key={`${row.orderId}-${index}`}>
-                      <tr className="hover:bg-slate-700/30 transition-colors">
-                        <td className="px-4 py-3 text-sm text-slate-300 font-mono">
+                      <tr className={`${theme === 'dark' ? 'hover:bg-slate-700/30' : 'hover:bg-slate-50'} transition-colors`}>
+                        <td className={`px-4 py-3 text-sm ${t.textMuted} font-mono`}>
                           {formatDate(row.date)}
                         </td>
-                        <td className="px-4 py-3 text-sm text-white font-medium">
+                        <td className={`px-4 py-3 text-sm ${t.text} font-medium`}>
                           {row.customerName}
                         </td>
-                        <td className="px-4 py-3 text-sm text-slate-300">
+                        <td className={`px-4 py-3 text-sm ${t.textMuted}`}>
                           {row.sellerName}
                         </td>
-                        <td className="px-4 py-3 text-sm text-center text-slate-400 font-mono">
+                        <td className={`px-4 py-3 text-sm text-center ${t.textMuted} font-mono`}>
                           {row.dimensions}
                         </td>
-                        <td className="px-4 py-3 text-sm text-slate-200">
+                        <td className={`px-4 py-3 text-sm ${t.text}`}>
                           {row.productName}
                         </td>
-                        <td className="px-4 py-3 text-sm text-right text-slate-300 font-mono">
-                          {safeNumber(row.quantity)} <span className="text-xs text-slate-500">{row.unit}</span>
+                        <td className={`px-4 py-3 text-sm text-right ${t.textMuted} font-mono`}>
+                          {safeNumber(row.quantity)} <span className={`text-xs ${t.textMuted}`}>{row.unit}</span>
                         </td>
-                        <td className="px-4 py-3 text-sm text-right text-slate-300 font-mono">
+                        <td className={`px-4 py-3 text-sm text-right ${t.textMuted} font-mono`}>
                           ${safeNumber(row.priceAtSale).toFixed(2)}
                         </td>
-                        <td className="px-4 py-3 text-sm text-right font-mono font-bold text-emerald-400">
+                        <td className="px-4 py-3 text-sm text-right font-mono font-bold text-emerald-500">
                           <div>${safeNumber(row.total).toFixed(2)}</div>
                           {row.paymentCurrency === 'UZS' && (
-                            <div className="text-[10px] text-slate-500 font-normal">
+                            <div className={`text-[10px] ${t.textMuted} font-normal`}>
                               {safeNumber(row.totalAmountUZS).toLocaleString()} сум
                             </div>
                           )}
                         </td>
                         <td className="px-4 py-3 text-center">
                           <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${formatCurrency(row) === 'USD'
-                            ? 'border-emerald-500/30 text-emerald-400 bg-emerald-500/5'
-                            : 'border-blue-500/30 text-blue-400 bg-blue-500/5'
+                            ? 'border-emerald-500/30 text-emerald-500 bg-emerald-500/5'
+                            : 'border-blue-500/30 text-blue-500 bg-blue-500/5'
                             }`}>
                             {formatCurrency(row)}
                           </span>
@@ -508,12 +511,12 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
                             disabled={!isMixed}
                             onClick={() => isMixed && toggleExpand(row.orderId)}
                             className={`flex items-center gap-1 mx-auto px-2 py-1 rounded-full text-xs font-medium border transition-all ${row.paymentMethod === 'debt'
-                              ? 'bg-red-500/20 text-red-400 border-red-500/30'
+                              ? 'bg-red-500/20 text-red-500 border-red-500/30'
                               : row.paymentMethod === 'mixed'
-                                ? 'bg-amber-500/20 text-amber-400 border-amber-500/30 hover:bg-amber-500/30 cursor-pointer'
+                                ? 'bg-amber-500/20 text-amber-500 border-amber-500/30 hover:bg-amber-500/30 cursor-pointer'
                                 : row.paymentMethod === 'cash'
-                                  ? 'bg-green-500/20 text-green-400 border-green-500/30'
-                                  : 'bg-blue-500/20 text-blue-400 border-blue-500/30'
+                                  ? 'bg-green-500/20 text-green-500 border-green-500/30'
+                                  : 'bg-blue-500/20 text-blue-500 border-blue-500/30'
                               }`}
                           >
                             {formatPaymentMethod(row.paymentMethod)}
@@ -522,24 +525,24 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
                             )}
                           </button>
                         </td>
-                        <td className="px-4 py-3 text-xs text-slate-500 font-mono">
+                        <td className={`px-4 py-3 text-xs ${t.textMuted} font-mono`}>
                           {row.orderId}
                         </td>
                       </tr>
                       {/* Mixed details row */}
                       {isExpanded && isMixed && (
-                        <tr className="bg-slate-800/50">
+                        <tr className={`${theme === 'dark' ? 'bg-slate-800/50' : 'bg-slate-50'}`}>
                           <td colSpan={11} className="px-4 py-3">
-                            <div className="bg-slate-900/50 rounded-lg p-3 border border-slate-700 ml-10 max-w-2xl">
-                              <div className="text-xs font-bold text-slate-400 mb-2 uppercase">Детализация оплаты (ID: {row.orderId})</div>
+                            <div className={`${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-100'} rounded-lg p-3 border ${t.border} ml-10 max-w-2xl`}>
+                              <div className={`text-xs font-bold ${t.textMuted} mb-2 uppercase`}>Детализация оплаты (ID: {row.orderId})</div>
                               {orderTrx.length === 0 ? (
-                                <div className="text-xs text-red-400">Транзакции оплаты не найдены</div>
+                                <div className="text-xs text-red-500">Транзакции оплаты не найдены</div>
                               ) : (
                                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                                   {orderTrx.map(t => (
-                                    <div key={t.id} className="bg-slate-800 p-2 rounded-lg border border-slate-700">
-                                      <div className="text-[10px] text-slate-500 uppercase">{formatPaymentMethod(t.method)}</div>
-                                      <div className={`text-sm font-mono font-bold ${t.method === 'cash' && t.currency === 'USD' ? 'text-emerald-400' : 'text-blue-400'}`}>
+                                    <div key={t.id} className={`${t.bgCard} p-2 rounded-lg border ${t.border}`}>
+                                      <div className={`text-[10px] ${t.textMuted} uppercase`}>{formatPaymentMethod(t.method)}</div>
+                                      <div className={`text-sm font-mono font-bold ${t.method === 'cash' && t.currency === 'USD' ? 'text-emerald-500' : 'text-blue-500'}`}>
                                         {t.currency === 'UZS' ? `${t.amount.toLocaleString()} UZS` : `$${t.amount.toFixed(2)}`}
                                       </div>
                                     </div>
@@ -556,12 +559,12 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
               )}
             </tbody>
             {filteredRows.length > 0 && (
-              <tfoot className="bg-slate-900/50 border-t-2 border-slate-700">
+              <tfoot className={`${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-50'} border-t-2 ${t.border}`}>
                 <tr>
-                  <td colSpan={7} className="px-4 py-3 text-right text-sm font-medium text-slate-300">
+                  <td colSpan={7} className={`px-4 py-3 text-right text-sm font-medium ${t.textMuted}`}>
                     Итого:
                   </td>
-                  <td className="px-4 py-3 text-right font-mono font-bold text-lg text-emerald-400">
+                  <td className="px-4 py-3 text-right font-mono font-bold text-lg text-emerald-500">
                     ${totalSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </td>
                   <td colSpan={2}></td>
@@ -574,7 +577,7 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
 
       {/* Pagination Info */}
       {filteredRows.length > 0 && (
-        <div className="text-center text-sm text-slate-400">
+        <div className={`text-center text-sm ${t.textMuted}`}>
           Показано {filteredRows.length} из {salesRows.length} записей
         </div>
       )}

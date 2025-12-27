@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Purchase, Order, Expense, AppSettings } from '../types';
+import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
 import { Calendar, Filter, ArrowDownRight, ArrowUpRight, Scale, FileText, List } from 'lucide-react';
 
 interface VatReportProps {
@@ -10,6 +11,8 @@ interface VatReportProps {
 }
 
 export const VatReport: React.FC<VatReportProps> = ({ purchases, orders, expenses, settings }) => {
+    const { theme } = useTheme();
+    const t = getThemeClasses(theme);
     // Default to current month
     const today = new Date();
     const firstDay = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
@@ -106,31 +109,31 @@ export const VatReport: React.FC<VatReportProps> = ({ purchases, orders, expense
     return (
         <div className="space-y-6 animate-fade-in">
             {/* Header & Filters */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-lg">
+            <div className={`flex flex-col md:flex-row justify-between items-start md:items-center gap-4 ${t.bgCard} p-4 rounded-xl border ${t.border} shadow-lg`}>
                 <div>
-                    <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                    <h2 className={`text-xl font-bold ${t.text} flex items-center gap-2`}>
                         <Scale className="text-blue-500" /> Отчет по НДС и Таможне
                     </h2>
-                    <p className="text-sm text-slate-400">Анализ входящего и исходящего НДС за период (в сумах, курс: {exchangeRate.toLocaleString()} UZS)</p>
+                    <p className={`text-sm ${t.textMuted}`}>Анализ входящего и исходящего НДС за период (в сумах, курс: {exchangeRate.toLocaleString()} UZS)</p>
                 </div>
 
-                <div className="flex items-center gap-2 bg-slate-900 p-1 rounded-lg border border-slate-600">
-                    <div className="flex items-center gap-2 px-3 py-1 border-r border-slate-700">
-                        <Calendar size={16} className="text-slate-400" />
-                        <span className="text-xs text-slate-500 font-medium uppercase">Период</span>
+                <div className={`flex items-center gap-2 ${t.input} p-1 rounded-lg border ${t.border}`}>
+                    <div className={`flex items-center gap-2 px-3 py-1 border-r ${t.border}`}>
+                        <Calendar size={16} className={`${t.textMuted}`} />
+                        <span className={`text-xs ${t.textMuted} font-medium uppercase`}>Период</span>
                     </div>
                     <input
                         type="date"
                         value={startDate}
                         onChange={e => setStartDate(e.target.value)}
-                        className="bg-transparent text-white text-sm outline-none px-2 py-1"
+                        className={`bg-transparent ${t.text} text-sm outline-none px-2 py-1`}
                     />
-                    <span className="text-slate-500">-</span>
+                    <span className={`${t.textMuted}`}>-</span>
                     <input
                         type="date"
                         value={endDate}
                         onChange={e => setEndDate(e.target.value)}
-                        className="bg-transparent text-white text-sm outline-none px-2 py-1"
+                        className={`bg-transparent ${t.text} text-sm outline-none px-2 py-1`}
                     />
                 </div>
             </div>
@@ -138,68 +141,68 @@ export const VatReport: React.FC<VatReportProps> = ({ purchases, orders, expense
             {/* KPI Cards */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 {/* Output VAT */}
-                <div className="bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-lg relative overflow-hidden group">
+                <div className={`${t.bgCard} p-5 rounded-xl border ${t.border} shadow-lg relative overflow-hidden group`}>
                     <div className="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
                         <ArrowUpRight size={60} className="text-red-500" />
                     </div>
-                    <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">НДС к уплате (OUT)</p>
-                    <h3 className="text-2xl font-bold text-white mt-1 group-hover:text-red-400 transition-colors">
+                    <p className={`text-xs font-medium ${t.textMuted} uppercase tracking-wider`}>НДС к уплате (OUT)</p>
+                    <h3 className={`text-2xl font-bold ${t.text} mt-1 group-hover:text-red-500 transition-colors`}>
                         {formatUZS(reportData.totalOutputVat)}
                     </h3>
-                    <p className="text-xs text-slate-500 mt-2">Начислено с продаж</p>
+                    <p className={`text-xs ${t.textMuted} mt-2`}>Начислено с продаж</p>
                 </div>
 
                 {/* Input VAT */}
-                <div className="bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-lg relative overflow-hidden group">
+                <div className={`${t.bgCard} p-5 rounded-xl border ${t.border} shadow-lg relative overflow-hidden group`}>
                     <div className="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
                         <ArrowDownRight size={60} className="text-emerald-500" />
                     </div>
-                    <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">НДС к зачету (IN)</p>
-                    <h3 className="text-2xl font-bold text-white mt-1 group-hover:text-emerald-400 transition-colors">
+                    <p className={`text-xs font-medium ${t.textMuted} uppercase tracking-wider`}>НДС к зачету (IN)</p>
+                    <h3 className={`text-2xl font-bold ${t.text} mt-1 group-hover:text-emerald-500 transition-colors`}>
                         {formatUZS(reportData.totalImportVat)}
                     </h3>
-                    <p className="text-xs text-slate-500 mt-2">Уплачено при импорте</p>
+                    <p className={`text-xs ${t.textMuted} mt-2`}>Уплачено при импорте</p>
                 </div>
 
                 {/* Net VAT Position */}
-                <div className="bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-lg relative overflow-hidden group">
+                <div className={`${t.bgCard} p-5 rounded-xl border ${t.border} shadow-lg relative overflow-hidden group`}>
                     <div className="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
                         <Scale size={60} className={reportData.netVat > 0 ? "text-amber-500" : "text-blue-500"} />
                     </div>
-                    <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Итого НДС (Сальдо)</p>
-                    <h3 className={`text-2xl font-bold mt-1 transition-colors ${reportData.netVat > 0 ? 'text-amber-400' : 'text-blue-400'}`}>
+                    <p className={`text-xs font-medium ${t.textMuted} uppercase tracking-wider`}>Итого НДС (Сальдо)</p>
+                    <h3 className={`text-2xl font-bold mt-1 transition-colors ${reportData.netVat > 0 ? 'text-amber-500' : 'text-blue-500'}`}>
                         {formatUZS(Math.abs(reportData.netVat))}
                     </h3>
-                    <p className="text-xs text-slate-500 mt-2">
+                    <p className={`text-xs ${t.textMuted} mt-2`}>
                         {reportData.netVat > 0 ? 'К уплате в бюджет' : 'К возмещению из бюджета'}
                     </p>
                 </div>
 
                 {/* Customs Duty */}
-                <div className="bg-slate-800 p-5 rounded-xl border border-slate-700 shadow-lg relative overflow-hidden group">
+                <div className={`${t.bgCard} p-5 rounded-xl border ${t.border} shadow-lg relative overflow-hidden group`}>
                     <div className="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
                         <FileText size={60} className="text-purple-500" />
                     </div>
-                    <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Таможенные пошлины</p>
-                    <h3 className="text-2xl font-bold text-white mt-1 group-hover:text-purple-400 transition-colors">
+                    <p className={`text-xs font-medium ${t.textMuted} uppercase tracking-wider`}>Таможенные пошлины</p>
+                    <h3 className={`text-2xl font-bold ${t.text} mt-1 group-hover:text-purple-500 transition-colors`}>
                         {formatUZS(reportData.totalCustomsDuty)}
                     </h3>
-                    <p className="text-xs text-slate-500 mt-2">Справочно (не влияет на НДС)</p>
+                    <p className={`text-xs ${t.textMuted} mt-2`}>Справочно (не влияет на НДС)</p>
                 </div>
             </div>
 
             {/* Detailed Tables */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Import VAT Details */}
-                <div className="bg-slate-800 rounded-xl border border-slate-700 shadow-lg overflow-hidden flex flex-col h-[500px]">
-                    <div className="p-4 border-b border-slate-700 bg-slate-900/50">
-                        <h3 className="font-bold text-white text-sm uppercase tracking-wider flex items-center gap-2">
+                <div className={`${t.bgCard} rounded-xl border ${t.border} shadow-lg overflow-hidden flex flex-col h-[500px]`}>
+                    <div className={`p-4 border-b ${t.border} ${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-50'}`}>
+                        <h3 className={`font-bold ${t.text} text-sm uppercase tracking-wider flex items-center gap-2`}>
                             <ArrowDownRight size={16} className="text-emerald-500" /> Входящий НДС и Пошлины (Импорт)
                         </h3>
                     </div>
                     <div className="flex-1 overflow-y-auto">
                         <table className="w-full text-left text-sm">
-                            <thead className="bg-slate-900 text-xs uppercase text-slate-400 font-medium sticky top-0">
+                            <thead className={`${theme === 'dark' ? 'bg-slate-900' : 'bg-slate-100'} text-xs uppercase ${t.textMuted} font-medium sticky top-0`}>
                                 <tr>
                                     <th className="px-4 py-3">Дата</th>
                                     <th className="px-4 py-3">Поставщик</th>
@@ -207,23 +210,23 @@ export const VatReport: React.FC<VatReportProps> = ({ purchases, orders, expense
                                     <th className="px-4 py-3 text-right">НДС (In)</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-slate-700">
+                            <tbody className={`divide-y ${t.divide}`}>
                                 {reportData.filteredPurchases.length > 0 ? (
                                     reportData.filteredPurchases.map(p => (
-                                        <tr key={p.id} className="hover:bg-slate-700/30">
-                                            <td className="px-4 py-3 text-slate-300">{new Date(p.date).toLocaleDateString()}</td>
-                                            <td className="px-4 py-3 font-medium text-white">{p.supplierName}</td>
-                                            <td className="px-4 py-3 text-right font-mono text-purple-300">
+                                        <tr key={p.id} className={`${theme === 'dark' ? 'hover:bg-slate-700/30' : 'hover:bg-slate-50'}`}>
+                                            <td className={`px-4 py-3 ${t.textMuted}`}>{new Date(p.date).toLocaleDateString()}</td>
+                                            <td className={`px-4 py-3 font-medium ${t.text}`}>{p.supplierName}</td>
+                                            <td className="px-4 py-3 text-right font-mono text-purple-500">
                                                 {p.overheads?.customsDuty ? formatUZS(p.overheads.customsDuty) : '-'}
                                             </td>
-                                            <td className="px-4 py-3 text-right font-mono text-emerald-400 font-bold">
+                                            <td className="px-4 py-3 text-right font-mono text-emerald-500 font-bold">
                                                 {p.overheads?.importVat ? formatUZS(p.overheads.importVat) : '-'}
                                             </td>
                                         </tr>
                                     ))
                                 ) : (
                                     <tr>
-                                        <td colSpan={4} className="px-4 py-8 text-center text-slate-500">Нет данных за период</td>
+                                        <td colSpan={4} className={`px-4 py-8 text-center ${t.textMuted}`}>Нет данных за период</td>
                                     </tr>
                                 )}
                             </tbody>
@@ -232,15 +235,15 @@ export const VatReport: React.FC<VatReportProps> = ({ purchases, orders, expense
                 </div>
 
                 {/* Output VAT Details */}
-                <div className="bg-slate-800 rounded-xl border border-slate-700 shadow-lg overflow-hidden flex flex-col h-[500px]">
-                    <div className="p-4 border-b border-slate-700 bg-slate-900/50">
-                        <h3 className="font-bold text-white text-sm uppercase tracking-wider flex items-center gap-2">
+                <div className={`${t.bgCard} rounded-xl border ${t.border} shadow-lg overflow-hidden flex flex-col h-[500px]`}>
+                    <div className={`p-4 border-b ${t.border} ${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-50'}`}>
+                        <h3 className={`font-bold ${t.text} text-sm uppercase tracking-wider flex items-center gap-2`}>
                             <ArrowUpRight size={16} className="text-red-500" /> Исходящий НДС (Продажи)
                         </h3>
                     </div>
                     <div className="flex-1 overflow-y-auto">
                         <table className="w-full text-left text-sm">
-                            <thead className="bg-slate-900 text-xs uppercase text-slate-400 font-medium sticky top-0">
+                            <thead className={`${theme === 'dark' ? 'bg-slate-900' : 'bg-slate-100'} text-xs uppercase ${t.textMuted} font-medium sticky top-0`}>
                                 <tr>
                                     <th className="px-4 py-3">Дата</th>
                                     <th className="px-4 py-3">Клиент</th>
@@ -248,21 +251,21 @@ export const VatReport: React.FC<VatReportProps> = ({ purchases, orders, expense
                                     <th className="px-4 py-3 text-right">НДС (Out)</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-slate-700">
+                            <tbody className={`divide-y ${t.divide}`}>
                                 {reportData.filteredOrders.length > 0 ? (
                                     reportData.filteredOrders.map(o => (
-                                        <tr key={o.id} className="hover:bg-slate-700/30">
-                                            <td className="px-4 py-3 text-slate-300">{new Date(o.date).toLocaleDateString()}</td>
-                                            <td className="px-4 py-3 font-medium text-white">{o.customerName}</td>
-                                            <td className="px-4 py-3 text-right font-mono text-slate-400">{formatUZS(o.totalAmount)}</td>
-                                            <td className="px-4 py-3 text-right font-mono text-red-400 font-bold">
+                                        <tr key={o.id} className={`${theme === 'dark' ? 'hover:bg-slate-700/30' : 'hover:bg-slate-50'}`}>
+                                            <td className={`px-4 py-3 ${t.textMuted}`}>{new Date(o.date).toLocaleDateString()}</td>
+                                            <td className={`px-4 py-3 font-medium ${t.text}`}>{o.customerName}</td>
+                                            <td className={`px-4 py-3 text-right font-mono ${t.textMuted}`}>{formatUZS(o.totalAmount)}</td>
+                                            <td className="px-4 py-3 text-right font-mono text-red-500 font-bold">
                                                 {o.vatAmount ? formatUZS(o.vatAmount) : '-'}
                                             </td>
                                         </tr>
                                     ))
                                 ) : (
                                     <tr>
-                                        <td colSpan={4} className="px-4 py-8 text-center text-slate-500">Нет данных за период</td>
+                                        <td colSpan={4} className={`px-4 py-8 text-center ${t.textMuted}`}>Нет данных за период</td>
                                     </tr>
                                 )}
                             </tbody>
@@ -272,15 +275,15 @@ export const VatReport: React.FC<VatReportProps> = ({ purchases, orders, expense
             </div>
 
             {/* VAT Registry Table */}
-            <div className="bg-slate-800 rounded-xl border border-slate-700 shadow-lg overflow-hidden flex flex-col h-[600px] mt-6">
-                <div className="p-4 border-b border-slate-700 bg-slate-900/50">
-                    <h3 className="font-bold text-white text-sm uppercase tracking-wider flex items-center gap-2">
+            <div className={`${t.bgCard} rounded-xl border ${t.border} shadow-lg overflow-hidden flex flex-col h-[600px] mt-6`}>
+                <div className={`p-4 border-b ${t.border} ${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-50'}`}>
+                    <h3 className={`font-bold ${t.text} text-sm uppercase tracking-wider flex items-center gap-2`}>
                         <List size={16} className="text-blue-500" /> Реестр НДС (Все операции)
                     </h3>
                 </div>
                 <div className="flex-1 overflow-y-auto">
                     <table className="w-full text-left text-sm">
-                        <thead className="bg-slate-900 text-xs uppercase text-slate-400 font-medium sticky top-0">
+                        <thead className={`${theme === 'dark' ? 'bg-slate-900' : 'bg-slate-100'} text-xs uppercase ${t.textMuted} font-medium sticky top-0`}>
                             <tr>
                                 <th className="px-4 py-3">Дата</th>
                                 <th className="px-4 py-3">Тип</th>
@@ -290,32 +293,32 @@ export const VatReport: React.FC<VatReportProps> = ({ purchases, orders, expense
                                 <th className="px-4 py-3 text-right text-red-500">НДС (Исходящий)</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-700">
+                        <tbody className={`divide-y ${t.divide}`}>
                             {reportData.registry.length > 0 ? (
                                 reportData.registry.map((item, idx) => (
-                                    <tr key={`${item.type}-${item.id}-${idx}`} className="hover:bg-slate-700/30">
-                                        <td className="px-4 py-3 text-slate-300">{new Date(item.date).toLocaleDateString()}</td>
+                                    <tr key={`${item.type}-${item.id}-${idx}`} className={`${theme === 'dark' ? 'hover:bg-slate-700/30' : 'hover:bg-slate-50'}`}>
+                                        <td className={`px-4 py-3 ${t.textMuted}`}>{new Date(item.date).toLocaleDateString()}</td>
                                         <td className="px-4 py-3">
-                                            <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${item.type === 'import' ? 'bg-purple-500/20 text-purple-400' :
-                                                    item.type === 'expense' ? 'bg-amber-500/20 text-amber-400' :
-                                                        'bg-blue-500/20 text-blue-400'
+                                            <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${item.type === 'import' ? 'bg-purple-500/20 text-purple-500' :
+                                                    item.type === 'expense' ? 'bg-amber-500/20 text-amber-500' :
+                                                        'bg-blue-500/20 text-blue-500'
                                                 }`}>
                                                 {item.type === 'import' ? 'Импорт' : item.type === 'expense' ? 'Расход' : 'Продажа'}
                                             </span>
                                         </td>
-                                        <td className="px-4 py-3 font-medium text-white">{item.counterparty}</td>
-                                        <td className="px-4 py-3 text-right font-mono text-slate-400">{formatUZS(item.amount)}</td>
-                                        <td className="px-4 py-3 text-right font-mono text-emerald-400 font-bold">
+                                        <td className={`px-4 py-3 font-medium ${t.text}`}>{item.counterparty}</td>
+                                        <td className={`px-4 py-3 text-right font-mono ${t.textMuted}`}>{formatUZS(item.amount)}</td>
+                                        <td className="px-4 py-3 text-right font-mono text-emerald-500 font-bold">
                                             {item.vatIn > 0 ? `+${formatUZS(item.vatIn)}` : '-'}
                                         </td>
-                                        <td className="px-4 py-3 text-right font-mono text-red-400 font-bold">
+                                        <td className="px-4 py-3 text-right font-mono text-red-500 font-bold">
                                             {item.vatOut > 0 ? `-${formatUZS(item.vatOut)}` : '-'}
                                         </td>
                                     </tr>
                                 ))
                             ) : (
                                 <tr>
-                                    <td colSpan={6} className="px-4 py-8 text-center text-slate-500">Нет данных за период</td>
+                                    <td colSpan={6} className={`px-4 py-8 text-center ${t.textMuted}`}>Нет данных за период</td>
                                 </tr>
                             )}
                         </tbody>

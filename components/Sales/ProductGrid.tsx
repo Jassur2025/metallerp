@@ -1,6 +1,7 @@
 import React from 'react';
 import { Product } from '../../types';
 import { Plus, ArrowUpDown } from 'lucide-react';
+import { useTheme, getThemeClasses } from '../../contexts/ThemeContext';
 
 interface ProductGridProps {
   products: Product[];
@@ -21,6 +22,9 @@ export const ProductGrid: React.FC<ProductGridProps> = ({
   onAddToCart,
   toUZS
 }) => {
+  const { theme } = useTheme();
+  const t = getThemeClasses(theme);
+  
   const filteredProducts = products
     .filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()) && p.quantity > 0)
     .sort((a, b) => {
@@ -40,7 +44,7 @@ export const ProductGrid: React.FC<ProductGridProps> = ({
         <input
           type="text"
           placeholder="Поиск товара..."
-          className="flex-1 bg-slate-800 border border-slate-700 text-slate-200 px-4 py-3 rounded-xl focus:ring-2 focus:ring-primary-500 outline-none"
+          className={`flex-1 ${t.bgInput} border ${t.borderInput} ${t.text} px-4 py-3 rounded-xl ${t.focusRing} outline-none`}
           value={searchTerm}
           onChange={e => setSearchTerm(e.target.value)}
         />
@@ -48,7 +52,7 @@ export const ProductGrid: React.FC<ProductGridProps> = ({
           <select
             value={sortOption}
             onChange={(e) => setSortOption(e.target.value)}
-            className="bg-slate-800 border border-slate-700 text-slate-200 pl-4 pr-10 py-3 rounded-xl focus:ring-2 focus:ring-primary-500 outline-none appearance-none h-full cursor-pointer hover:bg-slate-750"
+            className={`${t.bgInput} border ${t.borderInput} ${t.text} pl-4 pr-10 py-3 rounded-xl ${t.focusRing} outline-none appearance-none h-full cursor-pointer ${t.bgCardHover}`}
           >
             <option value="default">По умолчанию</option>
             <option value="price-asc">Цена: Низкая → Высокая</option>
@@ -56,7 +60,7 @@ export const ProductGrid: React.FC<ProductGridProps> = ({
             <option value="qty-asc">Остаток: Мало → Много</option>
             <option value="qty-desc">Остаток: Много → Мало</option>
           </select>
-          <ArrowUpDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+          <ArrowUpDown size={16} className={`absolute right-3 top-1/2 -translate-y-1/2 ${t.textMuted} pointer-events-none`} />
         </div>
       </div>
 
@@ -68,38 +72,38 @@ export const ProductGrid: React.FC<ProductGridProps> = ({
             return (
               <div 
                 key={product.id} 
-                className="bg-slate-800 border border-slate-700 p-4 rounded-xl hover:border-primary-500/50 transition-colors flex flex-col justify-between group"
+                className={`${t.bgCard} border ${t.border} p-4 rounded-xl hover:${theme === 'light' ? 'border-blue-300' : 'border-primary-500/50'} transition-colors flex flex-col justify-between group ${t.shadow}`}
               >
                 <div>
                   <div className="flex justify-between items-start">
-                    <h3 className="font-medium text-white flex items-center gap-2">
+                    <h3 className={`font-medium ${t.text} flex items-center gap-2`}>
                       {product.name}
                       {product.origin === 'import' && (
-                        <span className="text-[10px] bg-purple-500/20 text-purple-300 px-1.5 py-0.5 rounded border border-purple-500/30">
+                        <span className="text-[10px] bg-purple-500/20 text-purple-500 px-1.5 py-0.5 rounded border border-purple-500/30">
                           ИМПОРТ
                         </span>
                       )}
                     </h3>
-                    <span className="text-xs bg-slate-700 px-2 py-1 rounded text-slate-300">
+                    <span className={`text-xs ${t.bgPanelAlt} px-2 py-1 rounded ${t.textSecondary}`}>
                       {product.dimensions}
                     </span>
                   </div>
-                  <p className="text-sm text-slate-400 mt-1">Сталь: {product.steelGrade}</p>
+                  <p className={`text-sm ${t.textMuted} mt-1`}>Сталь: {product.steelGrade}</p>
                   <div className="flex justify-between items-end mt-4">
                     <div>
-                      <span className="text-lg font-mono font-bold text-emerald-400 block">
+                      <span className={`text-lg font-mono font-bold ${t.success} block`}>
                         {priceUZS.toLocaleString()} сўм
                       </span>
-                      <span className="text-xs text-slate-500">
+                      <span className={`text-xs ${t.textMuted}`}>
                         ${product.pricePerUnit.toFixed(2)} / {product.unit}
                       </span>
                     </div>
-                    <span className="text-sm text-slate-400">Остаток: {product.quantity}</span>
+                    <span className={`text-sm ${t.textMuted}`}>Остаток: {product.quantity}</span>
                   </div>
                 </div>
                 <button
                   onClick={(e) => onAddToCart(e, product)}
-                  className="mt-4 w-full bg-slate-700 hover:bg-primary-600 text-white py-2 rounded-lg flex items-center justify-center gap-2 transition-all opacity-80 group-hover:opacity-100 active:scale-95"
+                  className={`mt-4 w-full ${theme === 'light' ? 'bg-slate-100 hover:bg-[#1A73E8] hover:text-white' : 'bg-slate-700 hover:bg-primary-600'} ${t.text} py-2 rounded-lg flex items-center justify-center gap-2 transition-all opacity-80 group-hover:opacity-100 active:scale-95`}
                 >
                   <Plus size={16} /> В корзину
                 </button>

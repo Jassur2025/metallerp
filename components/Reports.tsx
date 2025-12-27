@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { Order, Expense, Product, Purchase, AppSettings, Transaction } from '../types';
 import { telegramService } from '../services/telegramService';
 import { useToast } from '../contexts/ToastContext';
+import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
 import { VatReport } from './VatReport';
 import { CashFlow } from './CashFlow';
 import { PnL } from './PnL';
@@ -26,6 +27,8 @@ interface ReportsProps {
 type ReportType = 'pnl' | 'cashflow' | 'sales' | 'statistics' | 'vat';
 
 export const Reports: React.FC<ReportsProps> = ({ orders, expenses, products, purchases, settings, transactions, onAddExpense }) => {
+  const { theme } = useTheme();
+  const t = getThemeClasses(theme);
   const [activeTab, setActiveTab] = useState<ReportType>('pnl');
   const toast = useToast();
   const [isSending, setIsSending] = useState(false);
@@ -173,14 +176,14 @@ export const Reports: React.FC<ReportsProps> = ({ orders, expenses, products, pu
   };
 
   return (
-    <div className="flex flex-col h-full bg-slate-900 text-slate-100">
+    <div className={`flex flex-col h-full ${t.bgMain} ${t.text}`}>
       {/* Reports Header / Tab Switcher */}
-      <div className="p-6 border-b border-slate-700 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 print:hidden">
+      <div className={`p-6 border-b ${t.border} flex flex-col md:flex-row justify-between items-start md:items-center gap-4 print:hidden`}>
         <div>
-          <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+          <h2 className={`text-2xl font-bold ${t.text} flex items-center gap-2`}>
             <FileText className="text-primary-500" /> Финансовые Отчеты
           </h2>
-          <p className="text-slate-400 text-sm mt-1">Аналитика, доходы и расходы</p>
+          <p className={`${t.textMuted} text-sm mt-1`}>Аналитика, доходы и расходы</p>
         </div>
 
         <div className="flex flex-wrap gap-2 items-center">
@@ -188,7 +191,7 @@ export const Reports: React.FC<ReportsProps> = ({ orders, expenses, products, pu
             onClick={() => setActiveTab('pnl')}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === 'pnl'
               ? 'bg-primary-600 text-white shadow-lg'
-              : 'text-slate-400 hover:text-white hover:bg-slate-700'
+              : `${t.textMuted} hover:${t.text} hover:${t.bgCardHover}`
               }`}
           >
             <TrendingUp size={16} /> P&L
@@ -197,7 +200,7 @@ export const Reports: React.FC<ReportsProps> = ({ orders, expenses, products, pu
             onClick={() => setActiveTab('cashflow')}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === 'cashflow'
               ? 'bg-primary-600 text-white shadow-lg'
-              : 'text-slate-400 hover:text-white hover:bg-slate-700'
+              : `${t.textMuted} hover:${t.text} hover:${t.bgCardHover}`
               }`}
           >
             <ArrowRightLeft size={16} /> Cash Flow
@@ -206,7 +209,7 @@ export const Reports: React.FC<ReportsProps> = ({ orders, expenses, products, pu
             onClick={() => setActiveTab('sales')}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === 'sales'
               ? 'bg-primary-600 text-white shadow-lg'
-              : 'text-slate-400 hover:text-white hover:bg-slate-700'
+              : `${t.textMuted} hover:${t.text} hover:${t.bgCardHover}`
               }`}
           >
             <PieChart size={16} /> Продажи
@@ -215,7 +218,7 @@ export const Reports: React.FC<ReportsProps> = ({ orders, expenses, products, pu
             onClick={() => setActiveTab('statistics')}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === 'statistics'
               ? 'bg-primary-600 text-white shadow-lg'
-              : 'text-slate-400 hover:text-white hover:bg-slate-700'
+              : `${t.textMuted} hover:${t.text} hover:${t.bgCardHover}`
               }`}
           >
             <Table size={16} /> Статистика
@@ -224,13 +227,13 @@ export const Reports: React.FC<ReportsProps> = ({ orders, expenses, products, pu
             onClick={() => setActiveTab('vat')}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === 'vat'
               ? 'bg-primary-600 text-white shadow-lg'
-              : 'text-slate-400 hover:text-white hover:bg-slate-700'
+              : `${t.textMuted} hover:${t.text} hover:${t.bgCardHover}`
               }`}
           >
             <Scale size={16} /> НДС
           </button>
 
-          <div className="w-px h-8 bg-slate-700 mx-2"></div>
+          <div className={`w-px h-8 ${t.border} mx-2`}></div>
 
           <button
             onClick={handleSendTelegramReport}
@@ -244,7 +247,7 @@ export const Reports: React.FC<ReportsProps> = ({ orders, expenses, products, pu
       </div>
 
       {/* Report Content */}
-      <div className="flex-1 overflow-auto bg-slate-900 custom-scrollbar">
+      <div className={`flex-1 overflow-auto ${t.bgMain} custom-scrollbar`}>
         {activeTab === 'pnl' && <PnL orders={orders} expenses={expenses} defaultExchangeRate={settings.defaultExchangeRate} />}
         {activeTab === 'cashflow' && <CashFlow orders={orders} expenses={expenses} onAddExpense={onAddExpense} />}
         {activeTab === 'sales' && <SalesAnalytics orders={orders} />}

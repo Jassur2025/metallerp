@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Product, Purchase, PurchaseItem, PurchaseOverheads, Transaction, WorkflowOrder, OrderItem, ProductType, Unit } from '../types';
 import { Plus, DollarSign, Wallet, CreditCard, Building2, Banknote, AlertTriangle } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
+import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
 import { PaymentSplitModal, PaymentDistribution } from './Sales/PaymentSplitModal';
 
 import type { ProcurementProps, ProcurementTab, ProcurementType, PaymentMethod, PaymentCurrency, Totals, Balances } from './Procurement/types';
@@ -15,6 +16,8 @@ const logDev = (...args: unknown[]) => { if (isDev) console.log(...args); };
 
 export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts, settings, purchases, onSavePurchases, transactions, setTransactions, workflowOrders, onSaveWorkflowOrders, onSaveProducts, onSaveTransactions, balances }) => {
     const toast = useToast();
+    const { theme } = useTheme();
+    const t = getThemeClasses(theme);
     const [activeTab, setActiveTab] = useState<ProcurementTab>(() => {
         const saved = localStorage.getItem('procurement_active_tab');
         return (saved === 'workflow' || saved === 'history' || saved === 'new') ? saved : 'new';
@@ -607,21 +610,21 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
             {/* Repayment Modal */}
             {isRepayModalOpen && selectedPurchaseForRepayment && (
                 <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-slate-800 rounded-2xl w-full max-w-sm border border-slate-700 shadow-2xl animate-scale-in">
-                        <div className="p-6 border-b border-slate-700 flex justify-between items-center">
-                            <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                    <div className={`${t.bgCard} rounded-2xl w-full max-w-sm border ${t.border} shadow-2xl animate-scale-in`}>
+                        <div className={`p-6 border-b ${t.border} flex justify-between items-center`}>
+                            <h3 className={`text-xl font-bold ${t.text} flex items-center gap-2`}>
                                 <Wallet className="text-emerald-500" /> Оплата поставщику
                             </h3>
-                            <button onClick={() => setIsRepayModalOpen(false)} className="text-slate-400 hover:text-white">
+                            <button onClick={() => setIsRepayModalOpen(false)} className={`${t.textMuted} hover:${t.text}`}>
                                 <Plus size={24} className="rotate-45" />
                             </button>
                         </div>
                         <div className="p-6 space-y-6">
-                            <div className="bg-slate-900 p-4 rounded-xl border border-slate-700">
-                                <p className="text-sm text-slate-400 mb-1">Поставщик</p>
-                                <p className="text-lg font-bold text-white">{selectedPurchaseForRepayment.supplierName}</p>
+                            <div className={`${t.bg} p-4 rounded-xl border ${t.border}`}>
+                                <p className={`text-sm ${t.textMuted} mb-1`}>Поставщик</p>
+                                <p className={`text-lg font-bold ${t.text}`}>{selectedPurchaseForRepayment.supplierName}</p>
                                 <div className="mt-3 flex justify-between items-end">
-                                    <span className="text-sm text-slate-500">Остаток долга:</span>
+                                    <span className={`text-sm ${t.textMuted}`}>Остаток долга:</span>
                                     <span className="text-xl font-mono font-bold text-red-400">
                                         ${(selectedPurchaseForRepayment.totalInvoiceAmount - selectedPurchaseForRepayment.amountPaid).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                     </span>
@@ -630,7 +633,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
 
                             {/* Payment Method Selector */}
                             <div className="space-y-2">
-                                <label className="text-sm font-medium text-slate-400">Способ оплаты</label>
+                                <label className={`text-sm font-medium ${t.textMuted}`}>Способ оплаты</label>
                                 <div className="grid grid-cols-3 gap-2">
                                     <button
                                         onClick={() => {
@@ -639,7 +642,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                                         }}
                                         className={`p-3 rounded-xl border flex flex-col items-center gap-2 transition-all ${repaymentMethod === 'cash'
                                             ? 'bg-emerald-600/20 border-emerald-500 text-emerald-400'
-                                            : 'bg-slate-800 border-slate-600 text-slate-400 hover:bg-slate-700'
+                                            : `${t.bg} ${t.border} ${t.textMuted} hover:${t.bgHover}`
                                             }`}
                                     >
                                         <Banknote size={20} />
@@ -652,7 +655,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                                         }}
                                         className={`p-3 rounded-xl border flex flex-col items-center gap-2 transition-all ${repaymentMethod === 'card'
                                             ? 'bg-indigo-600/20 border-indigo-500 text-indigo-400'
-                                            : 'bg-slate-800 border-slate-600 text-slate-400 hover:bg-slate-700'
+                                            : `${t.bg} ${t.border} ${t.textMuted} hover:${t.bgHover}`
                                             }`}
                                     >
                                         <CreditCard size={20} />
@@ -665,7 +668,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                                         }}
                                         className={`p-3 rounded-xl border flex flex-col items-center gap-2 transition-all ${repaymentMethod === 'bank'
                                             ? 'bg-blue-600/20 border-blue-500 text-blue-400'
-                                            : 'bg-slate-800 border-slate-600 text-slate-400 hover:bg-slate-700'
+                                            : `${t.bg} ${t.border} ${t.textMuted} hover:${t.bgHover}`
                                             }`}
                                     >
                                         <Building2 size={20} />
@@ -676,8 +679,8 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
 
                             {/* Currency Selector */}
                             <div className="space-y-2">
-                                <label className="text-sm font-medium text-slate-400">Валюта</label>
-                                <div className="flex bg-slate-900 rounded-lg p-1 border border-slate-700">
+                                <label className={`text-sm font-medium ${t.textMuted}`}>Валюта</label>
+                                <div className={`flex ${t.bg} rounded-lg p-1 border ${t.border}`}>
                                     {repaymentMethod === 'cash' ? (
                                         <>
                                             <button
@@ -687,7 +690,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                                                     // Let's reset to full debt in USD for convenience
                                                     setRepaymentAmount(selectedPurchaseForRepayment.totalInvoiceAmount - selectedPurchaseForRepayment.amountPaid);
                                                 }}
-                                                className={`flex-1 py-1.5 rounded-md text-sm font-bold transition-all ${repaymentCurrency === 'USD' ? 'bg-slate-700 text-white shadow' : 'text-slate-500 hover:text-slate-300'
+                                                className={`flex-1 py-1.5 rounded-md text-sm font-bold transition-all ${repaymentCurrency === 'USD' ? `${t.bgCard} ${t.text} shadow` : `${t.textMuted} hover:${t.text}`
                                                     }`}
                                             >
                                                 USD ($)
@@ -699,7 +702,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                                                     const debtUSD = selectedPurchaseForRepayment.totalInvoiceAmount - selectedPurchaseForRepayment.amountPaid;
                                                     setRepaymentAmount(Math.round(debtUSD * settings.defaultExchangeRate));
                                                 }}
-                                                className={`flex-1 py-1.5 rounded-md text-sm font-bold transition-all ${repaymentCurrency === 'UZS' ? 'bg-slate-700 text-white shadow' : 'text-slate-500 hover:text-slate-300'
+                                                className={`flex-1 py-1.5 rounded-md text-sm font-bold transition-all ${repaymentCurrency === 'UZS' ? `${t.bgCard} ${t.text} shadow` : `${t.textMuted} hover:${t.text}`
                                                     }`}
                                             >
                                                 UZS (сум)
@@ -707,7 +710,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                                         </>
                                     ) : (
                                         <button
-                                            className="flex-1 py-1.5 rounded-md text-sm font-bold bg-slate-700 text-white shadow cursor-not-allowed opacity-50"
+                                            className={`flex-1 py-1.5 rounded-md text-sm font-bold ${t.bgCard} ${t.text} shadow cursor-not-allowed opacity-50`}
                                             disabled
                                         >
                                             UZS (сум) — Только сумы
@@ -718,22 +721,22 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
 
                             <div className="space-y-2">
                                 <div className="flex justify-between">
-                                    <label className="text-sm font-medium text-slate-400">Сумма оплаты ({repaymentCurrency})</label>
+                                    <label className={`text-sm font-medium ${t.textMuted}`}>Сумма оплаты ({repaymentCurrency})</label>
                                     {repaymentCurrency === 'UZS' && (
-                                        <span className="text-xs text-slate-500 self-center">
+                                        <span className={`text-xs ${t.textMuted} self-center`}>
                                             Курс: {settings.defaultExchangeRate.toLocaleString()}
                                         </span>
                                     )}
                                 </div>
                                 <div className="relative">
                                     {repaymentCurrency === 'USD' ? (
-                                        <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                                        <DollarSign className={`absolute left-3 top-1/2 -translate-y-1/2 ${t.textMuted}`} size={18} />
                                     ) : (
-                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-bold text-xs">UZS</span>
+                                        <span className={`absolute left-3 top-1/2 -translate-y-1/2 ${t.textMuted} font-bold text-xs`}>UZS</span>
                                     )}
                                     <input
                                         type="number"
-                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg pl-12 pr-4 py-3 text-white text-lg font-mono focus:ring-2 focus:ring-emerald-500 outline-none"
+                                        className={`w-full ${t.bg} border ${t.border} rounded-lg pl-12 pr-4 py-3 ${t.text} text-lg font-mono focus:ring-2 focus:ring-emerald-500 outline-none`}
                                         value={repaymentAmount || ''}
                                         onChange={e => setRepaymentAmount(Number(e.target.value))}
                                     />
@@ -748,7 +751,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                             <button
                                 onClick={handleRepayDebt}
                                 disabled={repaymentAmount <= 0}
-                                className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 disabled:text-slate-500 text-white py-3 rounded-xl font-bold transition-colors shadow-lg shadow-emerald-600/20"
+                                className={`w-full bg-emerald-600 hover:bg-emerald-500 disabled:${t.bgHover} disabled:${t.textMuted} text-white py-3 rounded-xl font-bold transition-colors shadow-lg shadow-emerald-600/20`}
                             >
                                 Подтвердить оплату
                             </button>
@@ -760,10 +763,10 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
             {/* New Product Modal */}
             {isNewProductModalOpen && (
                 <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-slate-800 rounded-2xl w-full max-w-2xl border border-slate-700 shadow-2xl overflow-hidden">
-                        <div className="p-6 border-b border-slate-700 flex justify-between items-center bg-slate-900/50">
-                            <h3 className="text-xl font-bold text-white">Новый товар</h3>
-                            <button onClick={() => setIsNewProductModalOpen(false)} className="text-slate-400 hover:text-white">
+                    <div className={`${t.bgCard} rounded-2xl w-full max-w-2xl border ${t.border} shadow-2xl overflow-hidden`}>
+                        <div className={`p-6 border-b ${t.border} flex justify-between items-center ${t.bg}`}>
+                            <h3 className={`text-xl font-bold ${t.text}`}>Новый товар</h3>
+                            <button onClick={() => setIsNewProductModalOpen(false)} className={`${t.textMuted} hover:${t.text}`}>
                                 ✕
                             </button>
                         </div>
@@ -771,9 +774,9 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                         <div className="p-6 space-y-4">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div className="space-y-2 md:col-span-2">
-                                    <label className="text-xs font-medium text-slate-400">Название *</label>
+                                    <label className={`text-xs font-medium ${t.textMuted}`}>Название *</label>
                                     <input
-                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white outline-none focus:ring-2 focus:ring-indigo-500"
+                                        className={`w-full ${t.bg} border ${t.border} rounded-lg px-3 py-2 ${t.text} outline-none focus:ring-2 focus:ring-indigo-500`}
                                         value={newProductData.name || ''}
                                         onChange={(e) => setNewProductData({ ...newProductData, name: e.target.value })}
                                         placeholder="Например: Труба"
@@ -781,9 +784,9 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                                 </div>
 
                                 <div className="space-y-2">
-                                    <label className="text-xs font-medium text-slate-400">Тип</label>
+                                    <label className={`text-xs font-medium ${t.textMuted}`}>Тип</label>
                                     <select
-                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white outline-none"
+                                        className={`w-full ${t.bg} border ${t.border} rounded-lg px-3 py-2 ${t.text} outline-none`}
                                         value={newProductData.type}
                                         onChange={(e) => setNewProductData({ ...newProductData, type: e.target.value as ProductType })}
                                     >
@@ -794,9 +797,9 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                                 </div>
 
                                 <div className="space-y-2">
-                                    <label className="text-xs font-medium text-slate-400">Ед. изм.</label>
+                                    <label className={`text-xs font-medium ${t.textMuted}`}>Ед. изм.</label>
                                     <select
-                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white outline-none"
+                                        className={`w-full ${t.bg} border ${t.border} rounded-lg px-3 py-2 ${t.text} outline-none`}
                                         value={newProductData.unit}
                                         onChange={(e) => setNewProductData({ ...newProductData, unit: e.target.value as Unit })}
                                     >
@@ -807,9 +810,9 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                                 </div>
 
                                 <div className="space-y-2">
-                                    <label className="text-xs font-medium text-slate-400">Размеры *</label>
+                                    <label className={`text-xs font-medium ${t.textMuted}`}>Размеры *</label>
                                     <input
-                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white outline-none focus:ring-2 focus:ring-indigo-500"
+                                        className={`w-full ${t.bg} border ${t.border} rounded-lg px-3 py-2 ${t.text} outline-none focus:ring-2 focus:ring-indigo-500`}
                                         value={newProductData.dimensions || ''}
                                         onChange={(e) => setNewProductData({ ...newProductData, dimensions: e.target.value })}
                                         placeholder="50x50x3"
@@ -817,9 +820,9 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                                 </div>
 
                                 <div className="space-y-2">
-                                    <label className="text-xs font-medium text-slate-400">Марка стали</label>
+                                    <label className={`text-xs font-medium ${t.textMuted}`}>Марка стали</label>
                                     <input
-                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white outline-none focus:ring-2 focus:ring-indigo-500"
+                                        className={`w-full ${t.bg} border ${t.border} rounded-lg px-3 py-2 ${t.text} outline-none focus:ring-2 focus:ring-indigo-500`}
                                         value={newProductData.steelGrade || ''}
                                         onChange={(e) => setNewProductData({ ...newProductData, steelGrade: e.target.value })}
                                         placeholder="Ст3"
@@ -827,29 +830,29 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                                 </div>
 
                                 <div className="space-y-2">
-                                    <label className="text-xs font-medium text-slate-400">Цена продажи (USD)</label>
+                                    <label className={`text-xs font-medium ${t.textMuted}`}>Цена продажи (USD)</label>
                                     <input
                                         type="number"
-                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+                                        className={`w-full ${t.bg} border ${t.border} rounded-lg px-3 py-2 ${t.text} outline-none focus:ring-2 focus:ring-indigo-500 font-mono`}
                                         value={newProductData.pricePerUnit ?? 0}
                                         onChange={(e) => setNewProductData({ ...newProductData, pricePerUnit: Number(e.target.value) })}
                                     />
                                 </div>
 
                                 <div className="space-y-2">
-                                    <label className="text-xs font-medium text-slate-400">Минимальный остаток</label>
+                                    <label className={`text-xs font-medium ${t.textMuted}`}>Минимальный остаток</label>
                                     <input
                                         type="number"
-                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+                                        className={`w-full ${t.bg} border ${t.border} rounded-lg px-3 py-2 ${t.text} outline-none focus:ring-2 focus:ring-indigo-500 font-mono`}
                                         value={newProductData.minStockLevel ?? 0}
                                         onChange={(e) => setNewProductData({ ...newProductData, minStockLevel: Number(e.target.value) })}
                                     />
                                 </div>
 
                                 <div className="space-y-2">
-                                    <label className="text-xs font-medium text-slate-400">Происхождение</label>
+                                    <label className={`text-xs font-medium ${t.textMuted}`}>Происхождение</label>
                                     <select
-                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white outline-none"
+                                        className={`w-full ${t.bg} border ${t.border} rounded-lg px-3 py-2 ${t.text} outline-none`}
                                         value={newProductData.origin || 'local'}
                                         onChange={(e) => setNewProductData({ ...newProductData, origin: e.target.value as 'import' | 'local' })}
                                     >
@@ -860,10 +863,10 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                             </div>
                         </div>
 
-                        <div className="p-6 border-t border-slate-700 flex justify-end gap-3 bg-slate-900/50">
+                        <div className={`p-6 border-t ${t.border} flex justify-end gap-3 ${t.bg}`}>
                             <button
                                 onClick={() => setIsNewProductModalOpen(false)}
-                                className="px-4 py-2 text-slate-300 hover:text-white transition-colors"
+                                className={`px-4 py-2 ${t.textMuted} hover:${t.text} transition-colors`}
                             >
                                 Отмена
                             </button>
@@ -890,24 +893,24 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
             {/* Cancel Workflow Modal */}
             {isCancelModalOpen && workflowToCancel && (
                 <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
-                    <div className="bg-slate-800 rounded-2xl border border-slate-700 w-full max-w-md p-6">
-                        <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                    <div className={`${t.bgCard} rounded-2xl border ${t.border} w-full max-w-md p-6`}>
+                        <h3 className={`text-xl font-bold ${t.text} mb-4 flex items-center gap-2`}>
                             <AlertTriangle className="text-red-400" size={24} />
                             Аннулирование заказа
                         </h3>
                         
-                        <div className="bg-slate-900/50 rounded-xl p-4 mb-4">
-                            <div className="text-sm text-slate-400">Заказ: <span className="text-white font-mono">{workflowToCancel.id}</span></div>
-                            <div className="text-sm text-slate-400 mt-1">Клиент: <span className="text-white">{workflowToCancel.customerName}</span></div>
-                            <div className="text-sm text-slate-400 mt-1">Сумма: <span className="text-emerald-300 font-mono">{Number(workflowToCancel.totalAmountUZS || 0).toLocaleString()} сум</span></div>
+                        <div className={`${t.bg} rounded-xl p-4 mb-4`}>
+                            <div className={`text-sm ${t.textMuted}`}>Заказ: <span className={`${t.text} font-mono`}>{workflowToCancel.id}</span></div>
+                            <div className={`text-sm ${t.textMuted} mt-1`}>Клиент: <span className={t.text}>{workflowToCancel.customerName}</span></div>
+                            <div className={`text-sm ${t.textMuted} mt-1`}>Сумма: <span className="text-emerald-300 font-mono">{Number(workflowToCancel.totalAmountUZS || 0).toLocaleString()} сум</span></div>
                         </div>
 
                         <div className="mb-4">
-                            <label className="text-sm text-slate-400 mb-2 block">Причина аннулирования *</label>
+                            <label className={`text-sm ${t.textMuted} mb-2 block`}>Причина аннулирования *</label>
                             <textarea
                                 value={cancelReason}
                                 onChange={(e) => setCancelReason(e.target.value)}
-                                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-red-500/50 h-24 resize-none"
+                                className={`w-full ${t.bg} border ${t.border} rounded-xl px-4 py-3 ${t.text} outline-none focus:ring-2 focus:ring-red-500/50 h-24 resize-none`}
                                 placeholder="Укажите причину аннулирования..."
                             />
                         </div>
@@ -915,7 +918,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                         <div className="flex gap-3">
                             <button
                                 onClick={() => { setIsCancelModalOpen(false); setWorkflowToCancel(null); setCancelReason(''); }}
-                                className="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-3 rounded-xl font-medium"
+                                className={`flex-1 ${t.bgHover} hover:${t.bg} ${t.text} py-3 rounded-xl font-medium`}
                             >
                                 Отмена
                             </button>

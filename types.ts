@@ -37,6 +37,7 @@ export interface CompanyDetails {
 export interface AppSettings {
   vatRate: number; // Percentage (e.g. 12)
   defaultExchangeRate: number;
+  theme?: 'light' | 'dark'; // UI theme
   companyDetails?: CompanyDetails; // Added company details for documents
   telegramBotToken?: string;
   telegramChatId?: string;
@@ -139,8 +140,6 @@ export interface WorkflowOrder {
 
   // Financials
   subtotalAmount: number; // USD
-  discountPercent?: number; // Discount percentage
-  discountAmount?: number; // Discount in USD
   vatRateSnapshot: number; // VAT % at time of order creation
   vatAmount: number; // USD
   totalAmount: number; // USD

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Product, Order, OrderItem, Expense, Client, Transaction, JournalEvent, WorkflowOrder } from '../../types';
 import { ShoppingCart, ArrowDownRight, ArrowUpRight, RefreshCw, FileText, ClipboardList, BadgeCheck, AlertTriangle, List } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
+import { useTheme, getThemeClasses } from '../../contexts/ThemeContext';
 import { SUPER_ADMIN_EMAILS, IS_DEV_MODE } from '../../constants';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -32,6 +33,8 @@ export const Sales: React.FC<SalesProps> = ({
 }) => {
   const { user } = useAuth();
   const toast = useToast();
+  const { theme } = useTheme();
+  const t = getThemeClasses(theme);
 
 
   const currentEmployee = React.useMemo(
@@ -950,16 +953,16 @@ export const Sales: React.FC<SalesProps> = ({
 
       {/* Recent Orders (Desktop) */}
       {orders.length > 0 && mode === 'sale' && (
-        <div className="hidden lg:block bg-slate-800 border-b border-slate-700 px-6 py-3">
+        <div className={`hidden lg:block ${t.bgCard} border-b ${t.border} px-6 py-3`}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <FileText size={18} className="text-slate-400" />
-              <span className="text-sm text-slate-400">Последние заказы:</span>
+              <FileText size={18} className={t.textMuted} />
+              <span className={`text-sm ${t.textMuted}`}>Последние заказы:</span>
             </div>
             <div className="flex gap-2 overflow-x-auto">
               {orders.slice(0, 5).map(order => (
                 <button key={order.id} onClick={() => { setSelectedOrderForReceipt(order); setShowReceiptModal(true); }}
-                  className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white text-xs rounded-lg font-medium whitespace-nowrap transition-colors flex items-center gap-1.5">
+                  className={`px-3 py-1.5 ${t.bgButton} ${t.text} text-xs rounded-lg font-medium whitespace-nowrap transition-colors flex items-center gap-1.5`}>
                   <FileText size={12} />{order.id}
                 </button>
               ))}
@@ -975,26 +978,26 @@ export const Sales: React.FC<SalesProps> = ({
         <div className="lg:col-span-2 flex flex-col h-full overflow-hidden">
           {/* Mode Switcher */}
           <div className="flex gap-2 mb-4">
-            <button onClick={() => setMode('sale')} className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${mode === 'sale' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/20' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
+            <button onClick={() => setMode('sale')} className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${mode === 'sale' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/20' : `${t.bgCard} ${t.textMuted} ${t.bgCardHover}`}`}>
               <ArrowDownRight size={20} /> Новая Продажа
             </button>
-            <button onClick={() => setMode('expense')} className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${mode === 'expense' ? 'bg-red-600 text-white shadow-lg shadow-red-900/20' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
+            <button onClick={() => setMode('expense')} className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${mode === 'expense' ? 'bg-red-600 text-white shadow-lg shadow-red-900/20' : `${t.bgCard} ${t.textMuted} ${t.bgCardHover}`}`}>
               <ArrowUpRight size={20} /> Новый Расход
             </button>
             {(user?.permissions?.canProcessReturns !== false) && (
-              <button onClick={() => setMode('return')} className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${mode === 'return' ? 'bg-amber-600 text-white shadow-lg shadow-amber-900/20' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
+              <button onClick={() => setMode('return')} className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${mode === 'return' ? 'bg-amber-600 text-white shadow-lg shadow-amber-900/20' : `${t.bgCard} ${t.textMuted} ${t.bgCardHover}`}`}>
                 <RefreshCw size={20} /> Возврат
               </button>
             )}
 
             {isCashier && (
-              <button onClick={() => setMode('workflow')} className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${mode === 'workflow' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
+              <button onClick={() => setMode('workflow')} className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${mode === 'workflow' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20' : `${t.bgCard} ${t.textMuted} ${t.bgCardHover}`}`}>
                 <ClipboardList size={20} /> Workflow
               </button>
             )}
 
             {isCashier && (
-              <button onClick={() => setMode('transactions')} className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${mode === 'transactions' ? 'bg-purple-600 text-white shadow-lg shadow-purple-900/20' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>
+              <button onClick={() => setMode('transactions')} className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${mode === 'transactions' ? 'bg-purple-600 text-white shadow-lg shadow-purple-900/20' : `${t.bgCard} ${t.textMuted} ${t.bgCardHover}`}`}>
                 <List size={20} /> Транзакции
               </button>
             )}
@@ -1032,29 +1035,29 @@ export const Sales: React.FC<SalesProps> = ({
           )}
 
           {mode === 'workflow' ? (
-            <div className="bg-slate-800 rounded-2xl border border-slate-700 p-5 overflow-y-auto custom-scrollbar">
+            <div className={`${t.bgCard} rounded-2xl border ${t.border} p-5 overflow-y-auto custom-scrollbar`}>
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-white font-bold flex items-center gap-2">
+                <h3 className={`${t.text} font-bold flex items-center gap-2`}>
                   <ClipboardList size={18} className="text-indigo-400" /> Заявки из Workflow (в кассу)
                 </h3>
-                <div className="text-xs text-slate-400">{workflowCashQueue.length} заявок</div>
+                <div className={`text-xs ${t.textMuted}`}>{workflowCashQueue.length} заявок</div>
               </div>
 
               {workflowCashQueue.length === 0 ? (
-                <div className="text-slate-500 text-center py-10">Пока нет заявок из Workflow</div>
+                <div className={`${t.textMuted} text-center py-10`}>Пока нет заявок из Workflow</div>
               ) : (
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                   {workflowCashQueue.map((wf: any) => (
-                    <div key={wf.id} className="bg-slate-900/50 border border-slate-700 rounded-2xl p-5">
+                    <div key={wf.id} className={`${t.bgPanelAlt} border ${t.border} rounded-2xl p-5`}>
                       <div className="flex justify-between items-start">
                         <div>
-                          <div className="text-white font-bold">{wf.customerName}</div>
-                          <div className="text-xs text-slate-400 mt-1">{new Date(wf.date).toLocaleString('ru-RU')}</div>
-                          <div className="text-xs text-slate-500 mt-1">ID: {wf.id} • Создал: {wf.createdBy}</div>
+                          <div className={`${t.text} font-bold`}>{wf.customerName}</div>
+                          <div className={`text-xs ${t.textMuted} mt-1`}>{new Date(wf.date).toLocaleString('ru-RU')}</div>
+                          <div className={`text-xs ${t.textMuted} mt-1`}>ID: {wf.id} • Создал: {wf.createdBy}</div>
                         </div>
                         <div className="text-right">
-                          <div className="text-emerald-300 font-mono font-bold">{Number(wf.totalAmountUZS || 0).toLocaleString()} сум</div>
-                          <div className="text-xs text-slate-500">${Number(wf.totalAmount || 0).toFixed(2)}</div>
+                          <div className="text-emerald-500 font-mono font-bold">{Number(wf.totalAmountUZS || 0).toLocaleString()} сум</div>
+                          <div className={`text-xs ${t.textMuted}`}>${Number(wf.totalAmount || 0).toFixed(2)}</div>
                         </div>
                       </div>
 
@@ -1063,42 +1066,42 @@ export const Sales: React.FC<SalesProps> = ({
                           const prod = products.find(p => p.id === it.productId);
                           const dims = prod?.dimensions || it.dimensions || '';
                           return (
-                            <div key={idx} className="flex justify-between text-slate-300">
+                            <div key={idx} className={`flex justify-between ${t.textSecondary}`}>
                               <span className="truncate max-w-[260px]">
                                 {it.productName}
-                                {dims && dims !== '-' && <span className="text-slate-500 ml-1">({dims})</span>}
-                                <span className="text-slate-400 ml-1">× {it.quantity}</span>
+                                {dims && dims !== '-' && <span className={`${t.textMuted} ml-1`}>({dims})</span>}
+                                <span className={`${t.textMuted} ml-1`}>× {it.quantity}</span>
                               </span>
-                              <span className="font-mono text-slate-400">{Math.round(Number(it.total || 0) * Number(wf.exchangeRate || exchangeRate)).toLocaleString()} сум</span>
+                              <span className={`font-mono ${t.textMuted}`}>{Math.round(Number(it.total || 0) * Number(wf.exchangeRate || exchangeRate)).toLocaleString()} сум</span>
                             </div>
                           );
                         })}
-                        {(wf.items || []).length > 5 && <div className="text-xs text-slate-500">+ ещё {(wf.items || []).length - 5} поз.</div>}
+                        {(wf.items || []).length > 5 && <div className={`text-xs ${t.textMuted}`}>+ ещё {(wf.items || []).length - 5} поз.</div>}
                       </div>
 
                       <div className="mt-4 flex items-center justify-between gap-2">
-                        <div className="text-xs text-slate-400">
-                          Оплата: <span className="text-slate-200 font-semibold">{wf.paymentMethod}</span>
-                          {wf.paymentMethod === 'debt' && <span className="ml-2 text-amber-300 font-bold">ДОЛГ</span>}
+                        <div className={`text-xs ${t.textMuted}`}>
+                          Оплата: <span className={`${t.text} font-semibold`}>{wf.paymentMethod}</span>
+                          {wf.paymentMethod === 'debt' && <span className="ml-2 text-amber-500 font-bold">ДОЛГ</span>}
                         </div>
                         <div className="flex gap-2">
                           <button
                             onClick={() => openCancelModal(wf)}
-                            className="bg-red-600/20 hover:bg-red-600/40 text-red-400 px-3 py-2 rounded-xl font-medium flex items-center gap-1 border border-red-600/30"
+                            className={`bg-red-500/10 hover:bg-red-500/20 text-red-500 px-3 py-2 rounded-xl font-medium flex items-center gap-1 border border-red-500/20`}
                           >
                             ✕ Аннулировать
                           </button>
                           <button
                             onClick={() => openWorkflowPaymentModal(wf)}
-                            className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2"
+                            className={`${theme === 'light' ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-emerald-600 hover:bg-emerald-500'} text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2`}
                           >
                             <BadgeCheck size={18} /> Подтвердить
                           </button>
                         </div>
                       </div>
 
-                      <div className="mt-3 text-xs text-slate-500 flex items-center gap-2">
-                        <AlertTriangle size={14} className="text-amber-400" />
+                      <div className={`mt-3 text-xs ${t.textMuted} flex items-center gap-2`}>
+                        <AlertTriangle size={14} className="text-amber-500" />
                         Если остатков не хватит — заявка уйдет обратно в закуп.
                       </div>
                     </div>
@@ -1120,15 +1123,15 @@ export const Sales: React.FC<SalesProps> = ({
               onSubmit={handleAddExpense}
               expenseCategories={settings.expenseCategories} />
           ) : mode === 'transactions' ? (
-            <div className="space-y-6">
+            <div className="space-y-6 flex-1 overflow-y-auto custom-scrollbar pr-2 pb-10">
               {/* Детальный отчёт движения кассы */}
-              <div className="bg-slate-800 rounded-2xl border border-slate-700 p-5">
-                <h3 className="text-white font-bold mb-4 flex items-center gap-2">
+              <div className={`${t.bgCard} rounded-2xl border ${t.border} p-5`}>
+                <h3 className={`${t.text} font-bold mb-4 flex items-center gap-2`}>
                   📊 Детализация баланса кассы USD
                 </h3>
                 
                 <div className="space-y-3 max-h-[400px] overflow-y-auto custom-scrollbar">
-                  <div className="text-xs text-slate-400 font-bold border-b border-slate-700 pb-2 grid grid-cols-6 gap-2">
+                  <div className={`text-xs ${t.textMuted} font-bold border-b ${t.border} pb-2 grid grid-cols-6 gap-2`}>
                     <span>ID Заказа</span>
                     <span>Клиент</span>
                     <span>Метод</span>
@@ -1151,18 +1154,18 @@ export const Sales: React.FC<SalesProps> = ({
                       const isLargeAmount = finalAmount > 10000;
                       
                       return (
-                        <div key={o.id} className={`text-xs grid grid-cols-6 gap-2 py-2 border-b border-slate-700/50 ${isLargeAmount ? 'bg-red-500/20 border-red-500/30' : isCashUSD ? 'bg-emerald-500/10' : 'bg-slate-900/30'}`}>
-                          <span className="text-slate-300 font-mono">{o.id}</span>
-                          <span className="text-slate-400 truncate">{o.customerName}</span>
-                          <span className="text-slate-400">{o.paymentMethod}</span>
-                          <span className="text-slate-400">{o.paymentCurrency || 'USD'}</span>
-                          <span className={`text-right font-mono font-bold ${isLargeAmount ? 'text-red-400' : isCashUSD ? 'text-emerald-400' : 'text-slate-500'}`}>
+                        <div key={o.id} className={`text-xs grid grid-cols-6 gap-2 py-2 border-b ${theme === 'light' ? 'border-slate-200' : 'border-slate-700/50'} ${isLargeAmount ? 'bg-red-500/20 border-red-500/30' : isCashUSD ? 'bg-emerald-500/10' : t.bgPanelAlt}`}>
+                          <span className={`${t.textSecondary} font-mono`}>{o.id}</span>
+                          <span className={`${t.textMuted} truncate`}>{o.customerName}</span>
+                          <span className={`${t.textMuted}`}>{o.paymentMethod}</span>
+                          <span className={`${t.textMuted}`}>{o.paymentCurrency || 'USD'}</span>
+                          <span className={`text-right font-mono font-bold ${isLargeAmount ? 'text-red-500' : isCashUSD ? 'text-emerald-500' : t.textMuted}`}>
                             {isCashUSD ? `+$${finalAmount.toLocaleString(undefined, {maximumFractionDigits: 2})}` : '-'}
                           </span>
                           <div className="flex justify-end gap-1">
                             <button
                               onClick={() => setEditingOrderId(o.id)}
-                              className="px-2 py-1 bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 rounded text-[10px] font-bold"
+                              className="px-2 py-1 bg-blue-500/10 hover:bg-blue-500/20 text-blue-500 rounded text-[10px] font-bold"
                             >
                               ✎
                             </button>
@@ -1175,7 +1178,7 @@ export const Sales: React.FC<SalesProps> = ({
                                   toast.success('Заказ удалён');
                                 }
                               }}
-                              className="px-2 py-1 bg-red-600/20 hover:bg-red-600/40 text-red-400 rounded text-[10px] font-bold"
+                              className="px-2 py-1 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded text-[10px] font-bold"
                             >
                               ✕
                             </button>
@@ -1185,9 +1188,9 @@ export const Sales: React.FC<SalesProps> = ({
                     })}
                 </div>
                 
-                <div className="mt-4 pt-4 border-t border-slate-700 flex justify-between items-center">
-                  <span className="text-slate-400">Итого в кассе USD (из заказов):</span>
-                  <span className="text-emerald-400 font-mono font-bold text-xl">
+                <div className={`mt-4 pt-4 border-t ${t.border} flex justify-between items-center`}>
+                  <span className={`${t.textMuted}`}>Итого в кассе USD (из заказов):</span>
+                  <span className="text-emerald-500 font-mono font-bold text-xl">
                     ${(orders || [])
                       .filter(o => o.paymentMethod === 'cash' && o.paymentCurrency !== 'UZS')
                       .reduce((sum, o) => {
@@ -1201,7 +1204,7 @@ export const Sales: React.FC<SalesProps> = ({
                   </span>
                 </div>
                 
-                <div className="mt-2 text-xs text-amber-400 bg-amber-500/10 p-2 rounded-lg">
+                <div className={`mt-2 text-xs ${theme === 'light' ? 'text-slate-600' : 'text-amber-500'} bg-amber-500/10 p-2 rounded-lg`}>
                   💡 Зелёные строки добавляются к балансу USD. Если видите огромные суммы - это ошибки в данных.
                 </div>
               </div>
