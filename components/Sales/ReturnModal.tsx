@@ -124,7 +124,7 @@ export const ReturnModal: React.FC<ReturnModalProps> = ({
                 >
                   <option value="">— Выберите товар —</option>
                   {products.map(p => (
-                    <option key={p.id} value={p.name}>
+                    <option key={p.id} value={p.id}>
                       {p.name} {p.dimensions && p.dimensions !== '-' ? `(${p.dimensions})` : ''} — остаток: {p.quantity} {p.unit}
                     </option>
                   ))}

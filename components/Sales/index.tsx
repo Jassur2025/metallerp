@@ -863,7 +863,7 @@ export const Sales: React.FC<SalesProps> = ({
   // --- Return Logic ---
   const handleReturnSubmit = () => {
     if (!returnClientName || !returnProductName || !returnQuantity) { toast.warning('Заполните все поля!'); return; }
-    const product = products.find(p => p.name === returnProductName);
+    const product = products.find(p => p.id === returnProductName);
     const client = clients.find(c => c.name === returnClientName);
     const qty = Number(returnQuantity);
     if (!product) { toast.error('Товар не найден!'); return; }
