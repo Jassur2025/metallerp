@@ -46,6 +46,8 @@ import { SUPER_ADMIN_EMAILS, IS_DEV_MODE } from './constants';
 import { getErrorMessage } from './utils/errorHandler';
 import { validateAccessToken, isTokenExpiredError, logTokenStatus } from './utils/tokenHelper';
 import { telegramService } from './services/telegramService';
+import { calculateBaseTotals } from './utils/finance';
+import { useSaveHandler, createSaveHandlerFactory } from './hooks/useSaveHandler';
 
 const isDev = import.meta.env.DEV;
 const logDev = (...args: unknown[]) => { if (isDev) console.log(...args); };
@@ -111,7 +113,7 @@ const defaultSettings: AppSettings = {
 };
 
 const AppContent: React.FC = () => {
-  const { user, logout, accessToken } = useAuth();
+  const { user, logout, accessToken, refreshAccessToken } = useAuth();
   const toast = useToast();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(() => {
@@ -139,6 +141,23 @@ const AppContent: React.FC = () => {
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [journalEvents, setJournalEvents] = useState<JournalEvent[]>([]);
   const [workflowOrders, setWorkflowOrders] = useState<WorkflowOrder[]>([]);
+
+  // Initialize Save Handlers using the universal hook
+  const saveHandlerFactory = createSaveHandlerFactory(
+    () => accessToken,
+    refreshAccessToken
+  );
+
+  const saveProductsHandler = saveHandlerFactory<Product>('Товары', (data) => sheetsService.saveAllProducts(accessToken!, data));
+  const saveOrdersHandler = saveHandlerFactory<Order>('Заказы', (data) => sheetsService.saveAllOrders(accessToken!, data));
+  const saveExpensesHandler = saveHandlerFactory<Expense>('Расходы', (data) => sheetsService.saveAllExpenses(accessToken!, data));
+  const saveFixedAssetsHandler = saveHandlerFactory<FixedAsset>('Основные средства', (data) => sheetsService.saveAllFixedAssets(accessToken!, data));
+  const saveClientsHandler = saveHandlerFactory<Client>('Клиенты', (data) => sheetsService.saveAllClients(accessToken!, data));
+  const saveEmployeesHandler = saveHandlerFactory<Employee>('Сотрудники', (data) => sheetsService.saveAllEmployees(accessToken!, data));
+  const saveTransactionsHandler = saveHandlerFactory<Transaction>('Транзакции', (data) => sheetsService.saveAllTransactions(accessToken!, data));
+  const savePurchasesHandler = saveHandlerFactory<Purchase>('Закупки', (data) => sheetsService.saveAllPurchases(accessToken!, data));
+  const saveWorkflowOrdersHandler = saveHandlerFactory<WorkflowOrder>('Предзаказы', (data) => sheetsService.saveAllWorkflowOrders(accessToken!, data));
+  const saveJournalEventsHandler = saveHandlerFactory<JournalEvent>('Журнал', (data) => sheetsService.addJournalEvent(accessToken!, data[0]));
   const [settings, setSettings] = useState<AppSettings>(() => {
     try {
       const saved = localStorage.getItem('metal_erp_settings');
@@ -161,7 +180,7 @@ const AppContent: React.FC = () => {
     type: 'expense' | 'purchase' | 'supplier_payment' | 'client_payment' | 'sale';
     amount: number;
     currency: 'USD' | 'UZS';
-    method?: 'cash' | 'bank' | 'card' | 'debt';
+    method?: 'cash' | 'bank' | 'card' | 'debt' | 'mixed';
     counterparty?: string;
     description?: string;
     id?: string;
@@ -249,105 +268,25 @@ const AppContent: React.FC = () => {
 
   // Вычисление балансов кассы
   const balances = React.useMemo(() => {
-    const num = (v: unknown): number => {
-      if (typeof v === 'number') return isFinite(v) ? v : 0;
-      if (typeof v === 'string') {
-        const p = parseFloat(v.replace(/[^\d.-]/g, ''));
-        return isFinite(p) ? p : 0;
-      }
-      return 0;
-    };
-
-    const getRate = (rate: unknown) => {
-      const r = num(rate);
-      const defaultRate = num(settings.defaultExchangeRate);
-      const safeDefault = defaultRate > 100 ? defaultRate : 12900;
-      return r > 100 ? r : safeDefault;
-    };
-
-    let cashUSD = 0;
-    let cashUZS = 0;
-    let bankUZS = 0;
-    let cardUZS = 0;
-
-    // Заказы (продажи) - приход денег
-    orders.forEach(o => {
-      if (o.paymentMethod === 'cash') {
-        if (o.paymentCurrency === 'UZS') {
-          cashUZS += num(o.totalAmountUZS);
-        } else {
-          const paid = num(o.amountPaid);
-          const total = num(o.totalAmount);
-          cashUSD += (paid > 0 ? paid : total);
-        }
-      } else if (o.paymentMethod === 'bank') {
-        bankUZS += num(o.totalAmountUZS);
-      } else if (o.paymentMethod === 'card') {
-        cardUZS += num(o.totalAmountUZS);
-      }
-    });
-
-    // Транзакции - только смешанные платежи и оплаты поставщикам
-    transactions.forEach(t => {
-      const amt = num(t.amount);
-      const isUSD = t.currency === 'USD';
-      const rate = getRate(t.exchangeRate);
-      
-      // Извлекаем ID заказа из описания (если есть)
-      const orderIdMatch = t.description?.match(/ORD-\d+/);
-      const relatedOrderId = orderIdMatch ? orderIdMatch[0] : null;
-      
-      // Находим связанный заказ
-      const relatedOrder = relatedOrderId ? orders.find(o => o.id === relatedOrderId) : null;
-      
-      // Транзакция связана с mixed заказом?
-      const isMixedPayment = relatedOrder?.paymentMethod === 'mixed';
-
-      if (t.type === 'client_payment' && isMixedPayment) {
-        if (t.method === 'cash') {
-          if (isUSD) cashUSD += amt; else cashUZS += amt;
-        } else if (t.method === 'bank') {
-          bankUZS += (isUSD ? amt * rate : amt);
-        } else if (t.method === 'card') {
-          cardUZS += (isUSD ? amt * rate : amt);
-        }
-      } else if (t.type === 'supplier_payment') {
-        // Оплаты поставщикам всегда вычитаем
-        if (t.method === 'cash') {
-          if (isUSD) cashUSD -= amt; else cashUZS -= amt;
-        } else if (t.method === 'bank') {
-          bankUZS -= (isUSD ? amt * rate : amt);
-        } else if (t.method === 'card') {
-          cardUZS -= (isUSD ? amt * rate : amt);
-        }
-      } else if (t.type === 'client_return' || t.type === 'client_refund') {
-        if (t.method === 'cash') {
-          if (isUSD) cashUSD -= amt; else cashUZS -= amt;
-        } else if (t.method === 'bank') {
-          bankUZS -= (isUSD ? amt * rate : amt);
-        } else if (t.method === 'card') {
-          cardUZS -= (isUSD ? amt * rate : amt);
-        }
-      }
-    });
-
-    // Расходы
-    expenses.forEach(e => {
-      const amt = num(e.amount);
-      const isUSD = e.currency === 'USD';
-      const rate = getRate(e.exchangeRate);
-
-      if (e.paymentMethod === 'cash') {
-        if (isUSD) cashUSD -= amt; else cashUZS -= amt;
-      } else if (e.paymentMethod === 'bank') {
-        bankUZS -= (isUSD ? amt * rate : amt);
-      } else if (e.paymentMethod === 'card') {
-        cardUZS -= (isUSD ? amt * rate : amt);
-      }
-    });
-
-    return { cashUSD, cashUZS, bankUZS, cardUZS };
+    return calculateBaseTotals(orders, transactions, expenses, settings.defaultExchangeRate);
   }, [orders, transactions, expenses, settings.defaultExchangeRate]);
+
+  // Combine journal events with auto-corrections for the Journal view
+  const allJournalEvents = React.useMemo(() => {
+    const correctionEvents = (balances.corrections || []).map(c => ({
+      id: `auto-fix-${c.id}`,
+      date: new Date().toISOString(), // Using current date as placeholder
+      type: 'system',
+      module: 'finance',
+      action: 'Авто-коррекция',
+      description: `Исправлена ошибка: ${c.reason}. ${c.type} #${c.id}: ${c.originalAmount} -> ${c.correctedAmount}`,
+      employeeName: 'System Auto-Fix'
+    }));
+
+    return [...journalEvents, ...correctionEvents as any[]].sort((a, b) =>
+      new Date(b.date).getTime() - new Date(a.date).getTime()
+    );
+  }, [journalEvents, balances.corrections]);
 
   const loadData = async () => {
     if (!accessToken) return;
@@ -505,74 +444,32 @@ const AppContent: React.FC = () => {
   };
 
   const handleSaveAll = async () => {
-    // Проверяем токен перед сохранением
-    logTokenStatus(accessToken, 'before saveAll');
-
-    if (!validateAccessToken(accessToken)) {
-      toast.error('Токен доступа отсутствует. Пожалуйста, войдите заново.');
-      return;
-    }
-
     setIsLoading(true);
-    const results: { success: boolean; name: string; error?: string }[] = [];
-
     try {
-      // Используем Promise.allSettled чтобы сохранить все возможные данные даже при ошибках
-      const saveResults = await Promise.allSettled([
-        sheetsService.saveAllProducts(accessToken!, products).then(() => ({ name: 'Товары', success: true })),
-        sheetsService.saveAllOrders(accessToken!, orders).then(() => ({ name: 'Заказы', success: true })),
-        sheetsService.saveAllExpenses(accessToken!, expenses).then(() => ({ name: 'Расходы', success: true })),
-        sheetsService.saveAllFixedAssets(accessToken!, fixedAssets).then(() => ({ name: 'Основные средства', success: true })),
-        sheetsService.saveAllClients(accessToken!, clients).then(() => ({ name: 'Клиенты', success: true })),
-        sheetsService.saveAllEmployees(accessToken!, employees).then(() => ({ name: 'Сотрудники', success: true })),
-        sheetsService.saveAllTransactions(accessToken!, transactions).then(() => ({ name: 'Транзакции', success: true })),
-        sheetsService.saveAllPurchases(accessToken!, purchases).then(() => ({ name: 'Закупки', success: true })),
-        sheetsService.saveAllWorkflowOrders(accessToken!, workflowOrders).then(() => ({ name: 'Workflow', success: true }))
+      const results = await Promise.allSettled([
+        saveProductsHandler(products).then(() => ({ name: 'Товары', success: true })),
+        saveOrdersHandler(orders).then(() => ({ name: 'Заказы', success: true })),
+        saveExpensesHandler(expenses).then(() => ({ name: 'Расходы', success: true })),
+        saveFixedAssetsHandler(fixedAssets).then(() => ({ name: 'Основные средства', success: true })),
+        saveClientsHandler(clients).then(() => ({ name: 'Клиенты', success: true })),
+        saveEmployeesHandler(employees).then(() => ({ name: 'Сотрудники', success: true })),
+        saveTransactionsHandler(transactions).then(() => ({ name: 'Транзакции', success: true })),
+        savePurchasesHandler(purchases).then(() => ({ name: 'Закупки', success: true })),
+        saveWorkflowOrdersHandler(workflowOrders).then(() => ({ name: 'Предзаказы', success: true }))
       ]);
 
-      // Обрабатываем результаты
-      saveResults.forEach((result, index) => {
-        const names = ['Товары', 'Заказы', 'Расходы', 'Основные средства', 'Клиенты', 'Сотрудники', 'Транзакции', 'Закупки', 'Workflow'];
-        if (result.status === 'fulfilled') {
-          results.push({ success: true, name: names[index] });
-        } else {
-          const errorMsg = getErrorMessage(result.reason);
-          results.push({ success: false, name: names[index], error: errorMsg });
-          errorDev(`❌ Ошибка сохранения ${names[index]}: `, result.reason);
+      const failed = (results as any[])
+        .filter(r => r.status === 'rejected' || (r.status === 'fulfilled' && !r.value.success))
+        .map(r => r.status === 'rejected' ? 'Сетевая ошибка' : r.value.name);
 
-          // Если ошибка связана с токеном, предлагаем перелогиниться
-          if (isTokenExpiredError(result.reason)) {
-            warnDev(`⚠️ Токен истек при сохранении ${names[index]} `);
-          }
-        }
-      });
-
-      const successCount = results.filter(r => r.success).length;
-      const failCount = results.filter(r => !r.success).length;
-
-      // Проверяем, есть ли ошибки связанные с токеном
-      const hasTokenErrors = results.some(r => !r.success && r.error && isTokenExpiredError(new Error(r.error)));
-
-      if (hasTokenErrors) {
-        toast.error('Сессия истекла. Пожалуйста, войдите заново и попробуйте сохранить снова.');
-      } else if (failCount === 0) {
-        toast.success(`Все данные успешно сохранены в Google Sheets!(${successCount} модулей)`);
-      } else if (successCount > 0) {
-        const failedNames = results.filter(r => !r.success).map(r => r.name).join(', ');
-        toast.warning(`Сохранено ${successCount} из ${results.length} модулей.Ошибки: ${failedNames} `);
+      if (failed.length === 0) {
+        toast.success(`Все данные успешно синхронизированы (${results.length} модулей)`);
       } else {
-        const errorMessages = results.filter(r => !r.success).map(r => `${r.name}: ${r.error} `).join('; ');
-        toast.error(`Не удалось сохранить данные: ${errorMessages} `);
+        toast.warning(`Сохранено с ошибками: ${failed.join(', ')}`);
       }
     } catch (err) {
-      errorDev('❌ Критическая ошибка при сохранении:', err);
-      const errorMessage = getErrorMessage(err);
-
-      if (isTokenExpiredError(err)) {
-        toast.error('Сессия истекла. Пожалуйста, войдите заново.');
-      } else {
-        toast.error(`Ошибка при сохранении данных: ${errorMessage} `);
-      }
+      errorDev('Save All failed', err);
+      toast.error('Произошла ошибка при массовом сохранении');
     } finally {
       setIsLoading(false);
     }
@@ -581,72 +478,35 @@ const AppContent: React.FC = () => {
   const handleAddExpense = async (newExpense: Expense) => {
     const updatedExpenses = [...expenses, newExpense];
     setExpenses(updatedExpenses);
-    // Save to Google Sheets
-    // Save to Google Sheets
-    if (accessToken) {
-      try {
-        await sheetsService.saveAllExpenses(accessToken, updatedExpenses);
-      } catch (err) {
-        errorDev('Ошибка при сохранении расхода:', err);
-        const errorMessage = getErrorMessage(err);
-        if (isTokenExpiredError(err)) {
-          toast.error('Сессия истекла. Пожалуйста, войдите заново.');
-        } else {
-          toast.warning(`Расход добавлен локально, но не удалось сохранить в Google Sheets: ${errorMessage} `);
-        }
-      }
-    }
 
-    // Telegram notification
-    sendTelegramMoneyEvent({
-      type: 'expense',
-      amount: safeNumber(newExpense.amount),
-      currency: newExpense.currency || 'USD',
-      method: newExpense.paymentMethod,
-      description: newExpense.description,
-      id: newExpense.id,
-      date: newExpense.date
-    });
+    const success = await saveExpensesHandler(updatedExpenses);
+    if (success) {
+      // Telegram notification
+      sendTelegramMoneyEvent({
+        type: 'expense',
+        amount: safeNumber(newExpense.amount),
+        currency: newExpense.currency || 'USD',
+        method: newExpense.paymentMethod,
+        description: newExpense.description,
+        id: newExpense.id,
+        date: newExpense.date
+      });
+    }
   };
 
   const handleSaveEmployees = async (newEmployees: Employee[]) => {
     setEmployees(newEmployees);
-    if (!accessToken) {
-      toast.warning('Вы не авторизованы. Данные сохранены только локально.');
-      return;
-    }
-    setIsLoading(true);
-    try {
-      await sheetsService.saveAllEmployees(accessToken, newEmployees);
-    } catch (err) {
-      errorDev(err);
-      const errorMessage = getErrorMessage(err);
-      if (isTokenExpiredError(err)) {
-        toast.error('Сессия истекла. Пожалуйста, войдите заново.');
-      } else {
-        toast.error(`Ошибка при сохранении сотрудников: ${errorMessage} `);
-      }
-    } finally {
-      setIsLoading(false);
-    }
+    await saveEmployeesHandler(newEmployees);
   };
 
   const handleSavePurchases = async (newPurchases: Purchase[]) => {
-    logDev(`📦 handleSavePurchases called with ${newPurchases.length} purchases`);
     const prevIds = new Set(purchases.map(p => p.id));
     const addedPurchases = newPurchases.filter(p => !prevIds.has(p.id));
 
     setPurchases(newPurchases);
-    if (!accessToken) {
-      toast.warning('Вы не авторизованы. Данные сохранены только локально.');
-      return;
-    }
-    setIsLoading(true);
-    try {
-      logDev('💾 Calling sheetsService.saveAllPurchases...');
-      await sheetsService.saveAllPurchases(accessToken, newPurchases);
-      logDev('✅ Purchases saved successfully to Google Sheets');
+    const success = await savePurchasesHandler(newPurchases);
 
+    if (success) {
       addedPurchases.forEach(p =>
         sendTelegramMoneyEvent({
           type: 'purchase',
@@ -658,41 +518,12 @@ const AppContent: React.FC = () => {
           date: p.date
         })
       );
-    } catch (err) {
-      errorDev('❌ Error saving purchases:', err);
-      const errorMessage = getErrorMessage(err);
-      if (isTokenExpiredError(err)) {
-        toast.error('Сессия истекла. Пожалуйста, войдите заново.');
-      } else {
-        toast.error(`Ошибка при сохранении закупок: ${errorMessage} `);
-      }
-    } finally {
-      setIsLoading(false);
     }
   };
 
   const handleSaveClients = async (newClients: Client[]) => {
-    logDev('💾 Saving clients to Google Sheets:', newClients.map(c => ({ name: c.name, totalDebt: c.totalDebt })));
     setClients(newClients);
-    if (!accessToken) {
-      toast.warning('Вы не авторизованы. Данные сохранены только локально.');
-      return;
-    }
-    setIsLoading(true);
-    try {
-      await sheetsService.saveAllClients(accessToken, newClients);
-      logDev('✅ Clients saved successfully!');
-    } catch (err) {
-      errorDev('❌ Error saving clients:', err);
-      const errorMessage = getErrorMessage(err);
-      if (isTokenExpiredError(err)) {
-        toast.error('Сессия истекла. Пожалуйста, войдите заново.');
-      } else {
-        toast.error(`Ошибка при сохранении клиентов: ${errorMessage} `);
-      }
-    } finally {
-      setIsLoading(false);
-    }
+    await saveClientsHandler(newClients);
   };
 
   const handleSaveExpenses = async (newExpenses: Expense[]) => {
@@ -700,15 +531,9 @@ const AppContent: React.FC = () => {
     const addedExpenses = newExpenses.filter(e => !prevIds.has(e.id));
 
     setExpenses(newExpenses);
-    if (!accessToken) {
-      toast.warning('Вы не авторизованы. Данные сохранены только локально.');
-      return;
-    }
-    setIsLoading(true);
-    try {
-      await sheetsService.saveAllExpenses(accessToken, newExpenses);
+    const success = await saveExpensesHandler(newExpenses);
 
-      // Telegram notifications for newly added expenses
+    if (success) {
       addedExpenses.forEach(exp =>
         sendTelegramMoneyEvent({
           type: 'expense',
@@ -720,102 +545,27 @@ const AppContent: React.FC = () => {
           date: exp.date
         })
       );
-    } catch (err) {
-      errorDev(err);
-      const errorMessage = getErrorMessage(err);
-      if (isTokenExpiredError(err)) {
-        toast.error('Сессия истекла. Пожалуйста, войдите заново.');
-      } else {
-        toast.error(`Ошибка при сохранении расходов: ${errorMessage} `);
-      }
-    } finally {
-      setIsLoading(false);
     }
   };
 
   const handleSaveFixedAssets = async (newAssets: FixedAsset[]) => {
     setFixedAssets(newAssets);
-    if (!accessToken) {
-      toast.warning('Вы не авторизованы. Данные сохранены только локально.');
-      return;
-    }
-    setIsLoading(true);
-    try {
-      await sheetsService.saveAllFixedAssets(accessToken, newAssets);
-    } catch (err) {
-      errorDev(err);
-      const errorMessage = getErrorMessage(err);
-      if (isTokenExpiredError(err)) {
-        toast.error('Сессия истекла. Пожалуйста, войдите заново.');
-      } else {
-        toast.error(`Ошибка при сохранении основных средств: ${errorMessage} `);
-      }
-    } finally {
-      setIsLoading(false);
-    }
+    await saveFixedAssetsHandler(newAssets);
   };
 
   const handleSaveProducts = async (newProducts: Product[]) => {
-    logDev(`📦 handleSaveProducts called with ${newProducts.length} products`);
     setProducts(newProducts);
-    if (!accessToken) {
-      toast.warning('Вы не авторизованы. Данные сохранены только локально.');
-      return;
-    }
-    setIsLoading(true);
-    try {
-      await sheetsService.saveAllProducts(accessToken, newProducts);
-      logDev(`✅ Products saved successfully to Google Sheets`);
-    } catch (err) {
-      errorDev(err);
-      const errorMessage = getErrorMessage(err);
-      if (isTokenExpiredError(err)) {
-        toast.error('Сессия истекла. Пожалуйста, войдите заново.');
-      } else {
-        toast.error(`Ошибка при сохранении товаров: ${errorMessage} `);
-      }
-    } finally {
-      setIsLoading(false);
-    }
+    await saveProductsHandler(newProducts);
   };
 
   const handleSaveOrders = async (newOrders: Order[]) => {
     const prevIds = new Set(orders.map(o => o.id));
     const addedOrders = newOrders.filter(o => !prevIds.has(o.id));
 
-    logDev('💾 Saving orders to Google Sheets:', newOrders.length, 'orders');
-    logDev('📋 Orders details:', newOrders.map(o => ({
-      id: o.id,
-      customer: o.customerName,
-      total: o.totalAmount,
-      paymentMethod: o.paymentMethod,
-      paymentStatus: o.paymentStatus
-    })));
-
-    logTokenStatus(accessToken, 'before saveOrders');
-
     setOrders(newOrders);
+    const success = await saveOrdersHandler(newOrders);
 
-    // Проверяем токен
-    if (!validateAccessToken(accessToken)) {
-      warnDev('⚠️ Access token not available, order saved locally only');
-      toast.warning('Заказ сохранен локально. Войдите заново для сохранения в Google Sheets.');
-      return false; // Saved locally but not in Sheets
-    }
-
-    // Дополнительная проверка: если токен есть, но он может быть невалидным
-    const currentToken = localStorage.getItem('google_access_token');
-    if (!currentToken || currentToken !== accessToken) {
-      warnDev('⚠️ Токен в localStorage не совпадает с токеном в состоянии');
-      toast.warning('Проблема с токеном доступа. Войдите заново.');
-      return false;
-    }
-
-    setIsLoading(true);
-    try {
-      await sheetsService.saveAllOrders(accessToken!, newOrders);
-      logDev('✅ Orders saved successfully to Google Sheets!');
-
+    if (success) {
       addedOrders.forEach(o =>
         sendTelegramMoneyEvent({
           type: 'sale',
@@ -835,41 +585,14 @@ const AppContent: React.FC = () => {
           })()
         })
       );
-      return true; // Success
-    } catch (err) {
-      errorDev('❌ Error saving orders:', err);
-      const errorMessage = getErrorMessage(err);
-
-      if (isTokenExpiredError(err)) {
-        // Очищаем невалидный токен
-        localStorage.removeItem('google_access_token');
-        toast.error('Сессия истекла. Заказ сохранен локально. Пожалуйста, войдите заново для сохранения в Google Sheets.');
-      } else {
-        toast.error(`Ошибка при сохранении заказов: ${errorMessage} `);
-      }
-      return false; // Error
-    } finally {
-      setIsLoading(false);
+      return true;
     }
+    return false;
   };
 
   const handleSaveWorkflowOrders = async (newWorkflowOrders: WorkflowOrder[]) => {
     setWorkflowOrders(newWorkflowOrders);
-    if (!accessToken) {
-      toast.warning('Вы не авторизованы. Данные сохранены только локально.');
-      return false;
-    }
-    setIsLoading(true);
-    try {
-      await sheetsService.saveAllWorkflowOrders(accessToken, newWorkflowOrders);
-      return true;
-    } catch (err) {
-      errorDev(err);
-      toast.error(`Ошибка при сохранении Workflow: ${getErrorMessage(err)} `);
-      return false;
-    } finally {
-      setIsLoading(false);
-    }
+    return await saveWorkflowOrdersHandler(newWorkflowOrders);
   };
 
   const handleSaveTransactions = async (newTransactions: Transaction[]) => {
@@ -877,15 +600,9 @@ const AppContent: React.FC = () => {
     const addedTransactions = newTransactions.filter(t => !prevIds.has(t.id));
 
     setTransactions(newTransactions);
-    if (!accessToken) {
-      warnDev('Access token not available, transaction saved locally only');
-      toast.warning('Вы не авторизованы. Данные сохранены только локально.');
-      return false; // Saved locally but not in Sheets
-    }
-    setIsLoading(true);
-    try {
-      await sheetsService.saveAllTransactions(accessToken, newTransactions);
+    const success = await saveTransactionsHandler(newTransactions);
 
+    if (success) {
       addedTransactions.forEach(t => {
         if (t.type === 'supplier_payment' || t.type === 'client_payment') {
           sendTelegramMoneyEvent({
@@ -900,29 +617,14 @@ const AppContent: React.FC = () => {
           });
         }
       });
-      return true; // Success
-    } catch (err) {
-      errorDev(err);
-      const errorMessage = getErrorMessage(err);
-      if (isTokenExpiredError(err)) {
-        toast.error('Сессия истекла. Пожалуйста, войдите заново.');
-      } else {
-        toast.error(`Ошибка при сохранении транзакций: ${errorMessage} `);
-      }
-      return false; // Error
-    } finally {
-      setIsLoading(false);
+      return true;
     }
+    return false;
   };
 
   const handleAddJournalEvent = async (event: JournalEvent) => {
     setJournalEvents(prev => [event, ...prev]);
-    if (!accessToken) return;
-    try {
-      await sheetsService.addJournalEvent(accessToken, event);
-    } catch (err) {
-      errorDev("Failed to save journal event", err);
-    }
+    await saveJournalEventsHandler([event]);
   };
 
   const handleSaveSettings = async (newSettings: AppSettings) => {
@@ -985,7 +687,7 @@ const AppContent: React.FC = () => {
           balances={balances}
         />);
       case 'journal':
-        return renderLazyComponent(<JournalEventsView events={journalEvents} />);
+        return renderLazyComponent(<JournalEventsView events={allJournalEvents} />);
       case 'sales':
         return renderLazyComponent(<Sales
           products={products}
@@ -1109,278 +811,264 @@ const AppContent: React.FC = () => {
 
   return (
     <ThemeProvider theme={settings.theme || 'dark'}>
-    <div className={`flex h-screen font-sans overflow-hidden ${
-      settings.theme === 'light' 
-        ? 'bg-[#F8F9FA] text-slate-800' 
+      <div className={`flex h-screen font-sans overflow-hidden ${settings.theme === 'light'
+        ? 'bg-[#F8F9FA] text-slate-800'
         : 'bg-slate-900 text-slate-100'
-    }`}>
-      {/* Mobile Overlay */}
-      {isSidebarOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 z-30 lg:hidden"
-          onClick={() => setIsSidebarOpen(false)}
-        />
-      )}
+        }`}>
+        {/* Mobile Overlay */}
+        {isSidebarOpen && (
+          <div
+            className="fixed inset-0 bg-black/50 z-30 lg:hidden"
+            onClick={() => setIsSidebarOpen(false)}
+          />
+        )}
 
-      {/* Sidebar */}
-      <aside
-        className={`${isSidebarOpen ? 'w-64 translate-x-0' : '-translate-x-full lg:translate-x-0 w-20'
-          } fixed lg:relative h-full ${
-            settings.theme === 'light'
+        {/* Sidebar */}
+        <aside
+          className={`${isSidebarOpen ? 'w-64 translate-x-0' : '-translate-x-full lg:translate-x-0 w-20'
+            } fixed lg:relative h-full ${settings.theme === 'light'
               ? 'bg-white border-r border-slate-200 shadow-sm'
               : 'bg-slate-800 border-r border-slate-700'
-          } transition-all duration-300 flex flex-col z-40 lg:z-20`}
-      >
-        {/* Header */}
-        <div className={`p-4 flex items-center justify-between h-16 ${
-          settings.theme === 'light' 
-            ? 'border-b border-slate-200' 
+            } transition-all duration-300 flex flex-col z-40 lg:z-20`}
+        >
+          {/* Header */}
+          <div className={`p-4 flex items-center justify-between h-16 ${settings.theme === 'light'
+            ? 'border-b border-slate-200'
             : 'border-b border-slate-700'
-        }`}>
-          {isSidebarOpen && <span className={`font-bold text-xl tracking-tight ${
-            settings.theme === 'light' ? 'text-slate-800' : 'text-white'
-          }`}>Metal ERP</span>}
-          <button
-            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            className={`p-2 rounded-lg transition-colors ${
-              settings.theme === 'light'
+            }`}>
+            {isSidebarOpen && <span className={`font-bold text-xl tracking-tight ${settings.theme === 'light' ? 'text-slate-800' : 'text-white'
+              }`}>Metal ERP</span>}
+            <button
+              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              className={`p-2 rounded-lg transition-colors ${settings.theme === 'light'
                 ? 'hover:bg-slate-100 text-slate-600 hover:text-slate-800'
                 : 'hover:bg-slate-700 text-slate-400 hover:text-white'
-            }`}
-          >
-            {isSidebarOpen ? <X size={20} /> : <Menu size={20} />}
-          </button>
-        </div>
+                }`}
+            >
+              {isSidebarOpen ? <X size={20} /> : <Menu size={20} />}
+            </button>
+          </div>
 
-        <nav className="flex-1 py-4 space-y-1 overflow-y-auto custom-scrollbar">
-          {checkPermission('dashboard') && (
+          <nav className="flex-1 py-4 space-y-1 overflow-y-auto custom-scrollbar">
+            {checkPermission('dashboard') && (
+              <SidebarItem
+                icon={<LayoutDashboard size={20} />}
+                label="Дашборд"
+                active={activeTab === 'dashboard'}
+                onClick={() => setActiveTab('dashboard')}
+                isOpen={isSidebarOpen}
+                onMobileClose={() => setIsSidebarOpen(false)}
+                theme={settings.theme}
+              />
+            )}
             <SidebarItem
-              icon={<LayoutDashboard size={20} />}
-              label="Дашборд"
-              active={activeTab === 'dashboard'}
-              onClick={() => setActiveTab('dashboard')}
+              icon={<Package size={20} />}
+              label="Склад"
+              active={activeTab === 'inventory'}
+              onClick={() => setActiveTab('inventory')}
               isOpen={isSidebarOpen}
               onMobileClose={() => setIsSidebarOpen(false)}
               theme={settings.theme}
             />
-          )}
-          <SidebarItem
-            icon={<Package size={20} />}
-            label="Склад"
-            active={activeTab === 'inventory'}
-            onClick={() => setActiveTab('inventory')}
-            isOpen={isSidebarOpen}
-            onMobileClose={() => setIsSidebarOpen(false)}
-            theme={settings.theme}
-          />
-          {checkPermission('import') && (
-            <SidebarItem
-              icon={<Container size={20} />}
-              label="Закуп"
-              active={activeTab === 'import'}
-              onClick={() => setActiveTab('import')}
-              isOpen={isSidebarOpen}
-              onMobileClose={() => setIsSidebarOpen(false)}
-              theme={settings.theme}
-            />
-          )}
-          {checkPermission('sales') && (
-            <SidebarItem
-              icon={<Wallet size={20} />}
-              label="Касса"
-              active={activeTab === 'sales'}
-              onClick={() => setActiveTab('sales')}
-              isOpen={isSidebarOpen}
-              onMobileClose={() => setIsSidebarOpen(false)}
-              theme={settings.theme}
-            />
-          )}
-          {checkPermission('workflow') && (
-            <SidebarItem
-              icon={<BookOpen size={20} />}
-              label="Workflow"
-              active={activeTab === 'workflow'}
-              onClick={() => setActiveTab('workflow')}
-              isOpen={isSidebarOpen}
-              onMobileClose={() => setIsSidebarOpen(false)}
-              theme={settings.theme}
-            />
-          )}
-          {checkPermission('reports') && (
+            {checkPermission('import') && (
+              <SidebarItem
+                icon={<Container size={20} />}
+                label="Закуп"
+                active={activeTab === 'import'}
+                onClick={() => setActiveTab('import')}
+                isOpen={isSidebarOpen}
+                onMobileClose={() => setIsSidebarOpen(false)}
+                theme={settings.theme}
+              />
+            )}
+            {checkPermission('sales') && (
+              <SidebarItem
+                icon={<Wallet size={20} />}
+                label="Касса"
+                active={activeTab === 'sales'}
+                onClick={() => setActiveTab('sales')}
+                isOpen={isSidebarOpen}
+                onMobileClose={() => setIsSidebarOpen(false)}
+                theme={settings.theme}
+              />
+            )}
+            {checkPermission('workflow') && (
+              <SidebarItem
+                icon={<BookOpen size={20} />}
+                label="Workflow"
+                active={activeTab === 'workflow'}
+                onClick={() => setActiveTab('workflow')}
+                isOpen={isSidebarOpen}
+                onMobileClose={() => setIsSidebarOpen(false)}
+                theme={settings.theme}
+              />
+            )}
+            {checkPermission('reports') && (
+              <SidebarItem
+                icon={<FileText size={20} />}
+                label="Отчеты"
+                active={activeTab === 'reports'}
+                onClick={() => setActiveTab('reports')}
+                isOpen={isSidebarOpen}
+                onMobileClose={() => setIsSidebarOpen(false)}
+                theme={settings.theme}
+              />
+            )}
+            {checkPermission('crm') && (
+              <SidebarItem
+                icon={<Users size={20} />}
+                label="Клиенты"
+                active={activeTab === 'crm'}
+                onClick={() => setActiveTab('crm')}
+                isOpen={isSidebarOpen}
+                onMobileClose={() => setIsSidebarOpen(false)}
+                theme={settings.theme}
+              />
+            )}
+            {checkPermission('staff') && (
+              <SidebarItem
+                icon={<UserCircle2 size={20} />}
+                label="Сотрудники"
+                active={activeTab === 'staff'}
+                onClick={() => setActiveTab('staff')}
+                isOpen={isSidebarOpen}
+                onMobileClose={() => setIsSidebarOpen(false)}
+                theme={settings.theme}
+              />
+            )}
+            {checkPermission('fixedAssets') && (
+              <SidebarItem
+                icon={<Landmark size={20} />}
+                label="Осн. Средства"
+                active={activeTab === 'fixedAssets'}
+                onClick={() => setActiveTab('fixedAssets')}
+                isOpen={isSidebarOpen}
+                onMobileClose={() => setIsSidebarOpen(false)}
+                theme={settings.theme}
+              />
+            )}
+            {checkPermission('balance') && (
+              <SidebarItem
+                icon={<BarChart3 size={20} />}
+                label="Баланс"
+                active={activeTab === 'balance'}
+                onClick={() => setActiveTab('balance')}
+                isOpen={isSidebarOpen}
+                onMobileClose={() => setIsSidebarOpen(false)}
+                theme={settings.theme}
+              />
+            )}
+            {checkPermission('journal') && (
+              <SidebarItem
+                icon={<Book size={20} />}
+                label="Журнал"
+                active={activeTab === 'journal'}
+                onClick={() => setActiveTab('journal')}
+                isOpen={isSidebarOpen}
+                onMobileClose={() => setIsSidebarOpen(false)}
+                theme={settings.theme}
+              />
+            )}
             <SidebarItem
               icon={<FileText size={20} />}
-              label="Отчеты"
-              active={activeTab === 'reports'}
-              onClick={() => setActiveTab('reports')}
+              label="Прайс"
+              active={activeTab === 'priceList'}
+              onClick={() => setActiveTab('priceList')}
               isOpen={isSidebarOpen}
               onMobileClose={() => setIsSidebarOpen(false)}
               theme={settings.theme}
             />
-          )}
-          {checkPermission('crm') && (
+            <div className="my-4 border-t border-slate-700 mx-4"></div>
             <SidebarItem
-              icon={<Users size={20} />}
-              label="Клиенты"
-              active={activeTab === 'crm'}
-              onClick={() => setActiveTab('crm')}
+              icon={<Settings size={20} />}
+              label="Настройки"
+              active={activeTab === 'settings'}
+              onClick={() => setActiveTab('settings')}
               isOpen={isSidebarOpen}
               onMobileClose={() => setIsSidebarOpen(false)}
               theme={settings.theme}
             />
-          )}
-          {checkPermission('staff') && (
-            <SidebarItem
-              icon={<UserCircle2 size={20} />}
-              label="Сотрудники"
-              active={activeTab === 'staff'}
-              onClick={() => setActiveTab('staff')}
-              isOpen={isSidebarOpen}
-              onMobileClose={() => setIsSidebarOpen(false)}
-              theme={settings.theme}
-            />
-          )}
-          {checkPermission('fixedAssets') && (
-            <SidebarItem
-              icon={<Landmark size={20} />}
-              label="Осн. Средства"
-              active={activeTab === 'fixedAssets'}
-              onClick={() => setActiveTab('fixedAssets')}
-              isOpen={isSidebarOpen}
-              onMobileClose={() => setIsSidebarOpen(false)}
-              theme={settings.theme}
-            />
-          )}
-          {checkPermission('balance') && (
-            <SidebarItem
-              icon={<BarChart3 size={20} />}
-              label="Баланс"
-              active={activeTab === 'balance'}
-              onClick={() => setActiveTab('balance')}
-              isOpen={isSidebarOpen}
-              onMobileClose={() => setIsSidebarOpen(false)}
-              theme={settings.theme}
-            />
-          )}
-          {checkPermission('journal') && (
-            <SidebarItem
-              icon={<Book size={20} />}
-              label="Журнал"
-              active={activeTab === 'journal'}
-              onClick={() => setActiveTab('journal')}
-              isOpen={isSidebarOpen}
-              onMobileClose={() => setIsSidebarOpen(false)}
-              theme={settings.theme}
-            />
-          )}
-          <SidebarItem
-            icon={<FileText size={20} />}
-            label="Прайс"
-            active={activeTab === 'priceList'}
-            onClick={() => setActiveTab('priceList')}
-            isOpen={isSidebarOpen}
-            onMobileClose={() => setIsSidebarOpen(false)}
-            theme={settings.theme}
-          />
-          <div className="my-4 border-t border-slate-700 mx-4"></div>
-          <SidebarItem
-            icon={<Settings size={20} />}
-            label="Настройки"
-            active={activeTab === 'settings'}
-            onClick={() => setActiveTab('settings')}
-            isOpen={isSidebarOpen}
-            onMobileClose={() => setIsSidebarOpen(false)}
-            theme={settings.theme}
-          />
-        </nav>
+          </nav>
 
-        {/* Footer */}
-        <div className={`p-4 ${
-          settings.theme === 'light'
+          {/* Footer */}
+          <div className={`p-4 ${settings.theme === 'light'
             ? 'border-t border-slate-200 bg-slate-50'
             : 'border-t border-slate-700 bg-slate-800/50'
-        }`}>
-          {isSidebarOpen && (
-            <div className="flex items-center gap-3 mb-3 px-2">
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
-                settings.theme === 'light'
+            }`}>
+            {isSidebarOpen && (
+              <div className="flex items-center gap-3 mb-3 px-2">
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${settings.theme === 'light'
                   ? 'bg-[#1A73E8] text-white'
                   : 'bg-indigo-500 text-white'
-              }`}>
-                {user.email?.charAt(0).toUpperCase()}
-              </div>
-              <div className="overflow-hidden">
-                <p className={`text-sm font-medium truncate ${
-                  settings.theme === 'light' ? 'text-slate-800' : 'text-white'
-                }`}>{user.displayName || 'Пользователь'}</p>
-                <p className={`text-xs truncate ${
-                  settings.theme === 'light' ? 'text-slate-500' : 'text-slate-400'
-                }`}>{user.email}</p>
-              </div>
-            </div>
-          )}
-          <button
-            onClick={logout}
-            className={`w-full flex items-center ${isSidebarOpen ? 'justify-start px-4' : 'justify-center'} gap-3 p-2 rounded-lg transition-colors ${
-              settings.theme === 'light'
-                ? 'text-red-600 hover:bg-red-50'
-                : 'text-red-400 hover:bg-red-500/10'
-            }`}
-            title="Выйти"
-          >
-            <LogOut size={20} />
-            {isSidebarOpen && <span>Выйти</span>}
-          </button>
-        </div>
-      </aside>
-
-      {/* Main Content */}
-      <main className="flex-1 flex flex-col overflow-hidden relative w-full lg:w-auto">
-        {/* Header */}
-        <header className={`h-16 flex items-center justify-between px-4 lg:px-6 z-10 ${
-          settings.theme === 'light'
-            ? 'bg-white border-b border-slate-200 shadow-sm'
-            : 'bg-slate-800 border-b border-slate-700'
-        }`}>
-          {/* Mobile Menu Button */}
-          <button
-            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            className={`lg:hidden p-2 rounded-lg transition-colors mr-2 ${
-              settings.theme === 'light'
-                ? 'hover:bg-slate-100 text-slate-600 hover:text-slate-800'
-                : 'hover:bg-slate-700 text-slate-400 hover:text-white'
-            }`}
-          >
-            <Menu size={24} />
-          </button>
-          <h1 className={`text-lg lg:text-xl font-bold truncate ${
-            settings.theme === 'light' ? 'text-slate-800' : 'text-white'
-          }`}>
-            {activeTab === 'dashboard' && 'Обзор показателей'}
-            {activeTab === 'inventory' && 'Управление складом'}
-            {activeTab === 'import' && 'Закуп и Импорт'}
-            {activeTab === 'sales' && 'Касса и Расходы'}
-            {activeTab === 'workflow' && 'Workflow заявки'}
-            {activeTab === 'reports' && 'Финансовые Отчеты'}
-            {activeTab === 'crm' && 'База Клиентов'}
-            {activeTab === 'staff' && 'Управление Сотрудниками'}
-            {activeTab === 'fixedAssets' && 'Основные Средства'}
-            {activeTab === 'balance' && 'Управленческий Баланс'}
-            {activeTab === 'settings' && 'Настройки системы'}
-          </h1>
-
-          <div className="flex items-center gap-2 lg:gap-4">
-            {error && (
-              <div className="text-red-400 text-xs lg:text-sm bg-red-500/10 px-2 lg:px-3 py-1 rounded-full border border-red-500/20 animate-pulse hidden sm:block">
-                {error}
+                  }`}>
+                  {user.email?.charAt(0).toUpperCase()}
+                </div>
+                <div className="overflow-hidden">
+                  <p className={`text-sm font-medium truncate ${settings.theme === 'light' ? 'text-slate-800' : 'text-white'
+                    }`}>{user.displayName || 'Пользователь'}</p>
+                  <p className={`text-xs truncate ${settings.theme === 'light' ? 'text-slate-500' : 'text-slate-400'
+                    }`}>{user.email}</p>
+                </div>
               </div>
             )}
+            <button
+              onClick={logout}
+              className={`w-full flex items-center ${isSidebarOpen ? 'justify-start px-4' : 'justify-center'} gap-3 p-2 rounded-lg transition-colors ${settings.theme === 'light'
+                ? 'text-red-600 hover:bg-red-50'
+                : 'text-red-400 hover:bg-red-500/10'
+                }`}
+              title="Выйти"
+            >
+              <LogOut size={20} />
+              {isSidebarOpen && <span>Выйти</span>}
+            </button>
+          </div>
+        </aside>
 
-            {activeTab !== 'settings' && (
-              <button
-                onClick={handleSaveAll}
-                disabled={isLoading || !accessToken}
-                className={`flex items-center gap-1 lg:gap-2 px-2 lg:px-4 py-2 rounded-lg font-medium transition-all text-sm lg:text-base ${
-                  isLoading
+        {/* Main Content */}
+        <main className="flex-1 flex flex-col overflow-hidden relative w-full lg:w-auto">
+          {/* Header */}
+          <header className={`h-16 flex items-center justify-between px-4 lg:px-6 z-10 ${settings.theme === 'light'
+            ? 'bg-white border-b border-slate-200 shadow-sm'
+            : 'bg-slate-800 border-b border-slate-700'
+            }`}>
+            {/* Mobile Menu Button */}
+            <button
+              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              className={`lg:hidden p-2 rounded-lg transition-colors mr-2 ${settings.theme === 'light'
+                ? 'hover:bg-slate-100 text-slate-600 hover:text-slate-800'
+                : 'hover:bg-slate-700 text-slate-400 hover:text-white'
+                }`}
+            >
+              <Menu size={24} />
+            </button>
+            <h1 className={`text-lg lg:text-xl font-bold truncate ${settings.theme === 'light' ? 'text-slate-800' : 'text-white'
+              }`}>
+              {activeTab === 'dashboard' && 'Обзор показателей'}
+              {activeTab === 'inventory' && 'Управление складом'}
+              {activeTab === 'import' && 'Закуп и Импорт'}
+              {activeTab === 'sales' && 'Касса и Расходы'}
+              {activeTab === 'workflow' && 'Workflow заявки'}
+              {activeTab === 'reports' && 'Финансовые Отчеты'}
+              {activeTab === 'crm' && 'База Клиентов'}
+              {activeTab === 'staff' && 'Управление Сотрудниками'}
+              {activeTab === 'fixedAssets' && 'Основные Средства'}
+              {activeTab === 'balance' && 'Управленческий Баланс'}
+              {activeTab === 'settings' && 'Настройки системы'}
+            </h1>
+
+            <div className="flex items-center gap-2 lg:gap-4">
+              {error && (
+                <div className="text-red-400 text-xs lg:text-sm bg-red-500/10 px-2 lg:px-3 py-1 rounded-full border border-red-500/20 animate-pulse hidden sm:block">
+                  {error}
+                </div>
+              )}
+
+              {activeTab !== 'settings' && (
+                <button
+                  onClick={handleSaveAll}
+                  disabled={isLoading || !accessToken}
+                  className={`flex items-center gap-1 lg:gap-2 px-2 lg:px-4 py-2 rounded-lg font-medium transition-all text-sm lg:text-base ${isLoading
                     ? settings.theme === 'light'
                       ? 'bg-slate-200 text-slate-500 cursor-wait'
                       : 'bg-slate-700 text-slate-400 cursor-wait'
@@ -1391,27 +1079,26 @@ const AppContent: React.FC = () => {
                       : settings.theme === 'light'
                         ? 'bg-[#1A73E8] hover:bg-[#1557B0] text-white shadow-md'
                         : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/20'
-                }`}
-                title={!accessToken ? 'Войдите в систему для сохранения в Google Sheets' : 'Сохранить в Google Sheets'}
-              >
-                <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
-                <span className="hidden sm:inline">
-                  {isLoading ? 'Сохранение...' : !accessToken ? 'Требуется вход' : 'Сохранить в Google Sheets'}
-                </span>
-                <span className="sm:hidden">{isLoading ? '...' : !accessToken ? '🔒' : '💾'}</span>
-              </button>
-            )}
-          </div>
-        </header>
+                    }`}
+                  title={!accessToken ? 'Войдите в систему для сохранения в Google Sheets' : 'Сохранить в Google Sheets'}
+                >
+                  <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
+                  <span className="hidden sm:inline">
+                    {isLoading ? 'Сохранение...' : !accessToken ? 'Требуется вход' : 'Сохранить в Google Sheets'}
+                  </span>
+                  <span className="sm:hidden">{isLoading ? '...' : !accessToken ? '🔒' : '💾'}</span>
+                </button>
+              )}
+            </div>
+          </header>
 
-        {/* Content Area */}
-        <div className={`flex-1 overflow-hidden relative ${
-          settings.theme === 'light' ? 'bg-[#F8F9FA]' : 'bg-slate-900'
-        }`}>
-          {renderContent()}
-        </div>
-      </main>
-    </div>
+          {/* Content Area */}
+          <div className={`flex-1 overflow-hidden relative ${settings.theme === 'light' ? 'bg-[#F8F9FA]' : 'bg-slate-900'
+            }`}>
+            {renderContent()}
+          </div>
+        </main>
+      </div>
     </ThemeProvider>
   );
 };
@@ -1438,15 +1125,14 @@ const SidebarItem = ({ icon, label, active, onClick, isOpen, onMobileClose, them
   return (
     <button
       onClick={handleClick}
-      className={`w-full flex items-center ${isOpen ? 'justify-start px-4' : 'justify-center'} gap-3 py-3 transition-all relative group ${
-        active
-          ? theme === 'light'
-            ? 'text-[#1A73E8] bg-blue-50 rounded-lg mx-2 font-medium'
-            : 'text-white bg-gradient-to-r from-indigo-600/20 to-transparent border-r-2 border-indigo-500'
-          : theme === 'light'
-            ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg mx-2'
-            : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
-      }`}
+      className={`w-full flex items-center ${isOpen ? 'justify-start px-4' : 'justify-center'} gap-3 py-3 transition-all relative group ${active
+        ? theme === 'light'
+          ? 'text-[#1A73E8] bg-blue-50 rounded-lg mx-2 font-medium'
+          : 'text-white bg-gradient-to-r from-indigo-600/20 to-transparent border-r-2 border-indigo-500'
+        : theme === 'light'
+          ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg mx-2'
+          : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
+        }`}
       title={!isOpen ? label : ''}
     >
       <div className={`${active ? (theme === 'light' ? 'text-[#1A73E8]' : 'text-indigo-400') : ''} `}>{icon}</div>

@@ -77,6 +77,7 @@ export function mapRowToProduct(row: Row): Product {
     costPrice: asNumber(row, 8, 0),
     minStockLevel: asNumber(row, 9, 0),
     origin: pick(asString(row, 10, 'local'), ['import', 'local'] as const, 'local'),
+    updatedAt: asOptionalString(row, 11),
   };
 }
 
@@ -93,6 +94,7 @@ export function mapProductToRow(p: Product): unknown[] {
     p.costPrice,
     p.minStockLevel,
     p.origin || 'local',
+    p.updatedAt || '',
   ];
 }
 
@@ -114,6 +116,7 @@ export function mapRowToOrder(row: Row): Order {
     paymentStatus: pick(asString(row, 13), PAYMENT_STATUSES, 'paid'),
     amountPaid: asNumber(row, 14, 0),
     paymentCurrency: pick(asString(row, 15, 'USD'), CURRENCIES, 'USD'),
+    updatedAt: asOptionalString(row, 16),
   };
 }
 
@@ -135,6 +138,7 @@ export function mapOrderToRow(o: Order): unknown[] {
     o.paymentStatus,
     o.amountPaid,
     o.paymentCurrency || 'USD',
+    o.updatedAt || '',
   ];
 }
 
@@ -147,11 +151,12 @@ export function mapRowToExpense(row: Row): Expense {
     category: asString(row, 4),
     paymentMethod: pick(asString(row, 5), ['cash', 'bank', 'card'] as const, 'cash'),
     currency: pick(asString(row, 6, 'USD'), CURRENCIES, 'USD'),
+    updatedAt: asOptionalString(row, 7),
   };
 }
 
 export function mapExpenseToRow(e: Expense): unknown[] {
-  return [e.id, e.date, e.description, e.amount, e.category, e.paymentMethod || 'cash', e.currency || 'USD'];
+  return [e.id, e.date, e.description, e.amount, e.category, e.paymentMethod || 'cash', e.currency || 'USD', e.updatedAt || ''];
 }
 
 export function mapRowToFixedAsset(row: Row): FixedAsset {
@@ -165,6 +170,7 @@ export function mapRowToFixedAsset(row: Row): FixedAsset {
     accumulatedDepreciation: asNumber(row, 6, 0),
     depreciationRate: asNumber(row, 7, 0),
     lastDepreciationDate: asOptionalString(row, 8),
+    updatedAt: asOptionalString(row, 9),
   };
 }
 
@@ -179,6 +185,7 @@ export function mapFixedAssetToRow(fa: FixedAsset): unknown[] {
     fa.accumulatedDepreciation,
     fa.depreciationRate,
     fa.lastDepreciationDate || '',
+    fa.updatedAt || '',
   ];
 }
 
@@ -193,6 +200,7 @@ export function mapRowToClient(row: Row): Client {
     notes: asOptionalString(row, 6),
     totalPurchases: asNumber(row, 7, 0),
     totalDebt: asNumber(row, 8, 0),
+    updatedAt: asOptionalString(row, 9),
   };
 }
 
@@ -207,6 +215,7 @@ export function mapClientToRow(c: Client): unknown[] {
     c.notes || '',
     c.totalPurchases || 0,
     c.totalDebt || 0,
+    c.updatedAt || '',
   ];
 }
 
@@ -223,6 +232,7 @@ export function mapRowToEmployee(row: Row): Employee {
     status: pick(asString(row, 8, 'active'), EMPLOYEE_STATUSES, 'active'),
     notes: asOptionalString(row, 9),
     permissions: parseJson<Employee['permissions']>(row, 10, undefined),
+    updatedAt: asOptionalString(row, 11),
   };
 }
 
@@ -239,6 +249,7 @@ export function mapEmployeeToRow(e: Employee): unknown[] {
     e.status,
     e.notes || '',
     e.permissions ? JSON.stringify(e.permissions) : '',
+    e.updatedAt || '',
   ];
 }
 
@@ -269,6 +280,7 @@ export function mapRowToPurchase(row: Row): Purchase {
     paymentMethod: pick(asString(row, 8), ['cash', 'bank', 'debt'] as const, 'cash'),
     paymentStatus,
     amountPaid,
+    updatedAt: asOptionalString(row, 11),
   };
 }
 
@@ -285,6 +297,7 @@ export function mapPurchaseToRow(p: Purchase): unknown[] {
     p.paymentMethod,
     p.paymentStatus,
     p.amountPaid,
+    p.updatedAt || '',
   ];
 }
 
@@ -299,6 +312,7 @@ export function mapRowToTransaction(row: Row): Transaction {
     method: pick(asString(row, 6), TRANSACTION_METHODS, 'cash'),
     description: asString(row, 7),
     relatedId: asOptionalString(row, 8),
+    updatedAt: asOptionalString(row, 9),
   };
 }
 
@@ -313,6 +327,7 @@ export function mapTransactionToRow(t: Transaction): unknown[] {
     t.method,
     t.description,
     t.relatedId || '',
+    t.updatedAt || '',
   ];
 }
 
@@ -339,6 +354,7 @@ export function mapRowToWorkflowOrder(row: Row): WorkflowOrder {
     amountPaid: asNumber(row, 18, 0),
     convertedToOrderId: asOptionalString(row, 19),
     convertedAt: asOptionalString(row, 20),
+    updatedAt: asOptionalString(row, 21),
   };
 }
 
@@ -365,6 +381,7 @@ export function mapWorkflowOrderToRow(o: WorkflowOrder): unknown[] {
     o.amountPaid || 0,
     o.convertedToOrderId || '',
     o.convertedAt || '',
+    o.updatedAt || '',
   ];
 }
 

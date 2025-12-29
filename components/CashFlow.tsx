@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { Order, Expense } from '../types';
+import { Order, Expense, AppSettings } from '../types';
+import { validateUSD } from '../utils/finance';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, Cell } from 'recharts';
 import { ArrowUpRight, ArrowDownRight, Wallet, Plus, Calendar, DollarSign, Tag, Printer, FileSpreadsheet, Download } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
@@ -12,6 +13,7 @@ const errorDev = (...args: unknown[]) => { if (isDev) console.error(...args); };
 interface CashFlowProps {
     orders: Order[];
     expenses: Expense[];
+    settings: AppSettings;
     onAddExpense: (expense: Expense) => void;
 }
 
@@ -25,7 +27,7 @@ interface Transaction {
     category?: string;
 }
 
-export const CashFlow: React.FC<CashFlowProps> = ({ orders, expenses, onAddExpense }) => {
+export const CashFlow: React.FC<CashFlowProps> = ({ orders, expenses, settings, onAddExpense }) => {
     const { theme } = useTheme();
     const t = getThemeClasses(theme);
     const toast = useToast();
@@ -40,28 +42,44 @@ export const CashFlow: React.FC<CashFlowProps> = ({ orders, expenses, onAddExpen
 
     // Merge and Sort Transactions
     const transactions: Transaction[] = useMemo(() => {
-        const incomeTx: Transaction[] = orders.map(o => ({
-            id: o.id,
-            date: o.date,
-            dateObj: new Date(o.date),
-            type: 'income',
-            amount: o.totalAmount,
-            description: `Заказ от ${o.customerName}`,
-            category: 'Продажа'
-        }));
+        const incomeTx: Transaction[] = orders.map(o => {
+            // Use validateUSD to ensure we don't show billion dollar errors
+            const correctedAmount = validateUSD(o.totalAmount, settings.defaultExchangeRate, { id: o.id, type: 'order' });
+            return {
+                id: o.id,
+                date: o.date,
+                dateObj: new Date(o.date),
+                type: 'income',
+                amount: correctedAmount,
+                description: `Заказ от ${o.customerName}`,
+                category: 'Продажа'
+            };
+        });
 
-        const expenseTx: Transaction[] = expenses.map(e => ({
-            id: e.id,
-            date: e.date,
-            dateObj: new Date(e.date),
-            type: 'expense',
-            amount: e.amount,
-            description: e.description,
-            category: e.category
-        }));
+        const expenseTx: Transaction[] = expenses.map(e => {
+            let amountUSD = 0;
+            if (e.currency === 'UZS') {
+                // If explicitly UZS, convert to USD using the transaction rate or default
+                const rate = e.exchangeRate || settings.defaultExchangeRate || 1;
+                amountUSD = (e.amount || 0) / rate;
+            } else {
+                // Currency is USD. Check for bug (UZS entered as USD).
+                amountUSD = validateUSD(e.amount, settings.defaultExchangeRate, { id: e.id, type: 'expense' });
+            }
+
+            return {
+                id: e.id,
+                date: e.date,
+                dateObj: new Date(e.date),
+                type: 'expense',
+                amount: amountUSD,
+                description: e.description,
+                category: e.category
+            };
+        });
 
         return [...incomeTx, ...expenseTx].sort((a, b) => b.dateObj.getTime() - a.dateObj.getTime());
-    }, [orders, expenses]);
+    }, [orders, expenses, settings.defaultExchangeRate]);
 
     // Stats
     const num = (v: any): number => {
@@ -74,20 +92,16 @@ export const CashFlow: React.FC<CashFlowProps> = ({ orders, expenses, onAddExpen
     };
 
     const totalIncome = useMemo(() => {
-        return orders.reduce((sum, o) => {
-            // Cash Flow is USD focused, so we convert if needed.
-            // But for sales, totalAmount IS USD.
-            return sum + num(o.totalAmount);
-        }, 0);
-    }, [orders]);
+        return transactions
+            .filter(t => t.type === 'income')
+            .reduce((sum, t) => sum + t.amount, 0);
+    }, [transactions]);
 
     const totalExpense = useMemo(() => {
-        return expenses.reduce((sum, e) => {
-            const amt = num(e.amount);
-            if (e.currency === 'UZS' && e.exchangeRate > 0) return sum + (amt / e.exchangeRate);
-            return sum + amt;
-        }, 0);
-    }, [expenses]);
+        return transactions
+            .filter(t => t.type === 'expense')
+            .reduce((sum, t) => sum + t.amount, 0);
+    }, [transactions]);
 
     const netCashFlow = totalIncome - totalExpense;
 

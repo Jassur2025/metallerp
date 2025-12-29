@@ -21,6 +21,7 @@ import { ClientModal } from './ClientModal';
 import { generateInvoicePDF, generateWaybillPDF } from '../../utils/DocumentTemplates';
 import { PaymentSplitModal, PaymentDistribution } from './PaymentSplitModal';
 import { TransactionsManager } from './TransactionsManager';
+import { calculateBaseTotals } from '../../utils/finance';
 
 const isDev = import.meta.env.DEV;
 const errorDev = (...args: unknown[]) => { if (isDev) console.error(...args); };
@@ -390,183 +391,28 @@ export const Sales: React.FC<SalesProps> = ({
     return r > 100 ? r : safeDefault;
   };
 
-  // Валидация USD - если сумма слишком большая, это скорее всего UZS записанный как USD
-  const validateUSD = (amount: number, rate: number): number => {
-    // Если сумма > $100,000 - проверяем, не является ли это суммой в UZS
-    // Типичная сумма заказа металла $100 - $50,000
-    // Если сумма выглядит как UZS (миллионы), конвертируем
-    if (amount > 100000) {
-      // Проверяем: если после деления на курс получается разумная сумма, значит это UZS
-      const possibleUSD = amount / rate;
-      if (possibleUSD >= 1 && possibleUSD <= 100000) {
-        console.warn(`[Balance] Автокоррекция: ${amount} → ${possibleUSD.toFixed(2)} USD (обнаружена сумма в UZS)`);
-        return possibleUSD;
-      }
-    }
-    return amount;
-  };
-
-  const suspiciousThreshold = 100000; // $100k
-
   const calculateBalance = (): { balances: Balances; debugStats: any; suspicious: any } => {
-    const val = num; // Alias for backward compatibility during refactor
+    const { cashUSD, cashUZS, bankUZS, cardUZS } = calculateBaseTotals(
+      orders || [],
+      transactions || [],
+      expenses || [],
+      settings.defaultExchangeRate
+    );
 
-
-    let balUSD = 0;
-    let balCashUZS = 0;
-    let balBankUZS = 0;
-    let balCardUZS = 0;
-
-    // Debug Stats
-    let salesUSD = 0;
-    let trxInUSD = 0;
-    let trxOutUSD = 0;
-    let expUSD = 0;
-
-
-    // Process Orders
-    (orders || []).forEach(o => {
-      const isCash = o.paymentMethod === 'cash';
-      const isBank = o.paymentMethod === 'bank';
-      const isCard = o.paymentMethod === 'card';
-      const isMixed = o.paymentMethod === 'mixed';
-
-      const rate = getRate(o.exchangeRate);
-      
-      // Определяем amountPaid - может быть записан как USD или как UZS
-      let paidUSD = num(o.amountPaid);
-      // Если amountPaid > 100,000 - это скорее всего сумма в UZS, записанная в поле USD
-      if (paidUSD > 100000) {
-        // Конвертируем из UZS в USD
-        paidUSD = paidUSD / rate;
-      }
-      
-      // Аналогично для totalAmount
-      let totalUSD = num(o.totalAmount);
-      if (totalUSD > 100000) {
-        totalUSD = totalUSD / rate;
-      }
-      
-      const paidUZS = paidUSD * rate;
-
-      if (isMixed) {
-        // Handled by transactions
-        return;
-      }
-
-      if (isCash) {
-        if (o.paymentCurrency === 'UZS') {
-          // Оплата в UZS - добавляем в кассу UZS
-          if (paidUSD > 0) balCashUZS += paidUZS;
-          else balCashUZS += num(o.totalAmountUZS);
-        } else {
-          // Оплата в USD - добавляем в кассу USD
-          const rawAmount = (paidUSD > 0 ? paidUSD : totalUSD);
-          balUSD += rawAmount;
-          salesUSD += rawAmount;
-        }
-      } else if (isBank) {
-        if (paidUSD > 0) balBankUZS += paidUZS;
-        else balBankUZS += num(o.totalAmountUZS);
-      } else if (isCard) {
-        if (paidUSD > 0) balCardUZS += paidUZS;
-        else balCardUZS += num(o.totalAmountUZS);
-      }
-    });
-
-    // Process Transactions
-    // ВАЖНО: Для обычных заказов (cash, bank, card) баланс уже посчитан выше из orders
-    // Транзакции client_payment используем ТОЛЬКО для:
-    // 1. Смешанных платежей (mixed) - заказ пропускается выше
-    // 2. Погашения долгов клиентов (relatedId указывает на клиента, а не на заказ)
-    (transactions || []).forEach(t => {
-      const amt = num(t.amount);
-      const isUSD = t.currency === 'USD';
-      const rate = getRate(t.exchangeRate);
-      const validatedAmt = isUSD ? validateUSD(amt, rate) : amt;
-      
-      // Извлекаем ID заказа из описания (если есть)
-      const orderIdMatch = t.description?.match(/ORD-\d+/);
-      const relatedOrderId = orderIdMatch ? orderIdMatch[0] : null;
-      
-      // Находим связанный заказ
-      const relatedOrder = relatedOrderId ? orders.find(o => o.id === relatedOrderId) : null;
-      
-      // Транзакция связана с mixed заказом?
-      const isMixedPayment = relatedOrder?.paymentMethod === 'mixed';
-      
-      if (t.type === 'client_payment') {
-        // Добавляем только транзакции от смешанных платежей
-        // Обычные заказы уже учтены выше
-        if (isMixedPayment) {
-          if (t.method === 'cash') {
-            if (isUSD) {
-              balUSD += validatedAmt;
-              trxInUSD += validatedAmt;
-            } else balCashUZS += amt;
-          } else if (t.method === 'bank') {
-            balBankUZS += (isUSD ? validatedAmt * rate : amt);
-          } else if (t.method === 'card') {
-            balCardUZS += (isUSD ? validatedAmt * rate : amt);
-          }
-        }
-      } else if (t.type === 'supplier_payment') {
-        // Оплата поставщикам - вычитаем из соответствующей кассы
-        if (t.method === 'cash') {
-          if (isUSD) {
-            balUSD -= validatedAmt;
-            trxOutUSD += validatedAmt;
-          } else {
-            balCashUZS -= amt;
-          }
-        } else if (t.method === 'bank') {
-          balBankUZS -= (isUSD ? validatedAmt * rate : amt);
-        } else if (t.method === 'card') {
-          balCardUZS -= (isUSD ? validatedAmt * rate : amt);
-        }
-      } else if (t.type === 'client_return' || t.type === 'client_refund') {
-        if (t.method === 'cash') {
-          if (isUSD) {
-            balUSD -= validatedAmt;
-            trxOutUSD += validatedAmt;
-          } else balCashUZS -= amt;
-        } else if (t.method === 'bank') {
-          balBankUZS -= (isUSD ? validatedAmt * rate : amt);
-        } else if (t.method === 'card') {
-          balCardUZS -= (isUSD ? validatedAmt * rate : amt);
-        }
-      }
-    });
-
-    // Process Expenses
-    (expenses || []).forEach(e => {
-      const amt = num(e.amount);
-      const isUSD = e.currency === 'USD';
-      const rate = getRate(e.exchangeRate);
-      if (e.paymentMethod === 'cash') {
-        if (isUSD) {
-          balUSD -= amt;
-          expUSD += amt;
-        } else balCashUZS -= amt;
-      } else if (e.paymentMethod === 'bank') {
-        balBankUZS -= (isUSD ? amt * rate : amt);
-      } else if (e.paymentMethod === 'card') {
-        balCardUZS -= (isUSD ? amt * rate : amt);
-      }
-    });
+    const suspiciousThreshold = 1000000; // $1M
 
     return {
       balances: {
-        balanceCashUSD: Math.max(0, balUSD),
-        balanceCashUZS: Math.max(0, balCashUZS),
-        balanceBankUZS: Math.max(0, balBankUZS),
-        balanceCardUZS: Math.max(0, balCardUZS)
+        balanceCashUSD: Math.max(0, cashUSD),
+        balanceCashUZS: Math.max(0, cashUZS),
+        balanceBankUZS: Math.max(0, bankUZS),
+        balanceCardUZS: Math.max(0, cardUZS)
       },
       debugStats: {
-        salesUSD,
-        trxInUSD,
-        trxOutUSD,
-        expUSD
+        salesUSD: 0,
+        trxInUSD: 0,
+        trxOutUSD: 0,
+        expUSD: 0
       },
       suspicious: {
         orders: (orders || []).filter(o => num(o.totalAmount) > suspiciousThreshold || num(o.amountPaid) > suspiciousThreshold),

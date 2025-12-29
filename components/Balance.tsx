@@ -2,9 +2,10 @@
 import React from 'react';
 import { Product, Order, Expense, FixedAsset, AppSettings, Transaction, Client, Purchase } from '../types';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
-import { ShieldCheck, Wallet, Building2, Scale, Landmark } from 'lucide-react';
+import { ShieldCheck, Wallet, Building2, Scale, Landmark, AlertTriangle, CheckCircle } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { getThemeClasses } from '../contexts/ThemeContext';
+import { calculateBaseTotals } from '../utils/finance';
 
 interface BalanceProps {
     products: Product[];
@@ -54,115 +55,18 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fi
         return r > 100 ? r : safeDefault;
     };
 
-    let netCashUSD = 0;
-    let netCashUZS = 0;
-    let netBankUZS = 0;
-    let netCardUZS = 0;
+    // Use centralized logic for calculating balances
+    const { cashUSD: netCashUSD, cashUZS: netCashUZS, bankUZS: netBankUZS, cardUZS: netCardUZS, corrections } = calculateBaseTotals(
+        safeOrders,
+        safeTransactions,
+        safeExpenses,
+        settings.defaultExchangeRate
+    );
 
-    // Валидация суммы в USD - нереалистично большие суммы скорее всего ошибки данных
-    const validateUSD = (amount: number): number => {
-        const rate = getRate(null);
-        // Если сумма > $100,000 - проверяем, не является ли это суммой в UZS
-        if (amount > 100000) {
-            const possibleUSD = amount / rate;
-            // Если после деления получается разумная сумма (1-100000), значит это была UZS
-            if (possibleUSD >= 1 && possibleUSD <= 100000) {
-                console.warn(`[Balance] Автокоррекция: ${amount} → ${possibleUSD.toFixed(2)} USD`);
-                return possibleUSD;
-            }
-        }
-        return amount;
-    };
 
-    // Process Orders
-    safeOrders.forEach(o => {
-        if (o.paymentMethod === 'cash') {
-            if (o.paymentCurrency === 'UZS') {
-                netCashUZS += num(o.totalAmountUZS);
-            } else {
-                const paid = num(o.amountPaid);
-                const total = num(o.totalAmount);
-                const rawAmount = paid > 0 ? paid : total;
-                netCashUSD += validateUSD(rawAmount);
-            }
-        } else if (o.paymentMethod === 'bank') {
-            netBankUZS += num(o.totalAmountUZS);
-        } else if (o.paymentMethod === 'card') {
-            netCardUZS += num(o.totalAmountUZS);
-        }
-    });
 
-    // Process Transactions
-    // ВАЖНО: Для обычных заказов баланс уже посчитан выше из orders
-    // client_payment транзакции учитываем ТОЛЬКО для смешанных платежей (mixed)
-    safeTransactions.forEach(t => {
-        const amt = num(t.amount);
-        const rate = getRate(t.exchangeRate);
-        const isUSD = t.currency === 'USD';
-        // Валидируем суммы в USD
-        const validatedUSDAmount = isUSD ? validateUSD(amt) : amt;
-        
-        // Извлекаем ID заказа из описания (если есть)
-        const orderIdMatch = t.description?.match(/ORD-\d+/);
-        const relatedOrderId = orderIdMatch ? orderIdMatch[0] : null;
-        
-        // Находим связанный заказ
-        const relatedOrder = relatedOrderId ? safeOrders.find(o => o.id === relatedOrderId) : null;
-        
-        // Транзакция связана с mixed заказом?
-        const isMixedPayment = relatedOrder?.paymentMethod === 'mixed';
 
-        if (t.type === 'client_payment' && isMixedPayment) {
-            // Добавляем только транзакции от смешанных платежей
-            if (t.method === 'cash') {
-                if (isUSD) netCashUSD += validatedUSDAmount; else netCashUZS += amt;
-            } else if (t.method === 'bank') {
-                netBankUZS += (isUSD ? validatedUSDAmount * rate : amt);
-            } else if (t.method === 'card') {
-                netCardUZS += (isUSD ? validatedUSDAmount * rate : amt);
-            }
-        } else if (t.type === 'supplier_payment') {
-            // Оплаты поставщикам вычитаем
-            if (t.method === 'cash') {
-                if (isUSD) netCashUSD -= validatedUSDAmount; else netCashUZS -= amt;
-            } else if (t.method === 'bank') {
-                netBankUZS -= (isUSD ? validatedUSDAmount * rate : amt);
-            } else if (t.method === 'card') {
-                netCardUZS -= (isUSD ? validatedUSDAmount * rate : amt);
-            }
-        } else if (t.type === 'client_return' || t.type === 'client_refund' || t.type === 'return') {
-            // Возвраты вычитаем
-            if (t.method === 'cash') {
-                if (isUSD) netCashUSD -= validatedUSDAmount; else netCashUZS -= amt;
-            } else if (t.method === 'bank') {
-                netBankUZS -= (isUSD ? validatedUSDAmount * rate : amt);
-            }
-        } else if (t.type === 'expense') {
-            // Deduct fixed asset payments and other expenses from balances
-            if (t.method === 'cash') {
-                if (isUSD) netCashUSD -= validatedUSDAmount; else netCashUZS -= amt;
-            } else if (t.method === 'bank') {
-                netBankUZS -= (isUSD ? validatedUSDAmount * rate : amt);
-            } else if (t.method === 'card') {
-                netCardUZS -= (isUSD ? validatedUSDAmount * rate : amt);
-            }
-        }
-    });
 
-    // Process Expenses
-    safeExpenses.forEach(e => {
-        const amt = num(e.amount);
-        const rate = getRate(e.exchangeRate);
-        const isUSD = e.currency === 'USD';
-
-        if (e.paymentMethod === 'cash') {
-            // if (isUSD) netCashUSD -= amt; else netCashUZS -= amt; // Showing Gross Revenue
-        } else if (e.paymentMethod === 'bank') {
-            // netBankUZS -= (isUSD ? amt * rate : amt);
-        } else if (e.paymentMethod === 'card') {
-            netCardUZS -= (isUSD ? amt * rate : amt);
-        }
-    });
 
     const currentRate = getRate(null);
     const totalCashUSD = netCashUSD + (netCashUZS / currentRate);
@@ -480,6 +384,41 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fi
                     </div>
                 </div>
             </div>
+
+            {/* Auto-Correction Report */}
+            {corrections && corrections.length > 0 && (
+                <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-6">
+                    <h3 className="text-xl font-bold text-amber-500 mb-4 flex items-center gap-2">
+                        <ShieldCheck className="text-amber-500" /> Автоматическая коррекция ошибок
+                    </h3>
+                    <p className={`${t.textMuted} text-sm mb-4`}>
+                        Система обнаружила и исправила следующие вероятные ошибки ввода (суммы {'>'} $1M были сконвертированы как UZS):
+                    </p>
+                    <div className="space-y-2 max-h-60 overflow-y-auto custom-scrollbar pr-2">
+                        {corrections.map((c, idx) => (
+                            <div key={`${c.id}-${idx}`} className={`${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-50'} p-3 rounded-xl flex justify-between items-center border border-amber-500/20`}>
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <span className={`text-xs font-bold px-2 py-0.5 rounded ${
+                                            c.type === 'order' ? 'bg-blue-500/20 text-blue-500' :
+                                            c.type === 'transaction' ? 'bg-purple-500/20 text-purple-500' :
+                                            'bg-red-500/20 text-red-500'
+                                        }`}>
+                                            {c.type === 'order' ? 'ЗАКАЗ' : c.type === 'transaction' ? 'ТРАНЗАКЦИЯ' : 'РАСХОД'}
+                                        </span>
+                                        <span className={`${t.text} font-mono text-sm`}>ID: {c.id}</span>
+                                    </div>
+                                    <p className={`text-xs ${t.textMuted} mt-1`}>{c.reason}</p>
+                                </div>
+                                <div className="text-right">
+                                    <p className="text-xs text-red-400 line-through">{formatCurrency(c.originalAmount)}</p>
+                                    <p className="text-emerald-500 font-bold font-mono">{formatCurrency(c.correctedAmount)}</p>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             {/* Audit Section - Only shown if huge amounts exist */}
             {(largeOrders.length > 0 || largeTransactions.length > 0 || largeExpenses.length > 0) && (

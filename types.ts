@@ -65,6 +65,7 @@ export interface Client {
   phone: string;
   email?: string;
   address?: string; // Physical address
+  updatedAt?: string; // ISO timestamp for sync
 
   // Legal Entity Details
   companyName?: string;
@@ -92,6 +93,7 @@ export interface Product {
   costPrice: number; // Base currency (USD) - Weighted Average Cost
   minStockLevel: number;
   origin?: 'import' | 'local'; // New field: Origin of the product
+  updatedAt?: string; // ISO timestamp for sync
 }
 
 export interface OrderItem {
@@ -127,6 +129,7 @@ export interface Order {
   paymentStatus: 'paid' | 'unpaid' | 'partial';
   paymentCurrency?: 'USD' | 'UZS'; // New field for cash currency
   amountPaid: number; // Amount actually paid (USD)
+  updatedAt?: string; // ISO timestamp for sync
 }
 
 // Workflow Order - Pre-order created by sales department
@@ -168,6 +171,7 @@ export interface WorkflowOrder {
   // Link to actual Order (when converted to sale)
   convertedToOrderId?: string;
   convertedAt?: string;
+  updatedAt?: string; // ISO timestamp for sync
 }
 
 export interface Expense {
@@ -180,6 +184,7 @@ export interface Expense {
   currency: 'USD' | 'UZS';
   exchangeRate?: number; // Rate at time of expense (USD -> UZS)
   vatAmount?: number; // In original currency
+  updatedAt?: string; // ISO timestamp for sync
 }
 
 export interface PurchaseOverheads {
@@ -208,6 +213,7 @@ export interface Purchase {
   overheads: PurchaseOverheads;
   totalInvoiceAmount: number; // Sum of items invoice prices
   totalLandedAmount: number; // Sum of landed costs (Invoice + Overheads)
+  updatedAt?: string; // ISO timestamp for sync
 
   // Payment Info
   paymentMethod: 'cash' | 'bank' | 'card' | 'debt' | 'mixed';
@@ -226,6 +232,7 @@ export interface Transaction {
   method: 'cash' | 'bank' | 'card' | 'debt';
   description: string;
   relatedId?: string; // Client ID or Purchase ID
+  updatedAt?: string; // ISO timestamp for sync
 }
 
 export interface DashboardStats {
@@ -267,6 +274,7 @@ export interface FixedAsset {
   paymentMethod?: 'cash' | 'bank' | 'card'; // Способ оплаты
   paymentCurrency?: 'USD' | 'UZS'; // Валюта оплаты (для наличных)
   amountPaid?: number; // USD - сумма оплачено (для частичной оплаты)
+  updatedAt?: string; // ISO timestamp for sync
 }
 
 // Staff Management & RBAC
@@ -283,6 +291,7 @@ export interface Employee {
   salary?: number;
   status: 'active' | 'inactive';
   notes?: string;
+  updatedAt?: string; // ISO timestamp for sync
   permissions?: {
     dashboard?: boolean;
     inventory?: boolean;

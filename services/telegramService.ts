@@ -33,7 +33,7 @@ export const telegramService = {
             type: 'expense' | 'purchase' | 'supplier_payment' | 'client_payment' | 'sale';
             amount: number;
             currency: 'USD' | 'UZS';
-            method?: 'cash' | 'bank' | 'card' | 'debt';
+            method?: 'cash' | 'bank' | 'card' | 'debt' | 'mixed';
             counterparty?: string;
             description?: string;
             id?: string;

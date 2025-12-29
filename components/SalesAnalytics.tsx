@@ -1,12 +1,14 @@
 
 import React, { useMemo, useState } from 'react';
-import { Order } from '../types';
+import { Order, AppSettings } from '../types';
+import { validateUSD } from '../utils/finance';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend } from 'recharts';
 import { Users, Briefcase, TrendingUp, Crown, Wallet, Package, X, ChevronRight } from 'lucide-react';
 
 interface SalesAnalyticsProps {
     orders: Order[];
+    settings: AppSettings;
 }
 
 interface ProductStat {
@@ -24,7 +26,7 @@ interface StatItem {
     [key: string]: any;
 }
 
-export const SalesAnalytics: React.FC<SalesAnalyticsProps> = ({ orders }) => {
+export const SalesAnalytics: React.FC<SalesAnalyticsProps> = ({ orders, settings }) => {
     const { theme } = useTheme();
     const t = getThemeClasses(theme);
     const [selectedClient, setSelectedClient] = useState<StatItem | null>(null);
@@ -48,10 +50,12 @@ export const SalesAnalytics: React.FC<SalesAnalyticsProps> = ({ orders }) => {
 
         if (orders && Array.isArray(orders)) {
             orders.forEach(order => {
-                let amount = num(order.totalAmount);
-                if (amount === 0 && order.items && order.items.length > 0) {
-                    amount = order.items.reduce((s, it) => s + num(it.total), 0);
+                let rawAmount = num(order.totalAmount);
+                if (rawAmount === 0 && order.items && order.items.length > 0) {
+                    rawAmount = order.items.reduce((s, it) => s + num(it.total), 0);
                 }
+
+                const amount = validateUSD(rawAmount, settings.defaultExchangeRate, { id: order.id, type: 'order' });
 
                 totalRevenue += amount;
                 validOrdersCount++;

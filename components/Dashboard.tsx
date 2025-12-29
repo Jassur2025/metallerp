@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Product, Order, Client, Transaction, AppSettings } from '../types';
 import { geminiService } from '../services/geminiService';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
+import { validateUSD } from '../utils/finance';
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid
 } from 'recharts';
@@ -70,7 +71,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products, orders, clients 
     if (amt === 0 && o.items && o.items.length > 0) {
       amt = o.items.reduce((s, it) => s + num(it.total), 0);
     }
-    return sum + amt;
+    return sum + validateUSD(amt, settings?.defaultExchangeRate || 12800);
   }, 0);
 
   const totalRevenueUZS = filteredOrders.reduce((sum, o) => sum + num(o.totalAmountUZS), 0);
@@ -103,7 +104,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products, orders, clients 
       if (!days[date]) {
         days[date] = { date, revenue: 0, orders: 0 };
       }
-      days[date].revenue += order.totalAmount;
+      days[date].revenue += validateUSD(order.totalAmount, settings?.defaultExchangeRate || 12800);
       days[date].orders += 1;
     });
 
@@ -287,8 +288,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ products, orders, clients 
               key={range}
               onClick={() => setTimeRange(range)}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${timeRange === range
-                  ? t.tabActive
-                  : t.tabInactive
+                ? t.tabActive
+                : t.tabInactive
                 }`}
             >
               {range === 'today' ? 'Сегодня' :
@@ -520,9 +521,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ products, orders, clients 
                 >
                   <div className="flex items-center gap-4 flex-1 min-w-0">
                     <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold shadow-lg flex-shrink-0 ${index === 0 ? 'bg-gradient-to-br from-amber-500/20 to-amber-600/10 text-amber-500 border border-amber-500/20' :
-                        index === 1 ? 'bg-gradient-to-br from-slate-500/20 to-slate-600/10 text-slate-500 border border-slate-500/20' :
-                          index === 2 ? 'bg-gradient-to-br from-orange-500/20 to-orange-600/10 text-orange-500 border border-orange-500/20' :
-                            'bg-gradient-to-br from-slate-700/20 to-slate-800/10 text-slate-500 border border-slate-700/20'
+                      index === 1 ? 'bg-gradient-to-br from-slate-500/20 to-slate-600/10 text-slate-500 border border-slate-500/20' :
+                        index === 2 ? 'bg-gradient-to-br from-orange-500/20 to-orange-600/10 text-orange-500 border border-orange-500/20' :
+                          'bg-gradient-to-br from-slate-700/20 to-slate-800/10 text-slate-500 border border-slate-700/20'
                       }`}>
                       {index + 1}
                     </div>
@@ -564,9 +565,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ products, orders, clients 
                 >
                   <div className="flex items-center gap-4 flex-1 min-w-0">
                     <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold shadow-lg flex-shrink-0 ${index === 0 ? 'bg-gradient-to-br from-indigo-500/20 to-indigo-600/10 text-indigo-500 border border-indigo-500/20' :
-                        index === 1 ? 'bg-gradient-to-br from-purple-500/20 to-purple-600/10 text-purple-500 border border-purple-500/20' :
-                          index === 2 ? 'bg-gradient-to-br from-pink-500/20 to-pink-600/10 text-pink-500 border border-pink-500/20' :
-                            'bg-gradient-to-br from-slate-700/20 to-slate-800/10 text-slate-500 border border-slate-700/20'
+                      index === 1 ? 'bg-gradient-to-br from-purple-500/20 to-purple-600/10 text-purple-500 border border-purple-500/20' :
+                        index === 2 ? 'bg-gradient-to-br from-pink-500/20 to-pink-600/10 text-pink-500 border border-pink-500/20' :
+                          'bg-gradient-to-br from-slate-700/20 to-slate-800/10 text-slate-500 border border-slate-700/20'
                       }`}>
                       {index + 1}
                     </div>

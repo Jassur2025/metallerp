@@ -247,8 +247,8 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
                     </td>
                     <td className="px-6 py-4">{product.dimensions}</td>
                     <td className="px-6 py-4 text-slate-400">{product.steelGrade}</td>
-                    <td className={`px-6 py-4 text-right font-mono ${product.quantity <= product.minStockLevel ? 'text-red-400' : 'text-slate-200'}`}>
-                      {product.quantity} <span className="text-xs text-slate-500">{product.unit}</span>
+                    <td className={`px-6 py-4 text-right font-mono ${product.quantity <= product.minStockLevel ? t.danger : t.text}`}>
+                      {product.quantity} <span className={`text-xs ${t.textMuted}`}>{product.unit}</span>
                     </td>
                     <td className="px-6 py-4 text-right font-mono text-slate-400">
                       {user?.permissions?.canViewCostPrice !== false ? (
