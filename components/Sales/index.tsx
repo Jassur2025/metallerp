@@ -78,6 +78,7 @@ export const Sales: React.FC<SalesProps> = ({
   const [expenseCurrency, setExpenseCurrency] = useState<Currency>('UZS');
   const [withVat, setWithVat] = useState(false);
   const [expenseVatAmount, setExpenseVatAmount] = useState('');
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>('');
 
   // Return State
   const [returnClientName, setReturnClientName] = useState('');
@@ -697,12 +698,13 @@ export const Sales: React.FC<SalesProps> = ({
       amount: parseFloat(expenseAmount), category: expenseCategory, paymentMethod: expenseMethod,
       currency: expenseCurrency,
       exchangeRate: exchangeRate > 0 ? exchangeRate : settings.defaultExchangeRate,
-      vatAmount: withVat && expenseVatAmount ? parseFloat(expenseVatAmount) : 0
+      vatAmount: withVat && expenseVatAmount ? parseFloat(expenseVatAmount) : 0,
+      employeeId: selectedEmployeeId || undefined
     };
     const updatedExpenses = [newExpense, ...expenses];
     setExpenses(updatedExpenses);
     await onSaveExpenses?.(updatedExpenses);
-    setExpenseDesc(''); setExpenseAmount(''); setWithVat(false); setExpenseVatAmount('');
+    setExpenseDesc(''); setExpenseAmount(''); setWithVat(false); setExpenseVatAmount(''); setSelectedEmployeeId('');
     toast.success('Расход добавлен!');
   };
 
@@ -967,7 +969,10 @@ export const Sales: React.FC<SalesProps> = ({
               withVat={withVat} setWithVat={setWithVat}
               expenseVatAmount={expenseVatAmount} setExpenseVatAmount={setExpenseVatAmount}
               onSubmit={handleAddExpense}
-              expenseCategories={settings.expenseCategories} />
+              expenseCategories={settings.expenseCategories}
+              employees={employees}
+              selectedEmployeeId={selectedEmployeeId}
+              setSelectedEmployeeId={setSelectedEmployeeId} />
           ) : mode === 'transactions' ? (
             <div className="space-y-6 flex-1 overflow-y-auto custom-scrollbar pr-2 pb-10">
               {/* Детальный отчёт движения кассы */}
@@ -1059,6 +1064,9 @@ export const Sales: React.FC<SalesProps> = ({
                 transactions={transactions}
                 onUpdateTransactions={setTransactions}
                 onSaveTransactions={onSaveTransactions}
+                expenses={expenses}
+                onUpdateExpenses={setExpenses}
+                onSaveExpenses={onSaveExpenses}
                 exchangeRate={exchangeRate}
               />
             </div>

@@ -193,14 +193,22 @@ export function mapRowToClient(row: Row): Client {
   return {
     id: asString(row, 0),
     name: asString(row, 1),
-    phone: asString(row, 2),
-    email: asOptionalString(row, 3),
-    address: asOptionalString(row, 4),
-    creditLimit: asNumber(row, 5, 0),
-    notes: asOptionalString(row, 6),
-    totalPurchases: asNumber(row, 7, 0),
-    totalDebt: asNumber(row, 8, 0),
-    updatedAt: asOptionalString(row, 9),
+    type: pick(asString(row, 2, 'individual'), ['individual', 'legal'] as const, 'individual'),
+    phone: asString(row, 3),
+    email: asOptionalString(row, 4),
+    address: asOptionalString(row, 5),
+    creditLimit: asNumber(row, 6, 0),
+    notes: asOptionalString(row, 7),
+    totalPurchases: asNumber(row, 8, 0),
+    totalDebt: asNumber(row, 9, 0),
+    // Legal entity fields
+    companyName: asOptionalString(row, 10),
+    inn: asOptionalString(row, 11),
+    mfo: asOptionalString(row, 12),
+    bankAccount: asOptionalString(row, 13),
+    bankName: asOptionalString(row, 14),
+    addressLegal: asOptionalString(row, 15),
+    updatedAt: asOptionalString(row, 16),
   };
 }
 
@@ -208,6 +216,7 @@ export function mapClientToRow(c: Client): unknown[] {
   return [
     c.id,
     c.name,
+    c.type || 'individual',
     c.phone,
     c.email || '',
     c.address || '',
@@ -215,6 +224,13 @@ export function mapClientToRow(c: Client): unknown[] {
     c.notes || '',
     c.totalPurchases || 0,
     c.totalDebt || 0,
+    // Legal entity fields
+    c.companyName || '',
+    c.inn || '',
+    c.mfo || '',
+    c.bankAccount || '',
+    c.bankName || '',
+    c.addressLegal || '',
     c.updatedAt || '',
   ];
 }
@@ -233,6 +249,9 @@ export function mapRowToEmployee(row: Row): Employee {
     notes: asOptionalString(row, 9),
     permissions: parseJson<Employee['permissions']>(row, 10, undefined),
     updatedAt: asOptionalString(row, 11),
+    commissionRate: asNumber(row, 12, 0),
+    hasKPI: asString(row, 13) === 'true',
+    terminationDate: asOptionalString(row, 14),
   };
 }
 
@@ -250,6 +269,9 @@ export function mapEmployeeToRow(e: Employee): unknown[] {
     e.notes || '',
     e.permissions ? JSON.stringify(e.permissions) : '',
     e.updatedAt || '',
+    e.commissionRate || 0,
+    e.hasKPI ? 'true' : 'false',
+    e.terminationDate || '',
   ];
 }
 

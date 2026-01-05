@@ -43,15 +43,15 @@ export async function initializeSheets(accessToken: string): Promise<void> {
 
   // Headers
   try {
-    await fetchSheets(accessToken, 'Products!A1:K1', 'PUT', {
-      values: [['ID', 'Name', 'Type', 'Dimensions', 'Steel Grade', 'Quantity', 'Unit', 'Price', 'Cost', 'Min Stock', 'Origin']],
+    await fetchSheets(accessToken, 'Products!A1:L1', 'PUT', {
+      values: [['ID', 'Name', 'Type', 'Dimensions', 'Steel Grade', 'Quantity', 'Unit', 'Price', 'Cost', 'Min Stock', 'Origin', 'Updated At']],
     });
   } catch (e) {
     errorDev('Error init Products', e);
   }
 
   try {
-    await fetchSheets(accessToken, 'Orders!A1:P1', 'PUT', {
+    await fetchSheets(accessToken, 'Orders!A1:Q1', 'PUT', {
       values: [[
         'ID',
         'Date',
@@ -69,6 +69,7 @@ export async function initializeSheets(accessToken: string): Promise<void> {
         'Payment Status',
         'Amount Paid',
         'Payment Currency',
+        'Updated At',
       ]],
     });
   } catch (e) {
@@ -76,48 +77,48 @@ export async function initializeSheets(accessToken: string): Promise<void> {
   }
 
   try {
-    await fetchSheets(accessToken, 'Expenses!A1:G1', 'PUT', {
-      values: [['ID', 'Date', 'Description', 'Amount (USD)', 'Category', 'Payment Method', 'Currency']],
+    await fetchSheets(accessToken, 'Expenses!A1:H1', 'PUT', {
+      values: [['ID', 'Date', 'Description', 'Amount (USD)', 'Category', 'Payment Method', 'Currency', 'Updated At']],
     });
   } catch (e) {
     errorDev('Error init Expenses', e);
   }
 
   try {
-    await fetchSheets(accessToken, 'FixedAssets!A1:I1', 'PUT', {
-      values: [['ID', 'Name', 'Category', 'Purchase Date', 'Cost (USD)', 'Current Value (USD)', 'Accum. Depreciation', 'Annual Rate (%)', 'Last Depr. Date']],
+    await fetchSheets(accessToken, 'FixedAssets!A1:J1', 'PUT', {
+      values: [['ID', 'Name', 'Category', 'Purchase Date', 'Cost (USD)', 'Current Value (USD)', 'Accum. Depreciation', 'Annual Rate (%)', 'Last Depr. Date', 'Updated At']],
     });
   } catch (e) {
     errorDev('Error init FixedAssets', e);
   }
 
   try {
-    await fetchSheets(accessToken, 'Clients!A1:I1', 'PUT', {
-      values: [['ID', 'Name', 'Phone', 'Email', 'Address', 'Credit Limit', 'Notes', 'Total Purchases', 'Total Debt']],
+    await fetchSheets(accessToken, 'Clients!A1:Q1', 'PUT', {
+      values: [['ID', 'Name', 'Type', 'Phone', 'Email', 'Address', 'Credit Limit', 'Notes', 'Total Purchases', 'Total Debt', 'Company Name', 'INN', 'MFO', 'Bank Account', 'Bank Name', 'Legal Address', 'Updated At']],
     });
   } catch (e) {
     errorDev('Error init Clients', e);
   }
 
   try {
-    await fetchSheets(accessToken, 'Staff!A1:K1', 'PUT', {
-      values: [['ID', 'Name', 'Email', 'Phone', 'Position', 'Role', 'Hire Date', 'Salary (USD)', 'Status', 'Notes', 'Permissions']],
+    await fetchSheets(accessToken, 'Staff!A1:O1', 'PUT', {
+      values: [['ID', 'Name', 'Email', 'Phone', 'Position', 'Role', 'Hire Date', 'Salary (USD)', 'Status', 'Notes', 'Permissions', 'Updated At', 'Commission Rate', 'Has KPI', 'Termination Date']],
     });
   } catch (e) {
     errorDev('Error init Staff', e);
   }
 
   try {
-    await fetchSheets(accessToken, 'Purchases!A1:K1', 'PUT', {
-      values: [['ID', 'Date', 'Supplier', 'Status', 'Items JSON', 'Overheads JSON', 'Total Invoice', 'Total Landed', 'Payment Method', 'Payment Status', 'Amount Paid']],
+    await fetchSheets(accessToken, 'Purchases!A1:L1', 'PUT', {
+      values: [['ID', 'Date', 'Supplier', 'Status', 'Items JSON', 'Overheads JSON', 'Total Invoice', 'Total Landed', 'Payment Method', 'Payment Status', 'Amount Paid', 'Updated At']],
     });
   } catch (e) {
     errorDev('Error init Purchases', e);
   }
 
   try {
-    await fetchSheets(accessToken, 'Transactions!A1:I1', 'PUT', {
-      values: [['ID', 'Date', 'Type', 'Amount', 'Currency', 'Exchange Rate', 'Method', 'Description', 'Related ID']],
+    await fetchSheets(accessToken, 'Transactions!A1:J1', 'PUT', {
+      values: [['ID', 'Date', 'Type', 'Amount', 'Currency', 'Exchange Rate', 'Method', 'Description', 'Related ID', 'Updated At']],
     });
   } catch (e) {
     errorDev('Error init Transactions', e);
@@ -132,7 +133,7 @@ export async function initializeSheets(accessToken: string): Promise<void> {
   }
 
   try {
-    await fetchSheets(accessToken, 'WorkflowOrders!A1:U1', 'PUT', {
+    await fetchSheets(accessToken, 'WorkflowOrders!A1:V1', 'PUT', {
       values: [[
         'ID',
         'Date',
@@ -155,6 +156,7 @@ export async function initializeSheets(accessToken: string): Promise<void> {
         'Amount Paid (USD)',
         'Converted Order ID',
         'Converted At',
+        'Updated At',
       ]],
     });
   } catch (e) {

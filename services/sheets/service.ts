@@ -76,8 +76,29 @@ async function saveAllWithMerge<T extends { id: string }>(
   const merged = mergeById(localItems, remoteItems);
   logDev(`💾 Saving ${cacheKey}: merged=${merged.length} local=${localItems.length} remote=${remoteItems.length}`);
 
-  await clearRange(accessToken, clearA1);
-  await writeRange(accessToken, writeA1, merged.map(mapToRow));
+  if (merged.length === 0) {
+    // If no items, clear the range
+    await clearRange(accessToken, clearA1);
+  } else {
+    // Prepare data to write
+    const dataToWrite = merged.map(mapToRow);
+
+    // If we have fewer items than before, we need to clear the "ghost" rows at the bottom.
+    // We do this by appending empty rows to the write request, which overwrites old data with blanks.
+    if (remoteItems.length > merged.length) {
+      const extraRowsCount = remoteItems.length - merged.length + 5; // +5 buffer
+      const columnsCount = dataToWrite[0].length;
+      const emptyRow = new Array(columnsCount).fill('');
+      
+      for (let i = 0; i < extraRowsCount; i++) {
+        dataToWrite.push(emptyRow);
+      }
+    }
+
+    // Overwrite data (without clearing first, to prevent data loss on write failure)
+    await writeRange(accessToken, writeA1, dataToWrite);
+  }
+  
   cacheService.invalidate(cacheKey);
 }
 
@@ -86,15 +107,15 @@ export const sheetsService = {
 
   // Workflow Orders
   getWorkflowOrders: (accessToken: string, useCache: boolean = true) =>
-    getAll<WorkflowOrder>('workflowOrders', accessToken, 'WorkflowOrders!A2:U', mapRowToWorkflowOrder, useCache),
+    getAll<WorkflowOrder>('workflowOrders', accessToken, 'WorkflowOrders!A2:V', mapRowToWorkflowOrder, useCache),
 
   saveAllWorkflowOrders: (accessToken: string, workflowOrders: WorkflowOrder[]) =>
     saveAllWithMerge<WorkflowOrder>(
       'workflowOrders',
       accessToken,
-      'WorkflowOrders!A2:U',
-      'WorkflowOrders!A2:U',
-      'WorkflowOrders!A2:U',
+      'WorkflowOrders!A2:V',
+      'WorkflowOrders!A2:V',
+      'WorkflowOrders!A2:V',
       workflowOrders,
       mapRowToWorkflowOrder,
       mapWorkflowOrderToRow
@@ -102,15 +123,15 @@ export const sheetsService = {
 
   // Purchases
   getPurchases: (accessToken: string, useCache: boolean = true) =>
-    getAll<Purchase>('purchases', accessToken, 'Purchases!A2:K', mapRowToPurchase, useCache),
+    getAll<Purchase>('purchases', accessToken, 'Purchases!A2:L', mapRowToPurchase, useCache),
 
   saveAllPurchases: (accessToken: string, purchases: Purchase[]) =>
     saveAllWithMerge<Purchase>(
       'purchases',
       accessToken,
-      'Purchases!A2:K',
-      'Purchases!A2:K',
-      'Purchases!A2:K',
+      'Purchases!A2:L',
+      'Purchases!A2:L',
+      'Purchases!A2:L',
       purchases,
       mapRowToPurchase,
       mapPurchaseToRow
@@ -118,15 +139,15 @@ export const sheetsService = {
 
   // Products
   getProducts: (accessToken: string, useCache: boolean = true) =>
-    getAll<Product>('products', accessToken, 'Products!A2:K', mapRowToProduct, useCache),
+    getAll<Product>('products', accessToken, 'Products!A2:L', mapRowToProduct, useCache),
 
   saveAllProducts: (accessToken: string, products: Product[]) =>
     saveAllWithMerge<Product>(
       'products',
       accessToken,
-      'Products!A2:K',
-      'Products!A2:K',
-      'Products!A2:K',
+      'Products!A2:L',
+      'Products!A2:L',
+      'Products!A2:L',
       products,
       mapRowToProduct,
       mapProductToRow
@@ -134,15 +155,15 @@ export const sheetsService = {
 
   // Orders
   getOrders: (accessToken: string, useCache: boolean = true) =>
-    getAll<Order>('orders', accessToken, 'Orders!A2:P', mapRowToOrder, useCache),
+    getAll<Order>('orders', accessToken, 'Orders!A2:Q', mapRowToOrder, useCache),
 
   saveAllOrders: (accessToken: string, orders: Order[]) =>
     saveAllWithMerge<Order>(
       'orders',
       accessToken,
-      'Orders!A2:P',
-      'Orders!A2:P',
-      'Orders!A2:P',
+      'Orders!A2:Q',
+      'Orders!A2:Q',
+      'Orders!A2:Q',
       orders,
       mapRowToOrder,
       mapOrderToRow
@@ -150,15 +171,15 @@ export const sheetsService = {
 
   // Expenses
   getExpenses: (accessToken: string, useCache: boolean = true) =>
-    getAll<Expense>('expenses', accessToken, 'Expenses!A2:G', mapRowToExpense, useCache),
+    getAll<Expense>('expenses', accessToken, 'Expenses!A2:H', mapRowToExpense, useCache),
 
   saveAllExpenses: (accessToken: string, expenses: Expense[]) =>
     saveAllWithMerge<Expense>(
       'expenses',
       accessToken,
-      'Expenses!A2:G',
-      'Expenses!A2:G',
-      'Expenses!A2:G',
+      'Expenses!A2:H',
+      'Expenses!A2:H',
+      'Expenses!A2:H',
       expenses,
       mapRowToExpense,
       mapExpenseToRow
@@ -166,15 +187,15 @@ export const sheetsService = {
 
   // Fixed Assets
   getFixedAssets: (accessToken: string, useCache: boolean = true) =>
-    getAll<FixedAsset>('fixedAssets', accessToken, 'FixedAssets!A2:I', mapRowToFixedAsset, useCache),
+    getAll<FixedAsset>('fixedAssets', accessToken, 'FixedAssets!A2:J', mapRowToFixedAsset, useCache),
 
   saveAllFixedAssets: (accessToken: string, assets: FixedAsset[]) =>
     saveAllWithMerge<FixedAsset>(
       'fixedAssets',
       accessToken,
-      'FixedAssets!A2:I',
-      'FixedAssets!A2:I',
-      'FixedAssets!A2:I',
+      'FixedAssets!A2:J',
+      'FixedAssets!A2:J',
+      'FixedAssets!A2:J',
       assets,
       mapRowToFixedAsset,
       mapFixedAssetToRow
@@ -182,15 +203,15 @@ export const sheetsService = {
 
   // Clients
   getClients: (accessToken: string, useCache: boolean = true) =>
-    getAll<Client>('clients', accessToken, 'Clients!A2:I', mapRowToClient, useCache),
+    getAll<Client>('clients', accessToken, 'Clients!A2:Q', mapRowToClient, useCache),
 
   saveAllClients: (accessToken: string, clients: Client[]) =>
     saveAllWithMerge<Client>(
       'clients',
       accessToken,
-      'Clients!A2:I',
-      'Clients!A2:I',
-      'Clients!A2:I',
+      'Clients!A2:Q',
+      'Clients!A2:Q',
+      'Clients!A2:Q',
       clients,
       mapRowToClient,
       mapClientToRow
@@ -198,15 +219,15 @@ export const sheetsService = {
 
   // Employees
   getEmployees: (accessToken: string, useCache: boolean = true) =>
-    getAll<Employee>('employees', accessToken, 'Staff!A2:K', mapRowToEmployee, useCache),
+    getAll<Employee>('employees', accessToken, 'Staff!A2:O', mapRowToEmployee, useCache),
 
   saveAllEmployees: (accessToken: string, employees: Employee[]) =>
     saveAllWithMerge<Employee>(
       'employees',
       accessToken,
-      'Staff!A2:K',
-      'Staff!A2:K',
-      'Staff!A2:K',
+      'Staff!A2:O',
+      'Staff!A2:O',
+      'Staff!A2:O',
       employees,
       mapRowToEmployee,
       mapEmployeeToRow
@@ -233,15 +254,15 @@ export const sheetsService = {
 
   // Transactions
   getTransactions: (accessToken: string, useCache: boolean = true) =>
-    getAll<Transaction>('transactions', accessToken, 'Transactions!A2:I', mapRowToTransaction, useCache),
+    getAll<Transaction>('transactions', accessToken, 'Transactions!A2:J', mapRowToTransaction, useCache),
 
   saveAllTransactions: (accessToken: string, transactions: Transaction[]) =>
     saveAllWithMerge<Transaction>(
       'transactions',
       accessToken,
-      'Transactions!A2:I',
-      'Transactions!A2:I',
-      'Transactions!A2:I',
+      'Transactions!A2:J',
+      'Transactions!A2:J',
+      'Transactions!A2:J',
       transactions,
       mapRowToTransaction,
       mapTransactionToRow
@@ -269,15 +290,15 @@ export const sheetsService = {
     if (!spreadsheetId) throw new Error('Spreadsheet ID not set');
 
     const ranges = [
-      'Orders!A2:P',
-      'Products!A2:K',
-      'Expenses!A2:G',
-      'Clients!A2:I',
-      'Transactions!A2:I',
-      'FixedAssets!A2:I',
-      'Purchases!A2:K',
-      'WorkflowOrders!A2:U',
-      'Staff!A2:K',
+      'Orders!A2:Q',
+      'Products!A2:L',
+      'Expenses!A2:H',
+      'Clients!A2:Q',
+      'Transactions!A2:J',
+      'FixedAssets!A2:J',
+      'Purchases!A2:L',
+      'WorkflowOrders!A2:V',
+      'Staff!A2:O',
       'Journal!A2:M',
     ];
 

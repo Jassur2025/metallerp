@@ -199,3 +199,12 @@ export const calculateBaseTotals = (
 
   return { cashUSD, cashUZS, bankUZS, cardUZS, corrections };
 };
+
+export const formatCurrency = (amount: number, currency: 'USD' | 'UZS' = 'USD'): string => {
+  return new Intl.NumberFormat('ru-RU', {
+    style: 'currency',
+    currency: currency,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(amount || 0);
+};

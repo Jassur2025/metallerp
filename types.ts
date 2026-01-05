@@ -184,6 +184,7 @@ export interface Expense {
   currency: 'USD' | 'UZS';
   exchangeRate?: number; // Rate at time of expense (USD -> UZS)
   vatAmount?: number; // In original currency
+  employeeId?: string; // Link to employee for salary/advances
   updatedAt?: string; // ISO timestamp for sync
 }
 
@@ -288,7 +289,10 @@ export interface Employee {
   position: string;
   role: UserRole;
   hireDate: string; // ISO date
+  terminationDate?: string; // ISO date (if fired)
   salary?: number;
+  commissionRate?: number; // % of profit for KPI
+  hasKPI?: boolean; // Whether the employee has KPI based salary
   status: 'active' | 'inactive';
   notes?: string;
   updatedAt?: string; // ISO timestamp for sync

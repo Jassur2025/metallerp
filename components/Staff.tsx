@@ -45,8 +45,11 @@ export const Staff: React.FC<StaffProps> = ({ employees, onSave }) => {
         role: 'sales',
         hireDate: new Date().toISOString().split('T')[0],
         salary: 0,
+        commissionRate: 0,
+        hasKPI: false,
         status: 'active',
-        notes: ''
+        notes: '',
+        terminationDate: ''
     });
 
     const handleOpenModal = (employee?: Employee) => {
@@ -63,8 +66,11 @@ export const Staff: React.FC<StaffProps> = ({ employees, onSave }) => {
                 role: 'sales',
                 hireDate: new Date().toISOString().split('T')[0],
                 salary: 0,
+                commissionRate: 0,
+                hasKPI: false,
                 status: 'active',
-                notes: ''
+                notes: '',
+                terminationDate: ''
             });
         }
         setIsModalOpen(true);
@@ -381,6 +387,66 @@ export const Staff: React.FC<StaffProps> = ({ employees, onSave }) => {
                                         className={`w-full ${t.input} border ${t.border} rounded-lg px-4 py-2 ${t.text} focus:ring-2 focus:ring-purple-500 outline-none`}
                                     />
                                 </div>
+                            </div>
+
+                            {/* Termination Date Logic */}
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="flex items-center gap-2 pt-6">
+                                    <input
+                                        type="checkbox"
+                                        id="isTerminated"
+                                        checked={!!formData.terminationDate}
+                                        onChange={e => {
+                                            if (e.target.checked) {
+                                                setFormData({ ...formData, terminationDate: new Date().toISOString().split('T')[0], status: 'inactive' });
+                                            } else {
+                                                setFormData({ ...formData, terminationDate: '', status: 'active' });
+                                            }
+                                        }}
+                                        className="w-4 h-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
+                                    />
+                                    <label htmlFor="isTerminated" className={`text-sm font-medium ${t.text}`}>
+                                        Сотрудник уволен
+                                    </label>
+                                </div>
+                                {formData.terminationDate && (
+                                    <div>
+                                        <label className={`block text-sm font-medium ${t.textMuted} mb-1`}>Дата увольнения</label>
+                                        <input
+                                            type="date"
+                                            value={formData.terminationDate}
+                                            onChange={e => setFormData({ ...formData, terminationDate: e.target.value })}
+                                            className={`w-full ${t.input} border ${t.border} rounded-lg px-4 py-2 ${t.text} focus:ring-2 focus:ring-red-500 outline-none`}
+                                        />
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="flex items-center gap-2 pt-6">
+                                    <input
+                                        type="checkbox"
+                                        id="hasKPI"
+                                        checked={formData.hasKPI || false}
+                                        onChange={e => setFormData({ ...formData, hasKPI: e.target.checked })}
+                                        className="w-4 h-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                                    />
+                                    <label htmlFor="hasKPI" className={`text-sm font-medium ${t.text}`}>
+                                        Включить KPI (% от прибыли)
+                                    </label>
+                                </div>
+                                {formData.hasKPI && (
+                                    <div>
+                                        <label className={`block text-sm font-medium ${t.textMuted} mb-1`}>Процент KPI (%)</label>
+                                        <input
+                                            type="number"
+                                            value={formData.commissionRate || 0}
+                                            onChange={e => setFormData({ ...formData, commissionRate: Number(e.target.value) })}
+                                            className={`w-full ${t.input} border ${t.border} rounded-lg px-4 py-2 ${t.text} focus:ring-2 focus:ring-purple-500 outline-none`}
+                                            placeholder="10"
+                                        />
+                                    </div>
+                                )}
                             </div>
 
                             <div>

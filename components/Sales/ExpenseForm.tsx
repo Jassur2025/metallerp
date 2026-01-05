@@ -1,6 +1,6 @@
 import React from 'react';
 import { FileText } from 'lucide-react';
-import { ExpenseCategory } from '../../types';
+import { ExpenseCategory, Employee } from '../../types';
 import { useTheme, getThemeClasses } from '../../contexts/ThemeContext';
 
 interface ExpenseFormProps {
@@ -20,6 +20,9 @@ interface ExpenseFormProps {
   setExpenseVatAmount: (val: string) => void;
   onSubmit: () => void;
   expenseCategories?: ExpenseCategory[];
+  employees?: Employee[];
+  selectedEmployeeId?: string;
+  setSelectedEmployeeId?: (val: string) => void;
 }
 
 export const ExpenseForm: React.FC<ExpenseFormProps> = ({
@@ -38,7 +41,10 @@ export const ExpenseForm: React.FC<ExpenseFormProps> = ({
   expenseVatAmount,
   setExpenseVatAmount,
   onSubmit,
-  expenseCategories = []
+  expenseCategories = [],
+  employees = [],
+  selectedEmployeeId,
+  setSelectedEmployeeId
 }) => {
   const { theme } = useTheme();
   const t = getThemeClasses(theme);
@@ -47,6 +53,10 @@ export const ExpenseForm: React.FC<ExpenseFormProps> = ({
   const adminCategories = expenseCategories.filter(c => c.pnlCategory === 'administrative');
   const operationalCategories = expenseCategories.filter(c => c.pnlCategory === 'operational');
   const commercialCategories = expenseCategories.filter(c => c.pnlCategory === 'commercial');
+
+  // Check if selected category is salary related
+  const isSalaryCategory = expenseCategory === 'Зарплата' || expenseCategory === 'Аванс сотрудникам' || expenseCategory.toLowerCase().includes('зарплата') || expenseCategory.toLowerCase().includes('аванс');
+
   return (
     <div className={`flex-1 ${t.bgCard} border ${t.border} rounded-2xl p-6 overflow-y-auto`}>
       <h3 className={`text-xl font-bold ${t.text} mb-6 flex items-center gap-2`}>
@@ -205,6 +215,22 @@ export const ExpenseForm: React.FC<ExpenseFormProps> = ({
             )}
           </select>
         </div>
+
+        {isSalaryCategory && employees.length > 0 && setSelectedEmployeeId && (
+          <div className="animate-fade-in">
+            <label className={`block text-sm font-medium ${t.textMuted} mb-2`}>Сотрудник</label>
+            <select
+              value={selectedEmployeeId || ''}
+              onChange={e => setSelectedEmployeeId(e.target.value)}
+              className={`w-full ${t.bgInput} border ${t.borderInput} rounded-xl px-4 py-3 ${t.text} focus:border-red-500 outline-none`}
+            >
+              <option value="">— Выберите сотрудника —</option>
+              {employees.filter(e => e.status === 'active').map(emp => (
+                <option key={emp.id} value={emp.id}>{emp.name} ({emp.position})</option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <button
           onClick={onSubmit}

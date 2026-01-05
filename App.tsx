@@ -18,7 +18,8 @@ import {
   Shield,
   BookOpen,
   ClipboardList,
-  Book
+  Book,
+  DollarSign
 } from 'lucide-react';
 
 // Lazy load components for better performance
@@ -35,6 +36,7 @@ const FixedAssets = lazy(() => import('./components/FixedAssets').then(m => ({ d
 const SettingsComponent = lazy(() => import('./components/Settings').then(m => ({ default: m.Settings })));
 const Workflow = lazy(() => import('./components/Workflow').then(m => ({ default: m.Workflow })));
 const PriceList = lazy(() => import('./components/PriceList').then(m => ({ default: m.PriceList })));
+const Payroll = lazy(() => import('./components/Payroll').then(m => ({ default: m.Payroll })));
 
 import { Login } from './components/Login';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -62,6 +64,7 @@ const DEFAULT_EXPENSE_CATEGORIES = [
   { id: 'sales_bonus', name: 'Бонусы от продаж', pnlCategory: 'commercial' as const },
   { id: 'customs', name: 'Государственные пошлины', pnlCategory: 'administrative' as const },
   { id: 'salary', name: 'Зарплата', pnlCategory: 'administrative' as const },
+  { id: 'advance', name: 'Аванс сотрудникам', pnlCategory: 'administrative' as const },
   { id: 'crane_costs', name: 'Затраты крана', pnlCategory: 'operational' as const },
   { id: 'food', name: 'Затраты питания', pnlCategory: 'operational' as const },
   { id: 'corporate_events', name: 'Затраты по корпоративно-культурным мероприятиям', pnlCategory: 'operational' as const },
@@ -759,6 +762,8 @@ const AppContent: React.FC = () => {
         />);
       case 'staff':
         return renderLazyComponent(<Staff employees={employees} onSave={handleSaveEmployees} />);
+      case 'payroll':
+        return renderLazyComponent(<Payroll employees={employees} orders={orders} expenses={expenses} />);
       case 'balance':
         return renderLazyComponent(<Balance
           orders={orders}
@@ -931,6 +936,17 @@ const AppContent: React.FC = () => {
                 label="Сотрудники"
                 active={activeTab === 'staff'}
                 onClick={() => setActiveTab('staff')}
+                isOpen={isSidebarOpen}
+                onMobileClose={() => setIsSidebarOpen(false)}
+                theme={settings.theme}
+              />
+            )}
+            {checkPermission('staff') && (
+              <SidebarItem
+                icon={<DollarSign size={20} />}
+                label="Зарплата"
+                active={activeTab === 'payroll'}
+                onClick={() => setActiveTab('payroll')}
                 isOpen={isSidebarOpen}
                 onMobileClose={() => setIsSidebarOpen(false)}
                 theme={settings.theme}
