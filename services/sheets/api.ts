@@ -1,11 +1,22 @@
-import { errorDev, warnDev } from './logger';
+import { errorDev, logDev, warnDev } from './logger';
 import { getSpreadsheetId } from './spreadsheetId';
+import { withRetry } from '../../utils/retry';
 
 export type SheetsMethod = 'GET' | 'POST' | 'PUT';
 
 export interface SheetsValuesResponse {
   values?: unknown[][];
 }
+
+// Retry configuration for Google Sheets API
+const SHEETS_RETRY_OPTIONS = {
+  maxRetries: 3,
+  baseDelay: 1000,
+  maxDelay: 10000,
+  onRetry: (attempt: number, error: unknown, nextDelay: number) => {
+    warnDev(`🔄 Retry attempt ${attempt}, waiting ${Math.round(nextDelay)}ms...`, error);
+  },
+};
 
 async function handleApiResponse(response: Response, context: string): Promise<void> {
   if (response.ok) return;
@@ -83,46 +94,56 @@ export async function fetchSheets(
     options.body = JSON.stringify(body);
   }
 
-  const response = await fetch(url, options);
-  await handleApiResponse(response, `${method} ${range}`);
-  return (await response.json()) as SheetsValuesResponse;
+  // Wrap with retry for network resilience
+  return withRetry(async () => {
+    logDev(`📡 ${method} ${range}`);
+    const response = await fetch(url, options);
+    await handleApiResponse(response, `${method} ${range}`);
+    return (await response.json()) as SheetsValuesResponse;
+  }, SHEETS_RETRY_OPTIONS);
 }
 
 export async function clearRange(accessToken: string, a1Range: string): Promise<void> {
   const spreadsheetId = getSpreadsheetId();
   if (!spreadsheetId) throw new Error('Spreadsheet ID not set');
 
-  const response = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${a1Range}:clear`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-    }
-  );
+  return withRetry(async () => {
+    logDev(`🗑️ Clear ${a1Range}`);
+    const response = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${a1Range}:clear`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
 
-  await handleApiResponse(response, `clear ${a1Range}`);
+    await handleApiResponse(response, `clear ${a1Range}`);
+  }, SHEETS_RETRY_OPTIONS);
 }
 
 export async function writeRange(accessToken: string, a1Range: string, values: unknown[][]): Promise<void> {
   const spreadsheetId = getSpreadsheetId();
   if (!spreadsheetId) throw new Error('Spreadsheet ID not set');
 
-  const response = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${a1Range}?valueInputOption=USER_ENTERED`,
-    {
-      method: 'PUT',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ values }),
-    }
-  );
+  return withRetry(async () => {
+    logDev(`💾 Write ${a1Range} (${values.length} rows)`);
+    const response = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${a1Range}?valueInputOption=USER_ENTERED`,
+      {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ values }),
+      }
+    );
 
-  await handleApiResponse(response, `write ${a1Range}`);
+    await handleApiResponse(response, `write ${a1Range}`);
+  }, SHEETS_RETRY_OPTIONS);
 }
 
 

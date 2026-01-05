@@ -1,5 +1,6 @@
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useCallback, useMemo } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { Product, ProductType, Unit } from '../types';
 import { geminiService } from '../services/geminiService';
 import { useToast } from '../contexts/ToastContext';
@@ -23,9 +24,13 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [isAiLoading, setIsAiLoading] = useState(false);
-  const [page, setPage] = useState(1);
-  const pageSize = 20;
   const [sortMode, setSortMode] = useState<'qty_desc' | 'qty_asc' | 'name_asc'>('qty_desc');
+
+  // Refs for virtualization
+  const tableParentRef = useRef<HTMLDivElement>(null);
+  const mobileParentRef = useRef<HTMLDivElement>(null);
+  const ROW_HEIGHT = 56;
+  const CARD_HEIGHT = 180;
 
   // State to track which item is being edited (null means creating new)
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -141,29 +146,40 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
     }
   };
 
-  const filteredProducts = products.filter(p =>
-    p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.dimensions.includes(searchTerm)
-  );
+  // Memoized filtered and sorted products
+  const sortedProducts = useMemo(() => {
+    const filtered = products.filter(p =>
+      p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      p.dimensions.includes(searchTerm)
+    );
+    
+    return [...filtered].sort((a, b) => {
+      if (sortMode === 'qty_desc') {
+        if (b.quantity !== a.quantity) return b.quantity - a.quantity;
+        return a.name.localeCompare(b.name);
+      }
+      if (sortMode === 'qty_asc') {
+        if (a.quantity !== b.quantity) return a.quantity - b.quantity;
+        return a.name.localeCompare(b.name);
+      }
+      return a.name.localeCompare(b.name);
+    });
+  }, [products, searchTerm, sortMode]);
 
-  const sortedProducts = [...filteredProducts].sort((a, b) => {
-    if (sortMode === 'qty_desc') {
-      if (b.quantity !== a.quantity) return b.quantity - a.quantity;
-      return a.name.localeCompare(b.name);
-    }
-    if (sortMode === 'qty_asc') {
-      if (a.quantity !== b.quantity) return a.quantity - b.quantity;
-      return a.name.localeCompare(b.name);
-    }
-    return a.name.localeCompare(b.name);
+  // Virtualizers for desktop and mobile
+  const tableVirtualizer = useVirtualizer({
+    count: sortedProducts.length,
+    getScrollElement: () => tableParentRef.current,
+    estimateSize: useCallback(() => ROW_HEIGHT, []),
+    overscan: 10,
   });
 
-  const totalPages = Math.max(1, Math.ceil(sortedProducts.length / pageSize));
-  const displayedProducts = sortedProducts.slice((page - 1) * pageSize, page * pageSize);
-
-  React.useEffect(() => {
-    setPage(1);
-  }, [searchTerm, products.length]);
+  const mobileVirtualizer = useVirtualizer({
+    count: sortedProducts.length,
+    getScrollElement: () => mobileParentRef.current,
+    estimateSize: useCallback(() => CARD_HEIGHT, []),
+    overscan: 5,
+  });
 
   return (
     <div className="p-3 sm:p-4 lg:p-6 space-y-4 lg:space-y-6 animate-fade-in h-[calc(100vh-2rem)] flex flex-col">
@@ -208,196 +224,221 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
         </select>
       </div>
 
-      {/* List Container (scrollable because parent content is overflow-hidden) */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar pb-2">
-        {/* Table - Desktop */}
+      {/* Virtualized List Container */}
+      <div className="flex-1 overflow-hidden pb-2">
+        {/* Virtual Table - Desktop */}
         <div className={`hidden lg:block ${t.bgCard} rounded-xl border ${t.border} overflow-hidden ${t.shadow}`}>
-          <div className="overflow-x-auto">
-            <table className={`w-full text-left ${t.textSecondary}`}>
-              <thead className={`${t.bgPanelAlt} text-xs uppercase tracking-wider ${t.textMuted} font-medium`}>
-                <tr>
-                  <th className="px-6 py-4">Наименование</th>
-                  <th className="px-6 py-4">Тип</th>
-                  <th className="px-6 py-4">Размеры</th>
-                  <th className="px-6 py-4">Сталь</th>
-                  <th className="px-6 py-4 text-right">Остаток</th>
-                  <th className="px-6 py-4 text-right">Себест.</th>
-                  <th className="px-6 py-4 text-right">Цена</th>
-                  <th className="px-6 py-4 text-center">Действия</th>
-                </tr>
-              </thead>
-              <tbody className={`divide-y ${t.border}`}>
-                {displayedProducts.map((product) => (
-                  <tr key={product.id} className={`${t.bgCardHover} transition-colors`}>
-                    <td className={`px-6 py-4 font-medium ${t.text}`}>
-                      <div>{product.name}</div>
-                      {product.origin === 'import' && (
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-500/10 text-purple-400 border border-purple-500/20 mt-1">
-                          ИМПОРТ
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium border ${product.type === ProductType.PIPE ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
-                        product.type === ProductType.PROFILE ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
-                          'bg-slate-500/10 text-slate-400 border-slate-500/20'
-                        }`}>
-                        {product.type}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">{product.dimensions}</td>
-                    <td className="px-6 py-4 text-slate-400">{product.steelGrade}</td>
-                    <td className={`px-6 py-4 text-right font-mono ${product.quantity <= product.minStockLevel ? t.danger : t.text}`}>
-                      {product.quantity} <span className={`text-xs ${t.textMuted}`}>{product.unit}</span>
-                    </td>
-                    <td className="px-6 py-4 text-right font-mono text-slate-400">
-                      {user?.permissions?.canViewCostPrice !== false ? (
-                        `$${(product.costPrice || 0).toFixed(2)}`
-                      ) : (
-                        <span className={`${t.textMuted} flex justify-end gap-1 items-center`}><Lock size={12} /> ***</span>
-                      )}
-                    </td>
-
-                    <td className={`px-6 py-4 text-right font-mono ${t.success}`}>
-                      ${product.pricePerUnit.toFixed(2)}
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <div className="flex items-center justify-center gap-2">
-                        <button
-                          onClick={() => openEditModal(product)}
-                          className={`${t.textMuted} hover:${t.accent} transition-colors p-2 rounded-lg ${theme === 'light' ? 'hover:bg-blue-50' : 'hover:bg-primary-400/10'}`}
-                          title="Редактировать"
-                        >
-                          <Pencil size={18} />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(product.id)}
-                          className={`${t.textMuted} hover:text-red-500 transition-colors p-2 rounded-lg ${theme === 'light' ? 'hover:bg-red-50' : 'hover:bg-red-400/10'}`}
-                          title="Удалить"
-                        >
-                          <Trash2 size={18} />
-                        </button>
+          {/* Table Header */}
+          <div className={`${t.bgPanelAlt} text-xs uppercase tracking-wider ${t.textMuted} font-medium grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_1fr_100px]`}>
+            <div className="px-6 py-4">Наименование</div>
+            <div className="px-6 py-4">Тип</div>
+            <div className="px-6 py-4">Размеры</div>
+            <div className="px-6 py-4">Сталь</div>
+            <div className="px-6 py-4 text-right">Остаток</div>
+            <div className="px-6 py-4 text-right">Себест.</div>
+            <div className="px-6 py-4 text-right">Цена</div>
+            <div className="px-6 py-4 text-center">Действия</div>
+          </div>
+          
+          {/* Virtualized Body */}
+          {sortedProducts.length === 0 ? (
+            <div className={`px-6 py-12 text-center ${t.textMuted}`}>
+              Товары не найдены
+            </div>
+          ) : (
+            <div
+              ref={tableParentRef}
+              className="overflow-auto"
+              style={{ height: 'calc(100vh - 380px)' }}
+            >
+              <div
+                style={{
+                  height: `${tableVirtualizer.getTotalSize()}px`,
+                  width: '100%',
+                  position: 'relative',
+                }}
+              >
+                {tableVirtualizer.getVirtualItems().map((virtualRow) => {
+                  const product = sortedProducts[virtualRow.index];
+                  return (
+                    <div
+                      key={product.id}
+                      className={`absolute top-0 left-0 w-full grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_1fr_100px] items-center ${t.bgCardHover} transition-colors border-b ${t.border}`}
+                      style={{
+                        height: `${ROW_HEIGHT}px`,
+                        transform: `translateY(${virtualRow.start}px)`,
+                      }}
+                    >
+                      <div className={`px-6 font-medium ${t.text}`}>
+                        <div className="truncate">{product.name}</div>
+                        {product.origin === 'import' && (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                            ИМПОРТ
+                          </span>
+                        )}
                       </div>
-                    </td>
-
-                  </tr>
-                ))}
-                {filteredProducts.length === 0 && (
-                  <tr>
-                    <td colSpan={8} className={`px-6 py-12 text-center ${t.textMuted}`}>
-                      Товары не найдены
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+                      <div className="px-6">
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium border ${product.type === ProductType.PIPE ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
+                          product.type === ProductType.PROFILE ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
+                            'bg-slate-500/10 text-slate-400 border-slate-500/20'
+                          }`}>
+                          {product.type}
+                        </span>
+                      </div>
+                      <div className={`px-6 ${t.textSecondary}`}>{product.dimensions}</div>
+                      <div className="px-6 text-slate-400">{product.steelGrade}</div>
+                      <div className={`px-6 text-right font-mono ${product.quantity <= product.minStockLevel ? t.danger : t.text}`}>
+                        {product.quantity} <span className={`text-xs ${t.textMuted}`}>{product.unit}</span>
+                      </div>
+                      <div className="px-6 text-right font-mono text-slate-400">
+                        {user?.permissions?.canViewCostPrice !== false ? (
+                          `$${(product.costPrice || 0).toFixed(2)}`
+                        ) : (
+                          <span className={`${t.textMuted} flex justify-end gap-1 items-center`}><Lock size={12} /> ***</span>
+                        )}
+                      </div>
+                      <div className={`px-6 text-right font-mono ${t.success}`}>
+                        ${product.pricePerUnit.toFixed(2)}
+                      </div>
+                      <div className="px-6 text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            onClick={() => openEditModal(product)}
+                            className={`${t.textMuted} hover:${t.accent} transition-colors p-1.5 rounded-lg ${theme === 'light' ? 'hover:bg-blue-50' : 'hover:bg-primary-400/10'}`}
+                            title="Редактировать"
+                          >
+                            <Pencil size={16} />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(product.id)}
+                            className={`${t.textMuted} hover:text-red-500 transition-colors p-1.5 rounded-lg ${theme === 'light' ? 'hover:bg-red-50' : 'hover:bg-red-400/10'}`}
+                            title="Удалить"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          
+          {/* Footer Stats */}
+          <div className={`px-6 py-3 ${t.bgPanelAlt} border-t ${t.border} text-sm ${t.textMuted}`}>
+            Всего: {sortedProducts.length} товаров
           </div>
         </div>
 
-        {/* Cards - Mobile/Tablet */}
-        <div className="lg:hidden space-y-3">
-          {displayedProducts.map((product) => (
-            <div key={product.id} className={`${t.bgCard} rounded-xl border ${t.border} p-4 space-y-3 ${t.shadow}`}>
-              <div className="flex justify-between items-start">
-                <div className="flex-1">
-                  <h3 className={`font-medium ${t.text} text-sm sm:text-base`}>{product.name}</h3>
-                  {product.origin === 'import' && (
-                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-500/10 text-purple-400 border border-purple-500/20 mt-1">
-                      ИМПОРТ
-                    </span>
-                  )}
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => openEditModal(product)}
-                    className={`${t.textMuted} hover:${t.accent} transition-colors p-2 rounded-lg ${theme === 'light' ? 'hover:bg-blue-50' : 'hover:bg-primary-400/10'}`}
-                    title="Редактировать"
-                  >
-                    <Pencil size={18} />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(product.id)}
-                    className={`${t.textMuted} hover:text-red-500 transition-colors p-2 rounded-lg ${theme === 'light' ? 'hover:bg-red-50' : 'hover:bg-red-400/10'}`}
-                    title="Удалить"
-                  >
-                    <Trash2 size={18} />
-                  </button>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3 text-xs sm:text-sm">
-                <div>
-                  <p className={`${t.textMuted} mb-1`}>Тип</p>
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium border ${product.type === ProductType.PIPE ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
-                    product.type === ProductType.PROFILE ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
-                      'bg-slate-500/10 text-slate-400 border-slate-500/20'
-                    }`}>
-                    {product.type}
-                  </span>
-                </div>
-                <div>
-                  <p className={`${t.textMuted} mb-1`}>Размеры</p>
-                  <p className={t.text}>{product.dimensions}</p>
-                </div>
-                <div>
-                  <p className={`${t.textMuted} mb-1`}>Сталь</p>
-                  <p className={t.text}>{product.steelGrade}</p>
-                </div>
-                <div>
-                  <p className={`${t.textMuted} mb-1`}>Остаток</p>
-                  <p className={`font-mono ${product.quantity <= product.minStockLevel ? 'text-red-500' : t.textSecondary}`}>
-                    {product.quantity} <span className={`text-xs ${t.textMuted}`}>{product.unit}</span>
-                  </p>
-                </div>
-                <div>
-                  <p className={`${t.textMuted} mb-1`}>Себестоимость</p>
-                  <p className={`font-mono ${t.textMuted}`}>
-                    {user?.permissions?.canViewCostPrice !== false ? (
-                      `$${(product.costPrice || 0).toFixed(2)}`
-                    ) : (
-                      <span className={`${t.textMuted} flex items-center gap-1`}><Lock size={12} /> ***</span>
-                    )}
-                  </p>
-                </div>
-
-                <div>
-                  <p className={`${t.textMuted} mb-1`}>Цена</p>
-                  <p className={`font-mono ${t.success}`}>${product.pricePerUnit.toFixed(2)}</p>
-                </div>
-              </div>
-            </div>
-          ))}
-          {filteredProducts.length === 0 && (
+        {/* Virtual Cards - Mobile/Tablet */}
+        <div className="lg:hidden">
+          {sortedProducts.length === 0 ? (
             <div className={`${t.bgCard} rounded-xl border ${t.border} p-12 text-center ${t.textMuted}`}>
               Товары не найдены
             </div>
+          ) : (
+            <>
+              <div
+                ref={mobileParentRef}
+                className="overflow-auto"
+                style={{ height: 'calc(100vh - 320px)' }}
+              >
+                <div
+                  style={{
+                    height: `${mobileVirtualizer.getTotalSize()}px`,
+                    width: '100%',
+                    position: 'relative',
+                  }}
+                >
+                  {mobileVirtualizer.getVirtualItems().map((virtualRow) => {
+                    const product = sortedProducts[virtualRow.index];
+                    return (
+                      <div
+                        key={product.id}
+                        className="absolute top-0 left-0 w-full px-1"
+                        style={{
+                          height: `${CARD_HEIGHT}px`,
+                          transform: `translateY(${virtualRow.start}px)`,
+                          paddingTop: '6px',
+                          paddingBottom: '6px',
+                        }}
+                      >
+                        <div className={`${t.bgCard} rounded-xl border ${t.border} p-4 space-y-3 ${t.shadow} h-full`}>
+                          <div className="flex justify-between items-start">
+                            <div className="flex-1 min-w-0">
+                              <h3 className={`font-medium ${t.text} text-sm sm:text-base truncate`}>{product.name}</h3>
+                              {product.origin === 'import' && (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-500/10 text-purple-400 border border-purple-500/20 mt-1">
+                                  ИМПОРТ
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex gap-1 flex-shrink-0">
+                              <button
+                                onClick={() => openEditModal(product)}
+                                className={`${t.textMuted} hover:${t.accent} transition-colors p-2 rounded-lg ${theme === 'light' ? 'hover:bg-blue-50' : 'hover:bg-primary-400/10'}`}
+                                title="Редактировать"
+                              >
+                                <Pencil size={16} />
+                              </button>
+                              <button
+                                onClick={() => handleDelete(product.id)}
+                                className={`${t.textMuted} hover:text-red-500 transition-colors p-2 rounded-lg ${theme === 'light' ? 'hover:bg-red-50' : 'hover:bg-red-400/10'}`}
+                                title="Удалить"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-3 gap-2 text-xs">
+                            <div>
+                              <p className={`${t.textMuted} mb-0.5`}>Тип</p>
+                              <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-medium border ${product.type === ProductType.PIPE ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
+                                product.type === ProductType.PROFILE ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
+                                  'bg-slate-500/10 text-slate-400 border-slate-500/20'
+                                }`}>
+                                {product.type}
+                              </span>
+                            </div>
+                            <div>
+                              <p className={`${t.textMuted} mb-0.5`}>Размеры</p>
+                              <p className={`${t.text} truncate`}>{product.dimensions}</p>
+                            </div>
+                            <div>
+                              <p className={`${t.textMuted} mb-0.5`}>Остаток</p>
+                              <p className={`font-mono ${product.quantity <= product.minStockLevel ? 'text-red-500' : t.textSecondary}`}>
+                                {product.quantity}
+                              </p>
+                            </div>
+                            <div>
+                              <p className={`${t.textMuted} mb-0.5`}>Себест.</p>
+                              <p className={`font-mono ${t.textMuted}`}>
+                                {user?.permissions?.canViewCostPrice !== false ? `$${(product.costPrice || 0).toFixed(2)}` : '***'}
+                              </p>
+                            </div>
+                            <div>
+                              <p className={`${t.textMuted} mb-0.5`}>Цена</p>
+                              <p className={`font-mono ${t.success}`}>${product.pricePerUnit.toFixed(2)}</p>
+                            </div>
+                            <div>
+                              <p className={`${t.textMuted} mb-0.5`}>Сталь</p>
+                              <p className={t.text}>{product.steelGrade}</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className={`mt-2 px-4 py-2 ${t.bgCard} border ${t.border} rounded-xl text-sm ${t.textMuted} text-center`}>
+                Всего: {sortedProducts.length} товаров
+              </div>
+            </>
           )}
         </div>
       </div>
-
-      {/* Pagination */}
-      {
-        filteredProducts.length > pageSize && (
-          <div className={`flex items-center justify-between ${t.bgCard} border ${t.border} rounded-xl px-4 py-3`}>
-            <button
-              onClick={() => setPage(p => Math.max(1, p - 1))}
-              disabled={page === 1}
-              className={`px-3 py-2 rounded-lg text-sm font-medium border ${t.borderInput} ${t.textSecondary} disabled:opacity-50 disabled:cursor-not-allowed ${t.bgCardHover} transition-colors`}
-            >
-              Назад
-            </button>
-            <div className={`text-sm ${t.textSecondary}`}>
-              Стр. {page} из {totalPages} • {filteredProducts.length} товаров
-            </div>
-            <button
-              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-              disabled={page === totalPages}
-              className={`px-3 py-2 rounded-lg text-sm font-medium border ${t.borderInput} ${t.textSecondary} disabled:opacity-50 disabled:cursor-not-allowed ${t.bgCardHover} transition-colors`}
-            >
-              Вперёд
-            </button>
-          </div>
-        )
-      }
 
       {/* Add/Edit Modal */}
       {

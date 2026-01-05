@@ -16,8 +16,14 @@ const DEFAULT_SETTINGS: AppSettings = {
     inventory: true,
     import: true,
     sales: true,
+    workflow: true,
     reports: true,
-    balance: true
+    balance: true,
+    fixedAssets: true,
+    crm: true,
+    staff: true,
+    journal: true,
+    priceList: true
   }
 };
 

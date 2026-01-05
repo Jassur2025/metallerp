@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { User, signInWithPopup, signOut, onAuthStateChanged, GoogleAuthProvider, signInWithRedirect, getRedirectResult } from 'firebase/auth';
 import { auth, googleProvider } from '../lib/firebase';
 
@@ -7,13 +7,21 @@ const logDev = (...args: unknown[]) => { if (isDev) console.log(...args); };
 const warnDev = (...args: unknown[]) => { if (isDev) console.warn(...args); };
 const errorDev = (...args: unknown[]) => { if (isDev) console.error(...args); };
 
+// Token expires in 1 hour, warn at 5 minutes before
+const TOKEN_LIFETIME_MS = 3600000; // 1 hour
+const TOKEN_WARNING_THRESHOLD_MS = 300000; // 5 minutes before expiry
+const TOKEN_CHECK_INTERVAL_MS = 60000; // Check every minute
+
 interface AuthContextType {
     user: User | null;
     loading: boolean;
     accessToken: string | null;
+    tokenExpiresAt: number | null;
+    isTokenExpiringSoon: boolean;
     signInWithGoogle: () => Promise<void>;
     logout: () => Promise<void>;
     refreshAccessToken: () => Promise<string | null>;
+    silentRefresh: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -22,6 +30,59 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
     const [accessToken, setAccessToken] = useState<string | null>(null);
+    const [tokenExpiresAt, setTokenExpiresAt] = useState<number | null>(null);
+    const [isTokenExpiringSoon, setIsTokenExpiringSoon] = useState(false);
+
+    // Save token with expiry time
+    const saveToken = useCallback((token: string) => {
+        const expiresAt = Date.now() + TOKEN_LIFETIME_MS;
+        setAccessToken(token);
+        setTokenExpiresAt(expiresAt);
+        setIsTokenExpiringSoon(false);
+        localStorage.setItem('google_access_token', token);
+        localStorage.setItem('google_access_token_time', Date.now().toString());
+        localStorage.setItem('google_access_token_expires', expiresAt.toString());
+        logDev('✅ Token saved, expires at:', new Date(expiresAt).toLocaleTimeString());
+    }, []);
+
+    // Clear token
+    const clearToken = useCallback(() => {
+        setAccessToken(null);
+        setTokenExpiresAt(null);
+        setIsTokenExpiringSoon(false);
+        localStorage.removeItem('google_access_token');
+        localStorage.removeItem('google_access_token_time');
+        localStorage.removeItem('google_access_token_expires');
+    }, []);
+
+    // Check token expiry
+    const checkTokenExpiry = useCallback(() => {
+        const expiresAt = tokenExpiresAt || parseInt(localStorage.getItem('google_access_token_expires') || '0');
+        if (!expiresAt) return;
+
+        const timeLeft = expiresAt - Date.now();
+        
+        if (timeLeft <= 0) {
+            warnDev('⚠️ Token expired!');
+            clearToken();
+            return;
+        }
+
+        if (timeLeft <= TOKEN_WARNING_THRESHOLD_MS && !isTokenExpiringSoon) {
+            warnDev(`⚠️ Token expires in ${Math.round(timeLeft / 60000)} minutes`);
+            setIsTokenExpiringSoon(true);
+        }
+    }, [tokenExpiresAt, isTokenExpiringSoon, clearToken]);
+
+    // Token expiry checker interval
+    useEffect(() => {
+        if (!accessToken) return;
+
+        const interval = setInterval(checkTokenExpiry, TOKEN_CHECK_INTERVAL_MS);
+        checkTokenExpiry(); // Check immediately
+        
+        return () => clearInterval(interval);
+    }, [accessToken, checkTokenExpiry]);
 
     useEffect(() => {
         let isProcessingRedirect = false;
@@ -53,9 +114,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     
                     if (credential?.accessToken) {
                         logDev('✅ OAuth access token получен через redirect');
-                        setAccessToken(credential.accessToken);
-                        localStorage.setItem('google_access_token', credential.accessToken);
-                        localStorage.setItem('google_access_token_time', Date.now().toString());
+                        saveToken(credential.accessToken);
                         localStorage.setItem('auth_completed', 'true');
                     } else {
                         errorDev('❌ OAuth access token не получен!');
@@ -95,32 +154,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 // Проверяем localStorage
                 const savedToken = localStorage.getItem('google_access_token');
                 const tokenTime = localStorage.getItem('google_access_token_time');
+                const savedExpiresAt = localStorage.getItem('google_access_token_expires');
                 
                 logDev('📍 Saved token exists:', !!savedToken);
                 logDev('📍 Token time:', tokenTime);
                 
-                // Токен действителен 1 час
-                const isTokenValid = savedToken && tokenTime && 
-                    (Date.now() - parseInt(tokenTime)) < 3600000;
+                // Check if token is still valid
+                const expiresAt = savedExpiresAt ? parseInt(savedExpiresAt) : (tokenTime ? parseInt(tokenTime) + TOKEN_LIFETIME_MS : 0);
+                const isTokenValid = savedToken && expiresAt > Date.now();
 
                 if (savedToken && isTokenValid) {
                     logDev('✅ OAuth access token восстановлен из localStorage');
                     setAccessToken(savedToken);
+                    setTokenExpiresAt(expiresAt);
+                    
+                    // Check if expiring soon
+                    const timeLeft = expiresAt - Date.now();
+                    if (timeLeft <= TOKEN_WARNING_THRESHOLD_MS) {
+                        setIsTokenExpiringSoon(true);
+                    }
                 } else {
                     // OAuth access token можно получить только при логине через Google
-                    // getIdToken() возвращает Firebase ID token, который НЕ работает с Google Sheets API
                     warnDev('⚠️ OAuth access token отсутствует или истек');
                     warnDev('⚠️ Требуется повторный вход через Google для получения нового access token');
-                    setAccessToken(null);
-                    localStorage.removeItem('google_access_token');
-                    localStorage.removeItem('google_access_token_time');
+                    clearToken();
                 }
             } else {
                 // Пользователь не авторизован - очищаем токен
                 logDev('📍 User not authenticated, clearing tokens');
-                setAccessToken(null);
-                localStorage.removeItem('google_access_token');
-                localStorage.removeItem('google_access_token_time');
+                clearToken();
             }
             
             logDev('📍 Setting loading to false');
@@ -132,7 +194,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             clearTimeout(loadingTimeout);
             unsubscribe();
         };
-    }, []);
+    }, [saveToken, clearToken]);
 
     const signInWithGoogle = async () => {
         try {
@@ -165,9 +227,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 const credential = GoogleAuthProvider.credentialFromResult(result);
                 
                 if (credential?.accessToken) {
-                    setAccessToken(credential.accessToken);
-                    localStorage.setItem('google_access_token', credential.accessToken);
-                    localStorage.setItem('google_access_token_time', Date.now().toString());
+                    saveToken(credential.accessToken);
                     localStorage.setItem('auth_completed', 'true');
                     logDev('✅ Вход через popup успешен');
                     logDev('✅ OAuth access token получен (начинается с:', credential.accessToken.substring(0, 5) + ')');
@@ -206,19 +266,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         errorDev('⚠️ Пользователь должен выйти и войти заново для получения нового access token');
         
         // Очищаем недействительный токен
-        setAccessToken(null);
-        localStorage.removeItem('google_access_token');
-        localStorage.removeItem('google_access_token_time');
+        clearToken();
         
         return null;
+    };
+
+    // Silent refresh - try to get new token via popup without user interaction
+    const silentRefresh = async (): Promise<void> => {
+        logDev('🔄 Attempting silent token refresh...');
+        try {
+            const result = await signInWithPopup(auth, googleProvider);
+            const credential = GoogleAuthProvider.credentialFromResult(result);
+            
+            if (credential?.accessToken) {
+                saveToken(credential.accessToken);
+                logDev('✅ Silent refresh successful');
+            }
+        } catch (error) {
+            errorDev('❌ Silent refresh failed:', error);
+            throw error;
+        }
     };
 
     const logout = async () => {
         try {
             await signOut(auth);
-            setAccessToken(null);
-            localStorage.removeItem('google_access_token');
-            localStorage.removeItem('google_access_token_time');
+            clearToken();
             localStorage.removeItem('auth_completed');
             sessionStorage.removeItem('auth_redirect_initiated');
             logDev('✅ Выход выполнен');
@@ -239,7 +312,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     return (
-        <AuthContext.Provider value={{ user, loading, accessToken, signInWithGoogle, logout, refreshAccessToken }}>
+        <AuthContext.Provider value={{ 
+            user, 
+            loading, 
+            accessToken, 
+            tokenExpiresAt,
+            isTokenExpiringSoon,
+            signInWithGoogle, 
+            logout, 
+            refreshAccessToken,
+            silentRefresh
+        }}>
             {children}
         </AuthContext.Provider>
     );

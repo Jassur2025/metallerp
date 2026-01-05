@@ -39,6 +39,10 @@ const PriceList = lazy(() => import('./components/PriceList').then(m => ({ defau
 const Payroll = lazy(() => import('./components/Payroll').then(m => ({ default: m.Payroll })));
 
 import { Login } from './components/Login';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { TokenExpiryWarning } from './components/TokenExpiryWarning';
+import { OfflineIndicator } from './components/OfflineIndicator';
+import { ConfirmProvider } from './components/ConfirmDialog';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ToastProvider, useToast } from './contexts/ToastContext';
 import { ThemeProvider } from './contexts/ThemeContext';
@@ -1163,11 +1167,19 @@ const SidebarItem = ({ icon, label, active, onClick, isOpen, onMobileClose, them
 };
 
 const App = () => (
-  <AuthProvider>
-    <ToastProvider>
-      <AppContent />
-    </ToastProvider>
-  </AuthProvider>
+  <ErrorBoundary>
+    <AuthProvider>
+      <ToastProvider>
+        <ThemeProvider>
+          <ConfirmProvider>
+            <AppContent />
+            <TokenExpiryWarning />
+            <OfflineIndicator />
+          </ConfirmProvider>
+        </ThemeProvider>
+      </ToastProvider>
+    </AuthProvider>
+  </ErrorBoundary>
 );
 
 export default App;

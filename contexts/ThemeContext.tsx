@@ -22,9 +22,12 @@ export const useTheme = () => useContext(ThemeContext);
 export const getThemeClasses = (theme: Theme) => ({
   // Backgrounds
   bg: theme === 'light' ? 'bg-[#F8F9FA]' : 'bg-slate-900',
+  bgMain: theme === 'light' ? 'bg-[#F8F9FA]' : 'bg-slate-900',
   bgCard: theme === 'light' ? 'bg-white' : 'bg-slate-800',
   bgCardHover: theme === 'light' ? 'hover:bg-slate-50' : 'hover:bg-slate-700',
+  bgHover: theme === 'light' ? 'bg-slate-100' : 'bg-slate-700',
   bgInput: theme === 'light' ? 'bg-white' : 'bg-slate-900',
+  input: theme === 'light' ? 'bg-white' : 'bg-slate-900', // alias for bgInput
   bgInputAlt: theme === 'light' ? 'bg-slate-50' : 'bg-slate-800',
   bgHeader: theme === 'light' ? 'bg-white' : 'bg-slate-800',
   bgPanel: theme === 'light' ? 'bg-white' : 'bg-slate-800',
@@ -34,6 +37,7 @@ export const getThemeClasses = (theme: Theme) => ({
   bgButtonPrimary: theme === 'light' ? 'bg-[#1A73E8] hover:bg-[#1557B0]' : 'bg-emerald-600 hover:bg-emerald-500',
   bgButtonSuccess: theme === 'light' ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-emerald-600 hover:bg-emerald-500',
   bgButtonDanger: theme === 'light' ? 'bg-red-500 hover:bg-red-600' : 'bg-red-600 hover:bg-red-500',
+  bgButtonSecondary: theme === 'light' ? 'bg-slate-200 hover:bg-slate-300 text-slate-700' : 'bg-slate-600 hover:bg-slate-500 text-white',
   
   // Stat card backgrounds (gradient backgrounds for Dashboard)
   bgStatEmerald: theme === 'light' 
@@ -56,6 +60,7 @@ export const getThemeClasses = (theme: Theme) => ({
   border: theme === 'light' ? 'border-slate-200' : 'border-slate-700',
   borderInput: theme === 'light' ? 'border-slate-300' : 'border-slate-600',
   borderCard: theme === 'light' ? 'border-slate-200' : 'border-slate-700',
+  divide: theme === 'light' ? 'divide-slate-200' : 'divide-slate-700',
   
   // Text
   text: theme === 'light' ? 'text-slate-800' : 'text-white',
@@ -107,5 +112,8 @@ export const getThemeClasses = (theme: Theme) => ({
   tabInactive: theme === 'light' 
     ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-100' 
     : 'text-slate-400 hover:text-white hover:bg-slate-700',
+  
+  // Hover effects
+  hover: theme === 'light' ? 'bg-slate-50' : 'bg-slate-700/50',
 });
 
