@@ -13,7 +13,7 @@ export function asNumber(row: Row, idx: number, fallback: number = 0): number {
     typeof v === 'number'
       ? v
       : typeof v === 'string'
-        ? Number(v.replace(/[^\d.-]/g, ''))
+        ? Number(v.replace(',', '.').replace(/[^\d.-]/g, ''))
         : NaN;
   return Number.isFinite(n) ? n : fallback;
 }
@@ -26,7 +26,7 @@ export function asOptionalString(row: Row, idx: number): string | undefined {
 export function asOptionalNumber(row: Row, idx: number): number | undefined {
   const raw = asString(row, idx, '').trim();
   if (!raw) return undefined;
-  const n = Number(raw.replace(/[^\d.-]/g, ''));
+  const n = Number(raw.replace(',', '.').replace(/[^\d.-]/g, ''));
   return Number.isFinite(n) ? n : undefined;
 }
 

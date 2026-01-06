@@ -4,7 +4,7 @@ import { Order, Transaction, Expense } from '../types';
 const num = (v: any): number => {
   if (typeof v === 'number') return isFinite(v) ? v : 0;
   if (typeof v === 'string') {
-    const p = parseFloat(v.replace(/[^\d.-]/g, ''));
+    const p = parseFloat(v.replace(',', '.').replace(/[^\d.-]/g, ''));
     return isFinite(p) ? p : 0;
   }
   return 0;
