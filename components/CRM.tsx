@@ -57,6 +57,7 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
     const [repaymentMethod, setRepaymentMethod] = useState<'cash' | 'bank' | 'card' | 'mixed'>('cash');
     const [repaymentCurrency, setRepaymentCurrency] = useState<'USD' | 'UZS'>('UZS');
     const [exchangeRate, setExchangeRate] = useState<number>(12800); // Default, should come from settings
+    const [selectedOrderForRepayment, setSelectedOrderForRepayment] = useState<string | null>(null); // ID выбранного заказа
     // Микс-оплата
     const [mixCashUZS, setMixCashUZS] = useState<number>(0);
     const [mixCashUSD, setMixCashUSD] = useState<number>(0);
@@ -111,6 +112,7 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
         setRepaymentAmount(0);
         setRepaymentMethod('cash');
         setRepaymentCurrency('UZS'); // Default to UZS
+        setSelectedOrderForRepayment(null); // Сброс выбранного заказа
         // Сброс микс-полей
         setMixCashUZS(0);
         setMixCashUSD(0);
@@ -119,66 +121,203 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
         setIsRepayModalOpen(true);
     };
 
-    const handleOpenDebtHistoryModal = (client: Client) => {
-        setSelectedClientForHistory(client);
-        setIsDebtHistoryModalOpen(true);
-    };
-
-    // Получить историю долгов клиента - заказы в долг
-    const getClientDebtHistory = useMemo(() => {
-        if (!selectedClientForHistory) return [];
+    // Получить непогашенные заказы клиента для погашения
+    const getUnpaidOrdersForClient = useMemo(() => {
+        if (!selectedClientForRepayment) return [];
         
-        const clientId = selectedClientForHistory.id;
-        const clientName = selectedClientForHistory.name.toLowerCase();
+        const clientId = selectedClientForRepayment.id;
+        const clientName = (selectedClientForRepayment.name || '').toLowerCase().trim();
+        const companyName = (selectedClientForRepayment.companyName || '').toLowerCase().trim();
         
-        type DebtOrderItem = {
-            id: string;
-            date: string;
-            items: { name: string; qty: number; price: number }[];
-            totalAmount: number;
-            amountPaid: number;
-            debtAmount: number;
-        };
+        const unpaidOrders: { id: string; date: string; totalAmount: number; amountPaid: number; debtAmount: number; items: string }[] = [];
         
-        const debtOrders: DebtOrderItem[] = [];
-        
-        // Найти все заказы в долг для этого клиента
+        // Найти заказы в долг
         orders.forEach(order => {
-            const orderClientName = (order.customerName || '').toLowerCase();
+            const orderClientName = (order.customerName || '').toLowerCase().trim();
             const matchesClient = 
                 order.clientId === clientId || 
                 orderClientName === clientName ||
-                orderClientName.includes(clientName) ||
-                clientName.includes(orderClientName);
+                (clientName && orderClientName.includes(clientName)) ||
+                (clientName && clientName.includes(orderClientName)) ||
+                (companyName && orderClientName.includes(companyName));
             
             if (matchesClient && order.paymentMethod === 'debt') {
                 const debtAmount = (order.totalAmount || 0) - (order.amountPaid || 0);
                 if (debtAmount > 0.01) {
-                    debtOrders.push({
+                    unpaidOrders.push({
                         id: order.id,
                         date: order.date,
-                        items: (order.items || []).map(it => ({
-                            name: it.productName || 'Товар',
-                            qty: it.quantity || 0,
-                            price: it.priceAtSale || 0
-                        })),
                         totalAmount: order.totalAmount || 0,
                         amountPaid: order.amountPaid || 0,
-                        debtAmount
+                        debtAmount,
+                        items: (order.items || []).map(it => it.productName).slice(0, 2).join(', ') + (order.items && order.items.length > 2 ? '...' : '')
                     });
                 }
             }
         });
         
-        // Сортировать по дате (новые сверху)
-        debtOrders.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        // Также проверить транзакции "Долг по заказу"
+        transactions.forEach(tx => {
+            const txDescription = (tx.description || '').toLowerCase();
+            const matchesClient = 
+                tx.relatedId === clientId ||
+                (clientName && txDescription.includes(clientName)) ||
+                (companyName && txDescription.includes(companyName));
+            
+            if (matchesClient && txDescription.includes('долг по заказу')) {
+                // Извлечь ID заказа из описания
+                const orderIdMatch = txDescription.match(/ord-\d+/i);
+                const orderId = orderIdMatch ? orderIdMatch[0].toUpperCase() : tx.id;
+                
+                // Проверить не добавлен ли уже этот заказ
+                const existingOrder = unpaidOrders.find(o => o.id === orderId);
+                if (!existingOrder) {
+                    // Рассчитать сколько погашено по этому заказу
+                    const repayments = transactions.filter(t => 
+                        t.description?.toLowerCase().includes(orderId.toLowerCase()) && 
+                        t.description?.toLowerCase().includes('погашение')
+                    );
+                    const totalRepaid = repayments.reduce((sum, t) => sum + (t.amount || 0), 0);
+                    const debtAmount = (tx.amount || 0) - totalRepaid;
+                    
+                    if (debtAmount > 0.01) {
+                        unpaidOrders.push({
+                            id: orderId,
+                            date: tx.date,
+                            totalAmount: tx.amount || 0,
+                            amountPaid: totalRepaid,
+                            debtAmount,
+                            items: tx.description || ''
+                        });
+                    }
+                }
+            }
+        });
         
-        return debtOrders;
-    }, [selectedClientForHistory, orders]);
+        // Сортировать по дате
+        unpaidOrders.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        
+        return unpaidOrders;
+    }, [selectedClientForRepayment, orders, transactions]);
 
-    // Общая сумма долга из заказов
+    const handleOpenDebtHistoryModal = (client: Client) => {
+        setSelectedClientForHistory(client);
+        setIsDebtHistoryModalOpen(true);
+    };
+
+    // Получить полную историю долгов клиента - заказы в долг + транзакции
+    const getClientDebtHistory = useMemo(() => {
+        if (!selectedClientForHistory) return { orders: [], transactions: [], allHistory: [] };
+        
+        const clientId = selectedClientForHistory.id;
+        const clientName = (selectedClientForHistory.name || '').toLowerCase().trim();
+        const companyName = (selectedClientForHistory.companyName || '').toLowerCase().trim();
+        
+        type HistoryItem = {
+            id: string;
+            date: string;
+            type: 'order' | 'repayment' | 'transaction';
+            description: string;
+            items?: { name: string; qty: number; price: number }[];
+            totalAmount: number;
+            amountPaid: number;
+            debtChange: number; // + добавляет долг, - уменьшает
+            balance: number;
+        };
+        
+        const allHistory: HistoryItem[] = [];
+        
+        // Найти все заказы в долг для этого клиента
+        orders.forEach(order => {
+            const orderClientName = (order.customerName || '').toLowerCase().trim();
+            const matchesClient = 
+                order.clientId === clientId || 
+                orderClientName === clientName ||
+                (clientName && orderClientName.includes(clientName)) ||
+                (clientName && clientName.includes(orderClientName)) ||
+                (companyName && orderClientName.includes(companyName)) ||
+                (companyName && companyName.includes(orderClientName));
+            
+            if (matchesClient && order.paymentMethod === 'debt') {
+                const debtAmount = (order.totalAmount || 0) - (order.amountPaid || 0);
+                allHistory.push({
+                    id: order.id,
+                    date: order.date,
+                    type: 'order',
+                    description: `Заказ #${order.id.slice(-6)}`,
+                    items: (order.items || []).map(it => ({
+                        name: it.productName || 'Товар',
+                        qty: it.quantity || 0,
+                        price: it.priceAtSale || 0
+                    })),
+                    totalAmount: order.totalAmount || 0,
+                    amountPaid: order.amountPaid || 0,
+                    debtChange: debtAmount,
+                    balance: 0
+                });
+            }
+        });
+        
+        // Найти все транзакции связанные с этим клиентом
+        transactions.forEach(tx => {
+            const txDescription = (tx.description || '').toLowerCase();
+            const matchesClient = 
+                tx.relatedId === clientId ||
+                (clientName && txDescription.includes(clientName)) ||
+                (companyName && txDescription.includes(companyName));
+            
+            if (matchesClient) {
+                // Долг по заказу - это создание долга (добавление)
+                if (txDescription.includes('долг по заказу') || txDescription.includes('debt for order')) {
+                    allHistory.push({
+                        id: tx.id,
+                        date: tx.date,
+                        type: 'order',
+                        description: tx.description || 'Долг по заказу',
+                        totalAmount: tx.amount || 0,
+                        amountPaid: 0,
+                        debtChange: tx.amount || 0, // Добавляет долг
+                        balance: 0
+                    });
+                }
+                // Погашение долга - уменьшение долга
+                else if (tx.type === 'income' && txDescription.includes('погашение')) {
+                    allHistory.push({
+                        id: tx.id,
+                        date: tx.date,
+                        type: 'repayment',
+                        description: tx.description || 'Погашение долга',
+                        totalAmount: tx.amount || 0,
+                        amountPaid: tx.amount || 0,
+                        debtChange: -(tx.amount || 0), // Уменьшает долг
+                        balance: 0
+                    });
+                }
+                // Другие транзакции связанные с клиентом
+                else if (tx.type === 'sale' || tx.type === 'income') {
+                    // Пропускаем обычные продажи, они уже в заказах
+                }
+            }
+        });
+        
+        // Сортировать по дате
+        allHistory.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        
+        // Рассчитать баланс (накопительный долг)
+        let runningBalance = 0;
+        allHistory.forEach(item => {
+            runningBalance += item.debtChange;
+            item.balance = Math.max(0, runningBalance);
+        });
+        
+        // Вернуть в обратном порядке (новые сверху)
+        return allHistory.reverse();
+    }, [selectedClientForHistory, orders, transactions]);
+
+    // Общая сумма долга из истории
     const totalDebtFromOrders = useMemo(() => {
-        return getClientDebtHistory.reduce((sum, order) => sum + order.debtAmount, 0);
+        if (!Array.isArray(getClientDebtHistory)) return 0;
+        return getClientDebtHistory.filter(h => h.type === 'order').reduce((sum, h) => sum + h.debtChange, 0);
     }, [getClientDebtHistory]);
 
     const handleSave = () => {
@@ -212,6 +351,7 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
         let amountInUSD = 0;
         const newTransactions: Transaction[] = [];
         const baseId = Date.now();
+        const orderRef = selectedOrderForRepayment ? ` (Чек #${selectedOrderForRepayment.slice(-10)})` : '';
 
         if (repaymentMethod === 'mixed') {
             // Микс-оплата: создаём транзакции для каждого способа
@@ -226,8 +366,8 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
                     currency: 'UZS',
                     exchangeRate: exchangeRate,
                     method: 'cash',
-                    description: `Погашение долга (нал UZS): ${selectedClientForRepayment.name}`,
-                    relatedId: selectedClientForRepayment.id
+                    description: `Погашение долга (нал UZS): ${selectedClientForRepayment.name}${orderRef}`,
+                    relatedId: selectedOrderForRepayment || selectedClientForRepayment.id
                 });
             }
             if (mixCashUSD > 0) {
@@ -239,8 +379,8 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
                     amount: mixCashUSD,
                     currency: 'USD',
                     method: 'cash',
-                    description: `Погашение долга (нал USD): ${selectedClientForRepayment.name}`,
-                    relatedId: selectedClientForRepayment.id
+                    description: `Погашение долга (нал USD): ${selectedClientForRepayment.name}${orderRef}`,
+                    relatedId: selectedOrderForRepayment || selectedClientForRepayment.id
                 });
             }
             if (mixCard > 0) {
@@ -254,8 +394,8 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
                     currency: 'UZS',
                     exchangeRate: exchangeRate,
                     method: 'card',
-                    description: `Погашение долга (карта): ${selectedClientForRepayment.name}`,
-                    relatedId: selectedClientForRepayment.id
+                    description: `Погашение долга (карта): ${selectedClientForRepayment.name}${orderRef}`,
+                    relatedId: selectedOrderForRepayment || selectedClientForRepayment.id
                 });
             }
             if (mixBank > 0) {
@@ -269,8 +409,8 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
                     currency: 'UZS',
                     exchangeRate: exchangeRate,
                     method: 'bank',
-                    description: `Погашение долга (перечисление): ${selectedClientForRepayment.name}`,
-                    relatedId: selectedClientForRepayment.id
+                    description: `Погашение долга (перечисление): ${selectedClientForRepayment.name}${orderRef}`,
+                    relatedId: selectedOrderForRepayment || selectedClientForRepayment.id
                 });
             }
 
@@ -297,8 +437,8 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
                 currency: repaymentCurrency,
                 exchangeRate: repaymentCurrency === 'UZS' ? exchangeRate : undefined,
                 method: repaymentMethod,
-                description: `Погашение долга: ${selectedClientForRepayment.name}`,
-                relatedId: selectedClientForRepayment.id
+                description: `Погашение долга: ${selectedClientForRepayment.name}${orderRef}`,
+                relatedId: selectedOrderForRepayment || selectedClientForRepayment.id
             });
         }
 
@@ -1057,12 +1197,58 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
                                 <p className={`text-sm ${t.textMuted} mb-1`}>Клиент</p>
                                 <p className={`text-lg font-bold ${t.text}`}>{selectedClientForRepayment.name}</p>
                                 <div className="mt-3 flex justify-between items-end">
-                                    <span className={`text-sm ${t.textMuted}`}>Текущий долг:</span>
+                                    <span className={`text-sm ${t.textMuted}`}>Общий долг:</span>
                                     <span className="text-xl font-mono font-bold text-red-500">
                                         ${selectedClientForRepayment.totalDebt?.toLocaleString()}
                                     </span>
                                 </div>
                             </div>
+
+                            {/* Выбор заказа для погашения */}
+                            {getUnpaidOrdersForClient.length > 0 && (
+                                <div className="space-y-2">
+                                    <label className={`text-sm font-medium ${t.textMuted}`}>Выберите чек для погашения</label>
+                                    <div className={`max-h-48 overflow-y-auto space-y-2 ${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-50'} p-2 rounded-lg border ${t.border}`}>
+                                        {getUnpaidOrdersForClient.map(order => (
+                                            <div
+                                                key={order.id}
+                                                onClick={() => {
+                                                    setSelectedOrderForRepayment(selectedOrderForRepayment === order.id ? null : order.id);
+                                                    if (selectedOrderForRepayment !== order.id) {
+                                                        setRepaymentAmount(order.debtAmount);
+                                                    }
+                                                }}
+                                                className={`p-3 rounded-lg border cursor-pointer transition-all ${
+                                                    selectedOrderForRepayment === order.id
+                                                        ? 'border-emerald-500 bg-emerald-500/10'
+                                                        : `${t.border} hover:border-slate-400`
+                                                }`}
+                                            >
+                                                <div className="flex justify-between items-start">
+                                                    <div>
+                                                        <div className={`text-xs ${t.textMuted}`}>
+                                                            {new Date(order.date).toLocaleDateString('ru-RU')}
+                                                        </div>
+                                                        <div className={`font-mono text-xs ${t.text}`}>#{order.id.slice(-10)}</div>
+                                                        <div className={`text-xs ${t.textMuted} truncate max-w-[180px]`}>{order.items}</div>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <div className={`text-xs ${t.textMuted}`}>Сумма: ${order.totalAmount.toLocaleString()}</div>
+                                                        <div className="text-sm font-mono font-bold text-red-500">
+                                                            Долг: ${order.debtAmount.toLocaleString()}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    {selectedOrderForRepayment && (
+                                        <div className="text-xs text-emerald-500">
+                                            ✓ Выбран чек #{selectedOrderForRepayment.slice(-10)} — долг ${getUnpaidOrdersForClient.find(o => o.id === selectedOrderForRepayment)?.debtAmount.toLocaleString()}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
 
                             <div className="space-y-2">
                                 <label className={`text-sm font-medium ${t.textMuted}`}>Способ оплаты</label>
@@ -1392,13 +1578,19 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
                             <div>
                                 <h3 className={`text-xl font-bold ${t.text} flex items-center gap-2`}>
                                     <History size={22} className="text-indigo-500" />
-                                    Откуда долг: {selectedClientForHistory.companyName || selectedClientForHistory.name}
+                                    История долга: {selectedClientForHistory.companyName || selectedClientForHistory.name}
                                 </h3>
                                 <p className={`text-sm ${t.textMuted} mt-1`}>
-                                    Заказы оформленные в долг
+                                    Полная история операций по долгу клиента
                                 </p>
                             </div>
-                            <button onClick={() => setIsDebtHistoryModalOpen(false)} className={`${t.textMuted} hover:${t.text} ml-4`}>
+                            <div className="text-right mr-4">
+                                <p className={`text-xs ${t.textMuted}`}>Текущий долг</p>
+                                <p className={`text-2xl font-mono font-bold ${(selectedClientForHistory.totalDebt || 0) > 0 ? 'text-red-500' : 'text-emerald-500'}`}>
+                                    ${(selectedClientForHistory.totalDebt || 0).toLocaleString()}
+                                </p>
+                            </div>
+                            <button onClick={() => setIsDebtHistoryModalOpen(false)} className={`${t.textMuted} hover:${t.text}`}>
                                 <Plus size={24} className="rotate-45" />
                             </button>
                         </div>
@@ -1407,83 +1599,91 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
                             {getClientDebtHistory.length === 0 ? (
                                 <div className={`text-center py-12 ${t.textMuted}`}>
                                     <History size={48} className="mx-auto mb-4 opacity-30" />
-                                    <p>Нет заказов в долг</p>
+                                    <p className="text-lg">Нет записей по долгу</p>
+                                    <p className="text-sm mt-2">
+                                        Долг в карточке: <span className="text-red-500 font-bold">${(selectedClientForHistory.totalDebt || 0).toLocaleString()}</span>
+                                    </p>
+                                    <p className="text-xs mt-4 max-w-md mx-auto">
+                                        Возможно долг был введён вручную или заказы оформлены на другое имя клиента.
+                                        Проверьте имя клиента в заказах.
+                                    </p>
                                 </div>
                             ) : (
                                 <table className="w-full text-sm">
                                     <thead className={`${t.bg} sticky top-0`}>
                                         <tr className={`border-b ${t.border}`}>
                                             <th className={`px-4 py-3 text-left ${t.textMuted} font-medium`}>Дата</th>
-                                            <th className={`px-4 py-3 text-left ${t.textMuted} font-medium`}>Заказ</th>
-                                            <th className={`px-4 py-3 text-left ${t.textMuted} font-medium`}>Товары</th>
+                                            <th className={`px-4 py-3 text-left ${t.textMuted} font-medium`}>Тип</th>
+                                            <th className={`px-4 py-3 text-left ${t.textMuted} font-medium`}>Описание</th>
                                             <th className={`px-4 py-3 text-right ${t.textMuted} font-medium`}>Сумма</th>
-                                            <th className={`px-4 py-3 text-right ${t.textMuted} font-medium`}>Оплачено</th>
-                                            <th className={`px-4 py-3 text-right ${t.textMuted} font-medium`}>Долг</th>
+                                            <th className={`px-4 py-3 text-right ${t.textMuted} font-medium`}>Изменение долга</th>
+                                            <th className={`px-4 py-3 text-right ${t.textMuted} font-medium`}>Баланс</th>
                                         </tr>
                                     </thead>
                                     <tbody className={`divide-y ${t.divide}`}>
-                                        {getClientDebtHistory.map((order) => (
-                                            <tr key={order.id} className={`hover:${t.bgHover}`}>
+                                        {getClientDebtHistory.map((item) => (
+                                            <tr key={item.id} className={`hover:${t.bgHover} ${item.type === 'repayment' ? 'bg-emerald-500/5' : item.type === 'order' ? 'bg-red-500/5' : ''}`}>
                                                 <td className={`px-4 py-3 ${t.textMuted} whitespace-nowrap`}>
-                                                    {new Date(order.date).toLocaleDateString('ru-RU')}
+                                                    {new Date(item.date).toLocaleDateString('ru-RU')}
                                                 </td>
-                                                <td className={`px-4 py-3 ${t.text} font-mono text-xs`}>
-                                                    #{order.id.slice(-8)}
+                                                <td className="px-4 py-3">
+                                                    <span className={`px-2 py-1 rounded text-xs font-bold ${
+                                                        item.type === 'order' ? 'bg-red-500/20 text-red-500' :
+                                                        item.type === 'repayment' ? 'bg-emerald-500/20 text-emerald-500' :
+                                                        'bg-blue-500/20 text-blue-500'
+                                                    }`}>
+                                                        {item.type === 'order' ? '📦 Заказ' : 
+                                                         item.type === 'repayment' ? '💰 Оплата' : 
+                                                         '📋 Транзакция'}
+                                                    </span>
                                                 </td>
                                                 <td className={`px-4 py-3 ${t.text}`}>
                                                     <div className="max-w-xs">
-                                                        {order.items.slice(0, 3).map((it, idx) => (
-                                                            <div key={idx} className="text-xs truncate">
-                                                                {it.name} × {it.qty}
-                                                            </div>
-                                                        ))}
-                                                        {order.items.length > 3 && (
-                                                            <div className={`text-xs ${t.textMuted}`}>
-                                                                +ещё {order.items.length - 3} поз.
+                                                        <div className="font-medium">{item.description}</div>
+                                                        {item.items && item.items.length > 0 && (
+                                                            <div className={`text-xs ${t.textMuted} mt-1`}>
+                                                                {item.items.slice(0, 2).map((it, idx) => (
+                                                                    <span key={idx}>{it.name} × {it.qty}{idx < Math.min(item.items!.length, 2) - 1 ? ', ' : ''}</span>
+                                                                ))}
+                                                                {item.items.length > 2 && <span> +{item.items.length - 2}</span>}
                                                             </div>
                                                         )}
                                                     </div>
                                                 </td>
                                                 <td className={`px-4 py-3 text-right font-mono ${t.text}`}>
-                                                    ${order.totalAmount.toLocaleString()}
+                                                    ${item.totalAmount.toLocaleString()}
                                                 </td>
-                                                <td className={`px-4 py-3 text-right font-mono ${order.amountPaid > 0 ? 'text-emerald-500' : t.textMuted}`}>
-                                                    ${order.amountPaid.toLocaleString()}
+                                                <td className={`px-4 py-3 text-right font-mono font-bold ${item.debtChange > 0 ? 'text-red-500' : 'text-emerald-500'}`}>
+                                                    {item.debtChange > 0 ? '+' : ''}{item.debtChange < 0 ? '-' : ''}${Math.abs(item.debtChange).toLocaleString()}
                                                 </td>
-                                                <td className="px-4 py-3 text-right font-mono font-bold text-red-500">
-                                                    ${order.debtAmount.toLocaleString()}
+                                                <td className={`px-4 py-3 text-right font-mono ${item.balance > 0 ? 'text-amber-500' : t.textMuted}`}>
+                                                    ${item.balance.toLocaleString()}
                                                 </td>
                                             </tr>
                                         ))}
                                     </tbody>
-                                    <tfoot className={`${t.bg} border-t-2 ${t.border}`}>
-                                        <tr>
-                                            <td colSpan={3} className={`px-4 py-3 font-bold ${t.text}`}>
-                                                ИТОГО ({getClientDebtHistory.length} заказов)
-                                            </td>
-                                            <td className={`px-4 py-3 text-right font-mono font-bold ${t.text}`}>
-                                                ${getClientDebtHistory.reduce((s, o) => s + o.totalAmount, 0).toLocaleString()}
-                                            </td>
-                                            <td className={`px-4 py-3 text-right font-mono font-bold text-emerald-500`}>
-                                                ${getClientDebtHistory.reduce((s, o) => s + o.amountPaid, 0).toLocaleString()}
-                                            </td>
-                                            <td className="px-4 py-3 text-right font-mono font-bold text-red-500 text-lg">
-                                                ${totalDebtFromOrders.toLocaleString()}
-                                            </td>
-                                        </tr>
-                                    </tfoot>
                                 </table>
                             )}
                         </div>
                         
                         <div className={`p-4 border-t ${t.border} flex justify-between items-center ${t.bg}`}>
                             <div className={`text-sm ${t.textMuted}`}>
-                                Долг в карточке: <span className="font-mono text-red-500 font-bold">${(selectedClientForHistory.totalDebt || 0).toLocaleString()}</span>
-                                {Math.abs((selectedClientForHistory.totalDebt || 0) - totalDebtFromOrders) > 0.01 && (
-                                    <span className="ml-2 text-amber-500">
-                                        ⚠️ Разница: ${Math.abs((selectedClientForHistory.totalDebt || 0) - totalDebtFromOrders).toLocaleString()}
-                                    </span>
-                                )}
+                                Записей: {getClientDebtHistory.length}
+                                {getClientDebtHistory.length > 0 && (() => {
+                                    const totalDebtAdded = getClientDebtHistory.filter(h => h.debtChange > 0).reduce((s, h) => s + h.debtChange, 0);
+                                    const totalRepaid = totalDebtAdded - (selectedClientForHistory?.totalDebt || 0);
+                                    const currentDebt = selectedClientForHistory?.totalDebt || 0;
+                                    return (
+                                        <>
+                                            <span className="mx-2">|</span>
+                                            Сумма чеков: <span className={`font-mono ${t.text}`}>${totalDebtAdded.toLocaleString()}</span>
+                                            <span className="mx-2">|</span>
+                                            Погашено: <span className="text-emerald-500 font-mono">${Math.max(0, totalRepaid).toLocaleString()}</span>
+                                            <span className="mx-2">|</span>
+                                            Остаток долга: <span className="text-red-500 font-mono font-bold">${currentDebt.toLocaleString()}</span>
+                                        </>
+                                    );
+                                })()}
                             </div>
                             <button
                                 onClick={() => setIsDebtHistoryModalOpen(false)}
