@@ -201,6 +201,7 @@ export interface PurchaseOverheads {
 export interface PurchaseItem {
   productId: string;
   productName: string;
+  dimensions?: string; // Размер товара
   quantity: number;
   unit: Unit;
   invoicePrice: number; // Supplier price per unit (USD)

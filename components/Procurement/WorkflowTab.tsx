@@ -30,6 +30,32 @@ export const WorkflowTab: React.FC<WorkflowTabProps> = ({
   const { theme } = useTheme();
   const t = getThemeClasses(theme);
 
+  // Расчёт скидки для заказа относительно прайс-листа
+  const getOrderDiscount = (items: OrderItem[]) => {
+    if (!Array.isArray(items) || items.length === 0) return { hasDiscount: false, totalDiscount: 0, discountPercent: 0 };
+    
+    let priceListTotal = 0;
+    let actualTotal = 0;
+    
+    items.forEach(it => {
+      const product = products.find(p => p.id === it.productId);
+      const priceListPrice = product?.pricePerUnit || it.priceAtSale;
+      priceListTotal += priceListPrice * it.quantity;
+      actualTotal += it.priceAtSale * it.quantity;
+    });
+    
+    const totalDiscount = priceListTotal - actualTotal;
+    const discountPercent = priceListTotal > 0 ? (totalDiscount / priceListTotal) * 100 : 0;
+    
+    return {
+      hasDiscount: totalDiscount > 0.01,
+      totalDiscount,
+      discountPercent,
+      priceListTotal,
+      actualTotal
+    };
+  };
+
   return (
     <div className={`flex-1 ${t.bgCard} rounded-xl border ${t.border} shadow-lg overflow-hidden flex flex-col`}>
       <div className={`p-4 border-b ${t.border} flex justify-between items-center ${t.bg}`}>
@@ -47,8 +73,9 @@ export const WorkflowTab: React.FC<WorkflowTabProps> = ({
             {workflowQueue.map((wf) => {
               const missing = getMissingItems(wf.items);
               const ready = missing.length === 0;
+              const discount = getOrderDiscount(wf.items);
               return (
-                <div key={wf.id} className={`p-5 hover:${t.bgHover} transition-colors`}>
+                <div key={wf.id} className={`p-5 hover:${t.bgHover} transition-colors ${discount.hasDiscount ? 'border-l-4 border-l-amber-500' : ''}`}>
                   <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
                     <div>
                       <div className={`${t.text} font-bold`}>{wf.customerName}</div>
@@ -57,7 +84,12 @@ export const WorkflowTab: React.FC<WorkflowTabProps> = ({
                       </div>
                       <div className={`text-xs ${t.textMuted} mt-1`}>Создал: {wf.createdBy}</div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {discount.hasDiscount && (
+                        <span className="text-[11px] font-bold px-2 py-1 rounded border bg-amber-500/20 text-amber-400 border-amber-500/30">
+                          🏷️ -{discount.discountPercent.toFixed(1)}% (${discount.totalDiscount.toFixed(2)})
+                        </span>
+                      )}
                       {ready ? (
                         <span className="text-[11px] font-bold px-2 py-1 rounded border bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
                           Всё в наличии
@@ -72,6 +104,26 @@ export const WorkflowTab: React.FC<WorkflowTabProps> = ({
                       </span>
                     </div>
                   </div>
+
+                  {/* Показываем детали скидки */}
+                  {discount.hasDiscount && (
+                    <div className={`mt-3 p-3 rounded-lg ${theme === 'light' ? 'bg-amber-50 border border-amber-200' : 'bg-amber-500/10 border border-amber-500/20'}`}>
+                      <div className="flex items-center gap-4 text-sm">
+                        <div>
+                          <span className={t.textMuted}>По прайсу: </span>
+                          <span className={`${t.textMuted} line-through font-mono`}>${discount.priceListTotal?.toFixed(2)}</span>
+                        </div>
+                        <div>
+                          <span className={t.textMuted}>Продано: </span>
+                          <span className="text-amber-400 font-mono font-bold">${discount.actualTotal?.toFixed(2)}</span>
+                        </div>
+                        <div>
+                          <span className={t.textMuted}>Скидка: </span>
+                          <span className="text-amber-400 font-mono font-bold">-${discount.totalDiscount.toFixed(2)} ({discount.discountPercent.toFixed(1)}%)</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
                     <div className={`${t.bg} border ${t.border} rounded-xl p-4`}>

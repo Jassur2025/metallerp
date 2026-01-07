@@ -28,6 +28,8 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isRepayModalOpen, setIsRepayModalOpen] = useState(false);
     const [isPhoneCheckModalOpen, setIsPhoneCheckModalOpen] = useState(false);
+    const [isDebtHistoryModalOpen, setIsDebtHistoryModalOpen] = useState(false);
+    const [selectedClientForHistory, setSelectedClientForHistory] = useState<Client | null>(null);
     const [phoneCheckResults, setPhoneCheckResults] = useState<ReturnType<typeof checkAllPhones> | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [typeFilter, setTypeFilter] = useState<'all' | 'individual' | 'legal'>('all');
@@ -116,6 +118,68 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
         setMixBank(0);
         setIsRepayModalOpen(true);
     };
+
+    const handleOpenDebtHistoryModal = (client: Client) => {
+        setSelectedClientForHistory(client);
+        setIsDebtHistoryModalOpen(true);
+    };
+
+    // Получить историю долгов клиента - заказы в долг
+    const getClientDebtHistory = useMemo(() => {
+        if (!selectedClientForHistory) return [];
+        
+        const clientId = selectedClientForHistory.id;
+        const clientName = selectedClientForHistory.name.toLowerCase();
+        
+        type DebtOrderItem = {
+            id: string;
+            date: string;
+            items: { name: string; qty: number; price: number }[];
+            totalAmount: number;
+            amountPaid: number;
+            debtAmount: number;
+        };
+        
+        const debtOrders: DebtOrderItem[] = [];
+        
+        // Найти все заказы в долг для этого клиента
+        orders.forEach(order => {
+            const orderClientName = (order.customerName || '').toLowerCase();
+            const matchesClient = 
+                order.clientId === clientId || 
+                orderClientName === clientName ||
+                orderClientName.includes(clientName) ||
+                clientName.includes(orderClientName);
+            
+            if (matchesClient && order.paymentMethod === 'debt') {
+                const debtAmount = (order.totalAmount || 0) - (order.amountPaid || 0);
+                if (debtAmount > 0.01) {
+                    debtOrders.push({
+                        id: order.id,
+                        date: order.date,
+                        items: (order.items || []).map(it => ({
+                            name: it.productName || 'Товар',
+                            qty: it.quantity || 0,
+                            price: it.priceAtSale || 0
+                        })),
+                        totalAmount: order.totalAmount || 0,
+                        amountPaid: order.amountPaid || 0,
+                        debtAmount
+                    });
+                }
+            }
+        });
+        
+        // Сортировать по дате (новые сверху)
+        debtOrders.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        
+        return debtOrders;
+    }, [selectedClientForHistory, orders]);
+
+    // Общая сумма долга из заказов
+    const totalDebtFromOrders = useMemo(() => {
+        return getClientDebtHistory.reduce((sum, order) => sum + order.debtAmount, 0);
+    }, [getClientDebtHistory]);
 
     const handleSave = () => {
         if (!formData.name || !formData.phone) {
@@ -748,6 +812,13 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
 
                                     <div className="mt-4 flex gap-2">
                                         <button
+                                            onClick={() => handleOpenDebtHistoryModal(client)}
+                                            className={`px-3 ${theme === 'dark' ? 'bg-slate-700 hover:bg-slate-600' : 'bg-slate-200 hover:bg-slate-300 text-slate-700'} py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-1`}
+                                            title="История долгов"
+                                        >
+                                            <History size={16} />
+                                        </button>
+                                        <button
                                             onClick={() => handleOpenRepayModal(client)}
                                             disabled={(client.totalDebt || 0) <= 0}
                                             className={`flex-1 ${theme === 'dark' ? 'bg-slate-700' : 'bg-slate-200 text-slate-700'} hover:bg-emerald-600 hover:text-white disabled:opacity-50 disabled:hover:bg-slate-700 text-white py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2`}
@@ -1304,6 +1375,118 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
                         <div className={`p-6 border-t ${t.border} flex justify-end gap-3`}>
                             <button
                                 onClick={() => setIsPhoneCheckModalOpen(false)}
+                                className={`px-6 py-2 ${theme === 'dark' ? 'bg-slate-700 hover:bg-slate-600' : 'bg-slate-200 hover:bg-slate-300'} ${t.text} rounded-lg font-medium transition-colors`}
+                            >
+                                Закрыть
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Debt History Modal */}
+            {isDebtHistoryModalOpen && selectedClientForHistory && (
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className={`${t.bgCard} rounded-2xl w-full max-w-4xl border ${t.border} shadow-2xl animate-scale-in max-h-[90vh] overflow-hidden flex flex-col`}>
+                        <div className={`p-6 border-b ${t.border} flex justify-between items-center flex-shrink-0`}>
+                            <div>
+                                <h3 className={`text-xl font-bold ${t.text} flex items-center gap-2`}>
+                                    <History size={22} className="text-indigo-500" />
+                                    Откуда долг: {selectedClientForHistory.companyName || selectedClientForHistory.name}
+                                </h3>
+                                <p className={`text-sm ${t.textMuted} mt-1`}>
+                                    Заказы оформленные в долг
+                                </p>
+                            </div>
+                            <button onClick={() => setIsDebtHistoryModalOpen(false)} className={`${t.textMuted} hover:${t.text} ml-4`}>
+                                <Plus size={24} className="rotate-45" />
+                            </button>
+                        </div>
+                        
+                        <div className="flex-1 overflow-y-auto custom-scrollbar">
+                            {getClientDebtHistory.length === 0 ? (
+                                <div className={`text-center py-12 ${t.textMuted}`}>
+                                    <History size={48} className="mx-auto mb-4 opacity-30" />
+                                    <p>Нет заказов в долг</p>
+                                </div>
+                            ) : (
+                                <table className="w-full text-sm">
+                                    <thead className={`${t.bg} sticky top-0`}>
+                                        <tr className={`border-b ${t.border}`}>
+                                            <th className={`px-4 py-3 text-left ${t.textMuted} font-medium`}>Дата</th>
+                                            <th className={`px-4 py-3 text-left ${t.textMuted} font-medium`}>Заказ</th>
+                                            <th className={`px-4 py-3 text-left ${t.textMuted} font-medium`}>Товары</th>
+                                            <th className={`px-4 py-3 text-right ${t.textMuted} font-medium`}>Сумма</th>
+                                            <th className={`px-4 py-3 text-right ${t.textMuted} font-medium`}>Оплачено</th>
+                                            <th className={`px-4 py-3 text-right ${t.textMuted} font-medium`}>Долг</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className={`divide-y ${t.divide}`}>
+                                        {getClientDebtHistory.map((order) => (
+                                            <tr key={order.id} className={`hover:${t.bgHover}`}>
+                                                <td className={`px-4 py-3 ${t.textMuted} whitespace-nowrap`}>
+                                                    {new Date(order.date).toLocaleDateString('ru-RU')}
+                                                </td>
+                                                <td className={`px-4 py-3 ${t.text} font-mono text-xs`}>
+                                                    #{order.id.slice(-8)}
+                                                </td>
+                                                <td className={`px-4 py-3 ${t.text}`}>
+                                                    <div className="max-w-xs">
+                                                        {order.items.slice(0, 3).map((it, idx) => (
+                                                            <div key={idx} className="text-xs truncate">
+                                                                {it.name} × {it.qty}
+                                                            </div>
+                                                        ))}
+                                                        {order.items.length > 3 && (
+                                                            <div className={`text-xs ${t.textMuted}`}>
+                                                                +ещё {order.items.length - 3} поз.
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </td>
+                                                <td className={`px-4 py-3 text-right font-mono ${t.text}`}>
+                                                    ${order.totalAmount.toLocaleString()}
+                                                </td>
+                                                <td className={`px-4 py-3 text-right font-mono ${order.amountPaid > 0 ? 'text-emerald-500' : t.textMuted}`}>
+                                                    ${order.amountPaid.toLocaleString()}
+                                                </td>
+                                                <td className="px-4 py-3 text-right font-mono font-bold text-red-500">
+                                                    ${order.debtAmount.toLocaleString()}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                    <tfoot className={`${t.bg} border-t-2 ${t.border}`}>
+                                        <tr>
+                                            <td colSpan={3} className={`px-4 py-3 font-bold ${t.text}`}>
+                                                ИТОГО ({getClientDebtHistory.length} заказов)
+                                            </td>
+                                            <td className={`px-4 py-3 text-right font-mono font-bold ${t.text}`}>
+                                                ${getClientDebtHistory.reduce((s, o) => s + o.totalAmount, 0).toLocaleString()}
+                                            </td>
+                                            <td className={`px-4 py-3 text-right font-mono font-bold text-emerald-500`}>
+                                                ${getClientDebtHistory.reduce((s, o) => s + o.amountPaid, 0).toLocaleString()}
+                                            </td>
+                                            <td className="px-4 py-3 text-right font-mono font-bold text-red-500 text-lg">
+                                                ${totalDebtFromOrders.toLocaleString()}
+                                            </td>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            )}
+                        </div>
+                        
+                        <div className={`p-4 border-t ${t.border} flex justify-between items-center ${t.bg}`}>
+                            <div className={`text-sm ${t.textMuted}`}>
+                                Долг в карточке: <span className="font-mono text-red-500 font-bold">${(selectedClientForHistory.totalDebt || 0).toLocaleString()}</span>
+                                {Math.abs((selectedClientForHistory.totalDebt || 0) - totalDebtFromOrders) > 0.01 && (
+                                    <span className="ml-2 text-amber-500">
+                                        ⚠️ Разница: ${Math.abs((selectedClientForHistory.totalDebt || 0) - totalDebtFromOrders).toLocaleString()}
+                                    </span>
+                                )}
+                            </div>
+                            <button
+                                onClick={() => setIsDebtHistoryModalOpen(false)}
                                 className={`px-6 py-2 ${theme === 'dark' ? 'bg-slate-700 hover:bg-slate-600' : 'bg-slate-200 hover:bg-slate-300'} ${t.text} rounded-lg font-medium transition-colors`}
                             >
                                 Закрыть

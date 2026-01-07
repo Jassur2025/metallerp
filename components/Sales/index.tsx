@@ -136,6 +136,32 @@ export const Sales: React.FC<SalesProps> = ({
   const toUZS = (usd: number) => Math.round(usd * exchangeRate);
   const toUSD = (uzs: number) => exchangeRate > 0 ? uzs / exchangeRate : 0;
 
+  // Расчёт скидки для заказа относительно прайс-листа
+  const getOrderDiscount = (items: OrderItem[]) => {
+    if (!Array.isArray(items) || items.length === 0) return { hasDiscount: false, totalDiscount: 0, discountPercent: 0 };
+    
+    let priceListTotal = 0;
+    let actualTotal = 0;
+    
+    items.forEach(it => {
+      const product = products.find(p => p.id === it.productId);
+      const priceListPrice = product?.pricePerUnit || it.priceAtSale;
+      priceListTotal += priceListPrice * it.quantity;
+      actualTotal += it.priceAtSale * it.quantity;
+    });
+    
+    const totalDiscount = priceListTotal - actualTotal;
+    const discountPercent = priceListTotal > 0 ? (totalDiscount / priceListTotal) * 100 : 0;
+    
+    return {
+      hasDiscount: totalDiscount > 0.01,
+      totalDiscount,
+      discountPercent,
+      priceListTotal,
+      actualTotal
+    };
+  };
+
   const workflowCashQueue = React.useMemo(() => {
     return (workflowOrders || [])
       .filter(o => o.status === 'sent_to_cash')
@@ -901,7 +927,9 @@ export const Sales: React.FC<SalesProps> = ({
                 <div className={`${t.textMuted} text-center py-10`}>Пока нет заявок из Workflow</div>
               ) : (
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                  {workflowCashQueue.map((wf: any) => (
+                  {workflowCashQueue.map((wf: any) => {
+                    const discount = getOrderDiscount(wf.items);
+                    return (
                     <div key={wf.id} className={`${t.bgPanelAlt} border ${t.border} rounded-2xl p-5`}>
                       <div className="flex justify-between items-start">
                         <div>
@@ -912,6 +940,11 @@ export const Sales: React.FC<SalesProps> = ({
                         <div className="text-right">
                           <div className="text-emerald-500 font-mono font-bold">{Number(wf.totalAmountUZS || 0).toLocaleString()} сум</div>
                           <div className={`text-xs ${t.textMuted}`}>${Number(wf.totalAmount || 0).toFixed(2)}</div>
+                          {discount.hasDiscount && (
+                            <div className="text-xs text-orange-400 font-semibold mt-1">
+                              🏷️ Скидка: {discount.discountPercent.toFixed(1)}%
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -959,7 +992,8 @@ export const Sales: React.FC<SalesProps> = ({
                         Если остатков не хватит — заявка уйдет обратно в закуп.
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

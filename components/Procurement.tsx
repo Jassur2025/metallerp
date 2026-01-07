@@ -163,7 +163,8 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                 unit: p?.unit || m.item.unit,
                 invoicePrice: 0,
                 landedCost: 0,
-                totalLineCost: 0
+                totalLineCost: 0,
+                dimensions: p?.dimensions || m.item.dimensions || ''
             } as PurchaseItem;
         }));
         toast.success('Черновик закупки создан. Укажите цены и проведите закупку.');
@@ -241,6 +242,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
         const newItem: PurchaseItem = {
             productId: product.id,
             productName: product.name,
+            dimensions: product.dimensions, // Добавляем размер
             quantity: inputQty,
             unit: product.unit,
             invoicePrice: inputPrice,
@@ -258,6 +260,32 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
 
     const removeItem = (productId: string) => {
         setCart(cart.filter(item => item.productId !== productId));
+    };
+
+    // Функции редактирования количества и цены в cart
+    const updateCartItemQty = (productId: string, qty: number) => {
+        setCart(cart.map(item => {
+            if (item.productId !== productId) return item;
+            const validQty = Math.max(0, qty);
+            return {
+                ...item,
+                quantity: validQty,
+                totalLineCost: validQty * item.invoicePrice
+            };
+        }));
+    };
+
+    const updateCartItemPrice = (productId: string, price: number) => {
+        setCart(cart.map(item => {
+            if (item.productId !== productId) return item;
+            const validPrice = Math.max(0, price);
+            return {
+                ...item,
+                invoicePrice: validPrice,
+                landedCost: validPrice,
+                totalLineCost: item.quantity * validPrice
+            };
+        }));
     };
 
     // --- Calculation Logic ---
@@ -474,6 +502,89 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
         toast.success(`Закупка проведена!`);
     };
 
+    // Функции редактирования позиций в истории закупок
+    const handleUpdatePurchaseItem = async (purchaseId: string, itemIndex: number, updates: Partial<PurchaseItem>) => {
+        const purchase = purchases.find(p => p.id === purchaseId);
+        if (!purchase) return;
+
+        const updatedItems = [...(purchase.items || [])];
+        if (itemIndex < 0 || itemIndex >= updatedItems.length) return;
+
+        // Обновить позицию
+        updatedItems[itemIndex] = { ...updatedItems[itemIndex], ...updates };
+
+        // Пересчитать итоги
+        const newTotalInvoice = updatedItems.reduce((sum, it) => sum + (it.quantity * (it.invoicePrice || 0)), 0);
+        const newTotalLanded = updatedItems.reduce((sum, it) => sum + (it.quantity * (it.landedCost || it.invoicePrice || 0)), 0);
+
+        const updatedPurchase: Purchase = {
+            ...purchase,
+            items: updatedItems,
+            totalInvoiceAmount: newTotalInvoice,
+            totalLandedAmount: newTotalLanded
+        };
+
+        const updatedPurchases = purchases.map(p => p.id === purchaseId ? updatedPurchase : p);
+        await onSavePurchases(updatedPurchases);
+
+        // Также обновить остатки товаров если изменился товар или кол-во
+        const oldItem = purchase.items?.[itemIndex];
+        if (oldItem && (oldItem.productId !== updates.productId || oldItem.quantity !== updates.quantity)) {
+            // Вернуть старое количество
+            const updatedProducts = products.map(p => {
+                if (p.id === oldItem.productId) {
+                    return { ...p, quantity: (p.quantity || 0) - (oldItem.quantity || 0) };
+                }
+                if (updates.productId && p.id === updates.productId) {
+                    return { ...p, quantity: (p.quantity || 0) + (updates.quantity || 0) };
+                }
+                return p;
+            });
+            if (onSaveProducts) {
+                await onSaveProducts(updatedProducts);
+            }
+        }
+
+        toast.success('Позиция обновлена');
+    };
+
+    const handleDeletePurchaseItem = async (purchaseId: string, itemIndex: number) => {
+        const purchase = purchases.find(p => p.id === purchaseId);
+        if (!purchase || !purchase.items) return;
+
+        const deletedItem = purchase.items[itemIndex];
+        const updatedItems = purchase.items.filter((_, idx) => idx !== itemIndex);
+
+        // Пересчитать итоги
+        const newTotalInvoice = updatedItems.reduce((sum, it) => sum + (it.quantity * (it.invoicePrice || 0)), 0);
+        const newTotalLanded = updatedItems.reduce((sum, it) => sum + (it.quantity * (it.landedCost || it.invoicePrice || 0)), 0);
+
+        const updatedPurchase: Purchase = {
+            ...purchase,
+            items: updatedItems,
+            totalInvoiceAmount: newTotalInvoice,
+            totalLandedAmount: newTotalLanded
+        };
+
+        const updatedPurchases = purchases.map(p => p.id === purchaseId ? updatedPurchase : p);
+        await onSavePurchases(updatedPurchases);
+
+        // Убрать из остатков удаленный товар
+        if (deletedItem) {
+            const updatedProducts = products.map(p => {
+                if (p.id === deletedItem.productId) {
+                    return { ...p, quantity: Math.max(0, (p.quantity || 0) - (deletedItem.quantity || 0)) };
+                }
+                return p;
+            });
+            if (onSaveProducts) {
+                await onSaveProducts(updatedProducts);
+            }
+        }
+
+        toast.success('Позиция удалена');
+    };
+
     const handleComplete = async () => {
         if (!supplierName || cart.length === 0) {
             toast.warning('Заполните данные поставщика и добавьте товары');
@@ -580,6 +691,8 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                     openNewProductModal={openNewProductModal}
                     handleAddItem={handleAddItem}
                     removeItem={removeItem}
+                    updateCartItemQty={updateCartItemQty}
+                    updateCartItemPrice={updateCartItemPrice}
                     overheads={overheads}
                     setOverheads={setOverheads}
                     totals={totals}
@@ -604,6 +717,8 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                     expandedPurchaseIds={expandedPurchaseIds}
                     togglePurchaseExpand={togglePurchaseExpand}
                     handleOpenRepayModal={handleOpenRepayModal}
+                    onUpdatePurchaseItem={handleUpdatePurchaseItem}
+                    onDeletePurchaseItem={handleDeletePurchaseItem}
                 />
             )}
 

@@ -1,6 +1,6 @@
-import React from 'react';
-import { ChevronDown, ChevronRight, History, Wallet } from 'lucide-react';
-import type { Product, Purchase, Transaction } from '../../types';
+import React, { useState } from 'react';
+import { ChevronDown, ChevronRight, History, Wallet, Edit, Save, X, Trash2 } from 'lucide-react';
+import type { Product, Purchase, Transaction, PurchaseItem } from '../../types';
 import { useTheme } from '../../contexts/ThemeContext';
 import { getThemeClasses } from '../../contexts/ThemeContext';
 
@@ -11,6 +11,9 @@ interface HistoryTabProps {
   expandedPurchaseIds: Set<string>;
   togglePurchaseExpand: (id: string) => void;
   handleOpenRepayModal: (purchase: Purchase) => void;
+  onUpdatePurchaseItem?: (purchaseId: string, itemIndex: number, updates: Partial<PurchaseItem>) => void;
+  onDeletePurchaseItem?: (purchaseId: string, itemIndex: number) => void;
+  onAddPurchaseItem?: (purchaseId: string, item: PurchaseItem) => void;
 }
 
 export const HistoryTab: React.FC<HistoryTabProps> = ({
@@ -20,11 +23,53 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({
   expandedPurchaseIds,
   togglePurchaseExpand,
   handleOpenRepayModal,
+  onUpdatePurchaseItem,
+  onDeletePurchaseItem,
+  onAddPurchaseItem,
 }) => {
   const { theme } = useTheme();
   const t = getThemeClasses(theme);
   const totalPaid = purchases.reduce((sum, p) => sum + (p.amountPaid || 0), 0);
   const totalDebt = purchases.reduce((sum, p) => sum + (Math.max(0, (p.totalInvoiceAmount || 0) - (p.amountPaid || 0))), 0);
+
+  // Editing state
+  const [editingItem, setEditingItem] = useState<{ purchaseId: string; itemIndex: number } | null>(null);
+  const [editQty, setEditQty] = useState<number>(0);
+  const [editPrice, setEditPrice] = useState<number>(0);
+  const [editProductId, setEditProductId] = useState<string>('');
+
+  const startEditItem = (purchaseId: string, itemIndex: number, item: PurchaseItem) => {
+    setEditingItem({ purchaseId, itemIndex });
+    setEditQty(item.quantity);
+    setEditPrice(item.invoicePrice || 0);
+    setEditProductId(item.productId);
+  };
+
+  const cancelEdit = () => {
+    setEditingItem(null);
+  };
+
+  const saveEdit = () => {
+    if (!editingItem || !onUpdatePurchaseItem) return;
+    const product = products.find(p => p.id === editProductId);
+    onUpdatePurchaseItem(editingItem.purchaseId, editingItem.itemIndex, {
+      productId: editProductId,
+      productName: product?.name || '',
+      quantity: editQty,
+      invoicePrice: editPrice,
+      landedCost: editPrice,
+      totalLineCost: editQty * editPrice,
+      unit: product?.unit || 'шт'
+    });
+    setEditingItem(null);
+  };
+
+  const handleDeleteItem = (purchaseId: string, itemIndex: number) => {
+    if (!onDeletePurchaseItem) return;
+    if (confirm('Удалить эту позицию из закупки?')) {
+      onDeletePurchaseItem(purchaseId, itemIndex);
+    }
+  };
 
   return (
     <div className={`flex-1 ${t.bgCard} rounded-xl border ${t.border} shadow-lg overflow-hidden flex flex-col`}>
@@ -162,12 +207,82 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({
                                     <th className="px-4 py-2 text-right">Цена закупки</th>
                                     <th className="px-4 py-2 text-right">Landed Cost</th>
                                     <th className="px-4 py-2 text-right">Сумма</th>
+                                    {onUpdatePurchaseItem && <th className="px-4 py-2 text-center w-24">Действия</th>}
                                   </tr>
                                 </thead>
                                 <tbody className={`divide-y ${t.divide}`}>
                                   {(purchase.items || []).map((item, idx) => {
                                     const prod = products.find((p) => p.id === item.productId);
                                     const dims = prod?.dimensions || '-';
+                                    const isEditing = editingItem?.purchaseId === purchase.id && editingItem?.itemIndex === idx;
+                                    
+                                    if (isEditing) {
+                                      return (
+                                        <tr key={idx} className="bg-indigo-500/10">
+                                          <td className="px-4 py-2">
+                                            <select
+                                              className={`w-full ${t.bg} border ${t.border} rounded px-2 py-1 ${t.text} text-sm`}
+                                              value={editProductId}
+                                              onChange={(e) => setEditProductId(e.target.value)}
+                                            >
+                                              {products.map(p => (
+                                                <option key={p.id} value={p.id}>{p.name} ({p.dimensions})</option>
+                                              ))}
+                                            </select>
+                                          </td>
+                                          <td className={`px-4 py-2 ${t.textMuted}`}>
+                                            {products.find(p => p.id === editProductId)?.dimensions || '-'}
+                                          </td>
+                                          <td className="px-4 py-2">
+                                            <input
+                                              type="number"
+                                              className={`w-20 ${t.bg} border ${t.border} rounded px-2 py-1 text-right ${t.text} text-sm`}
+                                              value={editQty}
+                                              onChange={(e) => setEditQty(Number(e.target.value))}
+                                              min={1}
+                                            />
+                                          </td>
+                                          <td className="px-4 py-2">
+                                            <div className="flex items-center justify-end gap-1">
+                                              <span className={t.textMuted}>$</span>
+                                              <input
+                                                type="number"
+                                                className={`w-20 ${t.bg} border ${t.border} rounded px-2 py-1 text-right ${t.text} text-sm`}
+                                                value={editPrice}
+                                                onChange={(e) => setEditPrice(Number(e.target.value))}
+                                                step={0.01}
+                                                min={0}
+                                              />
+                                            </div>
+                                          </td>
+                                          <td className={`px-4 py-2 text-right font-mono ${theme === 'dark' ? 'text-amber-400' : 'text-amber-600'}`}>
+                                            ${editPrice.toFixed(2)}
+                                          </td>
+                                          <td className={`px-4 py-2 text-right font-mono font-bold ${theme === 'dark' ? 'text-emerald-400' : 'text-emerald-600'}`}>
+                                            ${(editQty * editPrice).toFixed(2)}
+                                          </td>
+                                          <td className="px-4 py-2 text-center">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button
+                                                onClick={saveEdit}
+                                                className="p-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded"
+                                                title="Сохранить"
+                                              >
+                                                <Save size={14} />
+                                              </button>
+                                              <button
+                                                onClick={cancelEdit}
+                                                className="p-1.5 bg-slate-500 hover:bg-slate-600 text-white rounded"
+                                                title="Отмена"
+                                              >
+                                                <X size={14} />
+                                              </button>
+                                            </div>
+                                          </td>
+                                        </tr>
+                                      );
+                                    }
+                                    
                                     return (
                                       <tr key={idx} className={`hover:${t.bgHover}`}>
                                         <td className={`px-4 py-2 ${t.text} font-medium`}>{item.productName}</td>
@@ -185,12 +300,32 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({
                                         <td className={`px-4 py-2 text-right font-mono font-bold ${theme === 'dark' ? 'text-emerald-400' : 'text-emerald-600'}`}>
                                           ${(item.totalLineCost || item.quantity * (item.invoicePrice || 0)).toFixed(2)}
                                         </td>
+                                        {onUpdatePurchaseItem && (
+                                          <td className="px-4 py-2 text-center">
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button
+                                                onClick={() => startEditItem(purchase.id, idx, item)}
+                                                className={`p-1.5 ${theme === 'dark' ? 'bg-slate-700 hover:bg-slate-600' : 'bg-slate-200 hover:bg-slate-300'} rounded`}
+                                                title="Редактировать"
+                                              >
+                                                <Edit size={14} className={t.textMuted} />
+                                              </button>
+                                              <button
+                                                onClick={() => handleDeleteItem(purchase.id, idx)}
+                                                className="p-1.5 bg-red-500/20 hover:bg-red-500/40 rounded"
+                                                title="Удалить"
+                                              >
+                                                <Trash2 size={14} className="text-red-500" />
+                                              </button>
+                                            </div>
+                                          </td>
+                                        )}
                                       </tr>
                                     );
                                   })}
                                   {(!purchase.items || purchase.items.length === 0) && (
                                     <tr>
-                                      <td colSpan={6} className={`px-4 py-4 text-center ${t.textMuted}`}>
+                                      <td colSpan={onUpdatePurchaseItem ? 7 : 6} className={`px-4 py-4 text-center ${t.textMuted}`}>
                                         Нет данных о товарах
                                       </td>
                                     </tr>
@@ -208,6 +343,7 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({
                                       ${purchase.totalLandedAmount?.toFixed(2) || purchase.totalInvoiceAmount?.toFixed(2)}
                                     </td>
                                     <td className="px-4 py-2"></td>
+                                    {onUpdatePurchaseItem && <td className="px-4 py-2"></td>}
                                   </tr>
                                 </tfoot>
                               </table>

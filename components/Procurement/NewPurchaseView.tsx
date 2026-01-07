@@ -39,6 +39,8 @@ interface NewPurchaseViewProps {
   openNewProductModal: () => void;
   handleAddItem: () => void;
   removeItem: (productId: string) => void;
+  updateCartItemQty: (productId: string, qty: number) => void;
+  updateCartItemPrice: (productId: string, price: number) => void;
 
   overheads: PurchaseOverheads;
   setOverheads: (v: PurchaseOverheads) => void;
@@ -70,6 +72,8 @@ export const NewPurchaseView: React.FC<NewPurchaseViewProps> = ({
   openNewProductModal,
   handleAddItem,
   removeItem,
+  updateCartItemQty,
+  updateCartItemPrice,
   overheads,
   setOverheads,
   totals,
@@ -360,33 +364,60 @@ export const NewPurchaseView: React.FC<NewPurchaseViewProps> = ({
               </tr>
             </thead>
             <tbody className={`divide-y ${t.divide}`}>
-              {totals.itemsWithLandedCost.map((item) => (
-                <tr key={item.productId} className={`hover:${t.bgHover}`}>
-                  <td className={`px-4 py-3 font-medium ${t.text}`}>{item.productName}</td>
-                  <td className="px-4 py-3 text-right font-mono">
-                    <span className={t.text}>{item.quantity}</span> <span className={`text-xs ${t.textMuted}`}>{item.unit}</span>
-                  </td>
-                  <td className={`px-4 py-3 text-right font-mono ${t.textMuted}`}>
-                    ${item.invoicePrice.toFixed(2)}
-                  </td>
-                  {procurementType === 'import' && (
-                    <td className="px-4 py-3 text-right font-mono font-bold text-amber-400 bg-amber-500/5">
-                      ${item.landedCost.toFixed(2)}
+              {totals.itemsWithLandedCost.map((item) => {
+                const cartItem = cart.find(c => c.productId === item.productId);
+                return (
+                  <tr key={item.productId} className={`hover:${t.bgHover}`}>
+                    <td className={`px-4 py-3 font-medium ${t.text}`}>
+                      <div>{item.productName}</div>
+                      {cartItem?.dimensions && cartItem.dimensions !== '-' && cartItem.dimensions.trim() !== '' && (
+                        <span className={`text-xs ${t.textMuted}`}>({cartItem.dimensions})</span>
+                      )}
                     </td>
-                  )}
-                  <td className={`px-4 py-3 text-right font-mono ${t.text}`}>
-                    ${item.totalLineCost.toFixed(2)}
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    <button
-                      onClick={() => removeItem(item.productId)}
-                      className={`${t.textMuted} hover:text-red-400 transition-colors`}
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </td>
-                </tr>
-              ))}
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <input
+                          type="number"
+                          className={`w-16 ${t.bg} border ${t.border} rounded px-2 py-1 text-right font-mono ${t.text} focus:ring-2 focus:ring-emerald-500 outline-none text-sm`}
+                          value={item.quantity}
+                          onChange={(e) => updateCartItemQty(item.productId, Number(e.target.value))}
+                          min={1}
+                        />
+                        <span className={`text-xs ${t.textMuted}`}>{item.unit}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <span className={`text-xs ${t.textMuted}`}>$</span>
+                        <input
+                          type="number"
+                          className={`w-20 ${t.bg} border ${t.border} rounded px-2 py-1 text-right font-mono ${t.text} focus:ring-2 focus:ring-emerald-500 outline-none text-sm`}
+                          value={item.invoicePrice}
+                          onChange={(e) => updateCartItemPrice(item.productId, Number(e.target.value))}
+                          step={0.01}
+                          min={0}
+                        />
+                      </div>
+                    </td>
+                    {procurementType === 'import' && (
+                      <td className="px-4 py-3 text-right font-mono font-bold text-amber-400 bg-amber-500/5">
+                        ${item.landedCost.toFixed(2)}
+                      </td>
+                    )}
+                    <td className={`px-4 py-3 text-right font-mono ${t.text}`}>
+                      ${item.totalLineCost.toFixed(2)}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <button
+                        onClick={() => removeItem(item.productId)}
+                        className={`${t.textMuted} hover:text-red-400 transition-colors`}
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
               {cart.length === 0 && (
                 <tr>
                   <td colSpan={procurementType === 'import' ? 6 : 5} className={`px-6 py-12 text-center ${t.textMuted}`}>
