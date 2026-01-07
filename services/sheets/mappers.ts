@@ -117,6 +117,7 @@ export function mapRowToOrder(row: Row): Order {
     amountPaid: asNumber(row, 14, 0),
     paymentCurrency: pick(asString(row, 15, 'USD'), CURRENCIES, 'USD'),
     updatedAt: asOptionalString(row, 16),
+    sellerId: asOptionalString(row, 17), // Employee ID for KPI (added at end for compatibility)
   };
 }
 
@@ -139,6 +140,7 @@ export function mapOrderToRow(o: Order): unknown[] {
     o.amountPaid,
     o.paymentCurrency || 'USD',
     o.updatedAt || '',
+    o.sellerId || '', // Employee ID for KPI (added at end for compatibility)
   ];
 }
 
@@ -377,6 +379,8 @@ export function mapRowToWorkflowOrder(row: Row): WorkflowOrder {
     convertedToOrderId: asOptionalString(row, 19),
     convertedAt: asOptionalString(row, 20),
     updatedAt: asOptionalString(row, 21),
+    sellerId: asOptionalString(row, 22), // Employee ID for KPI (added at end for compatibility)
+    sellerName: asOptionalString(row, 23), // Seller name (added at end for compatibility)
   };
 }
 
@@ -404,6 +408,8 @@ export function mapWorkflowOrderToRow(o: WorkflowOrder): unknown[] {
     o.convertedToOrderId || '',
     o.convertedAt || '',
     o.updatedAt || '',
+    o.sellerId || '', // Employee ID for KPI (added at end for compatibility)
+    o.sellerName || '', // Seller name (added at end for compatibility)
   ];
 }
 

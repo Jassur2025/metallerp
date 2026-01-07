@@ -59,12 +59,14 @@ export const Workflow: React.FC<WorkflowProps> = ({
     [employees, currentUserEmail]
   );
 
-  const isSales = currentEmployee?.role === 'sales' || currentEmployee?.role === 'manager' || currentEmployee?.role === 'admin';
+  // Если пользователь авторизован но нет в списке сотрудников - даём права sales по умолчанию
+  const isSales = !currentEmployee || currentEmployee.role === 'sales' || currentEmployee.role === 'manager' || currentEmployee.role === 'admin';
   const isCashier = currentEmployee?.role === 'accountant' || currentEmployee?.role === 'manager' || currentEmployee?.role === 'admin';
 
   const [tab, setTab] = useState<'create' | 'queue' | 'cancelled'>('create');
   const [searchTerm, setSearchTerm] = useState('');
   const [editingOrder, setEditingOrder] = useState<WorkflowOrder | null>(null);
+  const [displayCurrency, setDisplayCurrency] = useState<'USD' | 'UZS'>('USD'); // Валюта отображения в корзине
 
   // Create form
   const [cart, setCart] = useState<OrderItem[]>([]);
@@ -168,6 +170,8 @@ export const Workflow: React.FC<WorkflowProps> = ({
       customerName: customerName.trim(),
       customerPhone: customerPhone.trim() || undefined,
       createdBy: currentEmployee?.name || currentEmployee?.email || currentUserEmail || 'sales',
+      sellerId: currentEmployee?.id, // ID продавца для KPI
+      sellerName: currentEmployee?.name || currentUserEmail || 'sales', // Имя продавца
       items: cart,
       subtotalAmount: subtotalUSD,
       vatRateSnapshot: settings.vatRate,
@@ -223,7 +227,8 @@ export const Workflow: React.FC<WorkflowProps> = ({
       id: `ORD-${Date.now()}`,
       date: new Date().toISOString(),
       customerName: wf.customerName,
-      sellerName: typeof wf.createdBy === 'string' ? wf.createdBy : 'Sales',
+      sellerId: wf.sellerId, // ID продавца для KPI
+      sellerName: wf.sellerName || wf.createdBy || 'Sales',
       items: wf.items,
       subtotalAmount: wf.subtotalAmount,
       vatRateSnapshot: wf.vatRateSnapshot,
@@ -353,12 +358,15 @@ export const Workflow: React.FC<WorkflowProps> = ({
     const finalCurrency: Currency | undefined =
       paymentMethod === 'cash' ? paymentCurrency : paymentMethod === 'debt' ? 'USD' : 'UZS';
 
-    // Обновляем существующий заказ
+    // Обновляем существующий заказ (сохраняем оригинального продавца)
     const updatedWf: WorkflowOrder = {
       ...editingOrder,
       date: new Date().toISOString(),
       customerName: customerName.trim(),
       customerPhone: customerPhone.trim() || undefined,
+      // Сохраняем оригинального продавца или ставим текущего если не было
+      sellerId: editingOrder.sellerId || currentEmployee?.id,
+      sellerName: editingOrder.sellerName || currentEmployee?.name || currentUserEmail || 'sales',
       items: cart,
       subtotalAmount: subtotalUSD,
       vatRateSnapshot: settings.vatRate,
@@ -551,8 +559,23 @@ export const Workflow: React.FC<WorkflowProps> = ({
 
           {/* Cart - 1 column */}
           <div className={`${t.bgCard} border ${t.border} rounded-xl overflow-hidden flex flex-col min-h-0 ${t.shadow}`} style={{ maxHeight: 'calc(100vh - 160px)' }}>
-            <div className={`p-3 border-b ${t.border} ${t.bgPanelAlt} flex-shrink-0`}>
+            <div className={`p-3 border-b ${t.border} ${t.bgPanelAlt} flex-shrink-0 flex items-center justify-between`}>
               <div className={`${t.text} font-bold text-sm`}>Заявка ({cart.length})</div>
+              {/* Переключатель валюты отображения */}
+              <div className="flex gap-0.5">
+                <button
+                  onClick={() => setDisplayCurrency('USD')}
+                  className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${displayCurrency === 'USD' ? 'bg-emerald-500 text-white' : `${t.bgInput} ${t.textMuted}`}`}
+                >
+                  $
+                </button>
+                <button
+                  onClick={() => setDisplayCurrency('UZS')}
+                  className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${displayCurrency === 'UZS' ? 'bg-blue-500 text-white' : `${t.bgInput} ${t.textMuted}`}`}
+                >
+                  сум
+                </button>
+              </div>
             </div>
 
             <div className={`p-3 space-y-2 flex-shrink-0 border-b ${t.border}`}>
@@ -609,42 +632,50 @@ export const Workflow: React.FC<WorkflowProps> = ({
               {cart.length === 0 ? (
                 <div className={`${t.textMuted} text-center py-4 text-sm`}>Корзина пуста</div>
               ) : cart.map(it => (
-                <div key={it.productId} className={`${t.bgPanelAlt} border ${t.border} rounded-lg p-2`}>
-                  <div className="flex justify-between items-start">
-                    <div className="flex-1 min-w-0">
-                      <div className={`${t.text} text-xs font-medium truncate`}>{it.productName}</div>
+                <div key={it.productId} className={`${t.bgPanelAlt} border ${t.border} rounded-lg px-2 py-1.5`}>
+                  <div className="flex items-center gap-2">
+                    {/* Название и размеры слева */}
+                    <div className="min-w-0 w-16 flex-shrink-0">
+                      <div className={`${t.text} text-[11px] font-medium truncate`}>{it.productName}</div>
                       {it.dimensions && it.dimensions !== '-' && (
-                        <div className={`text-[10px] ${t.textMuted}`}>{it.dimensions}</div>
+                        <div className={`text-[9px] ${t.textMuted} truncate`}>{it.dimensions}</div>
                       )}
                     </div>
-                    <button onClick={() => removeItem(it.productId)} className={`${t.textMuted} hover:text-red-500 ml-1`}>
+                    {/* Кол-во, Цена, Сумма в одну строку */}
+                    <div className="flex items-center gap-1 flex-1">
+                      <div className="flex-1">
+                        <div className={`text-[8px] ${t.textMuted}`}>Кол-во</div>
+                        <input
+                          type="number"
+                          className={`w-full ${t.bgInput} border ${t.borderInput} rounded px-1 py-0.5 ${t.text} font-mono text-[11px]`}
+                          value={it.quantity}
+                          onChange={(e) => updateQty(it.productId, Number(e.target.value))}
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <div className={`text-[8px] ${t.textMuted}`}>Цена {displayCurrency === 'USD' ? '$' : 'сум'}</div>
+                        <input
+                          type="number"
+                          step={displayCurrency === 'USD' ? '0.01' : '100'}
+                          className={`w-full ${t.bgInput} border ${t.borderInput} rounded px-1 py-0.5 ${t.text} font-mono text-[11px]`}
+                          value={displayCurrency === 'USD' ? it.priceAtSale : toUZS(it.priceAtSale)}
+                          onChange={(e) => {
+                            const val = Number(e.target.value);
+                            updatePrice(it.productId, displayCurrency === 'USD' ? val : val / exchangeRate);
+                          }}
+                        />
+                      </div>
+                      <div className="w-16 text-right">
+                        <div className={`text-[8px] ${t.textMuted}`}>Сумма</div>
+                        <div className={`${t.success} font-mono font-bold text-[11px]`}>
+                          {displayCurrency === 'USD' ? `$${it.total.toFixed(2)}` : `${toUZS(it.total).toLocaleString()}`}
+                        </div>
+                      </div>
+                    </div>
+                    {/* Кнопка удаления */}
+                    <button onClick={() => removeItem(it.productId)} className={`${t.textMuted} hover:text-red-500 flex-shrink-0`}>
                       <Trash2 size={12} />
                     </button>
-                  </div>
-                  <div className="grid grid-cols-3 gap-1 mt-1">
-                    <div>
-                      <div className={`text-[9px] ${t.textMuted} mb-0.5`}>Кол-во</div>
-                      <input
-                        type="number"
-                        className={`w-full ${t.bgInput} border ${t.borderInput} rounded px-1 py-0.5 ${t.text} font-mono text-xs`}
-                        value={it.quantity}
-                        onChange={(e) => updateQty(it.productId, Number(e.target.value))}
-                      />
-                    </div>
-                    <div>
-                      <div className={`text-[9px] ${t.textMuted} mb-0.5`}>Цена $</div>
-                      <input
-                        type="number"
-                        step="0.01"
-                        className={`w-full ${t.bgInput} border ${t.borderInput} rounded px-1 py-0.5 ${t.text} font-mono text-xs`}
-                        value={it.priceAtSale}
-                        onChange={(e) => updatePrice(it.productId, Number(e.target.value))}
-                      />
-                    </div>
-                    <div>
-                      <div className={`text-[9px] ${t.textMuted} mb-0.5`}>Сумма</div>
-                      <div className={`${t.success} font-mono font-bold text-xs py-0.5`}>${it.total.toFixed(2)}</div>
-                    </div>
                   </div>
                 </div>
               ))}
@@ -652,14 +683,22 @@ export const Workflow: React.FC<WorkflowProps> = ({
 
             <div className={`p-3 border-t ${t.border} ${t.bgPanelAlt} space-y-1 flex-shrink-0`}>
               <div className={`flex justify-between text-xs ${t.textSecondary}`}>
-                <span>Подытог</span><span className="font-mono">${subtotalUSD.toFixed(2)}</span>
+                <span>Подытог</span>
+                <span className="font-mono">
+                  {displayCurrency === 'USD' ? `$${subtotalUSD.toFixed(2)}` : `${toUZS(subtotalUSD).toLocaleString()} сум`}
+                </span>
               </div>
               <div className={`flex justify-between text-xs ${t.warning}`}>
-                <span>НДС ({settings.vatRate}%)</span><span className="font-mono">+${vatAmountUSD.toFixed(2)}</span>
+                <span>НДС ({settings.vatRate}%)</span>
+                <span className="font-mono">
+                  +{displayCurrency === 'USD' ? `$${vatAmountUSD.toFixed(2)}` : `${toUZS(vatAmountUSD).toLocaleString()} сум`}
+                </span>
               </div>
               <div className={`flex justify-between font-bold ${t.text} text-sm`}>
                 <span>ИТОГО</span>
-                <span className="font-mono">{totalUZS.toLocaleString()} сум</span>
+                <span className="font-mono">
+                  {displayCurrency === 'USD' ? `$${totalUSD.toFixed(2)}` : `${totalUZS.toLocaleString()} сум`}
+                </span>
               </div>
               {editingOrder ? (
                 <button
@@ -704,7 +743,7 @@ export const Workflow: React.FC<WorkflowProps> = ({
                 </div>
 
                 <div className="mt-2 space-y-0.5 text-xs">
-                  {wf.items.slice(0, 3).map((it, idx) => (
+                  {(Array.isArray(wf.items) ? wf.items : []).slice(0, 3).map((it, idx) => (
                     <div key={idx} className={`flex justify-between ${t.textSecondary}`}>
                       <span className="truncate max-w-[160px]">
                         {it.productName}
@@ -713,7 +752,7 @@ export const Workflow: React.FC<WorkflowProps> = ({
                       <span className={`font-mono ${t.textMuted} text-[10px]`}>{toUZS(it.total).toLocaleString()}</span>
                     </div>
                   ))}
-                  {wf.items.length > 3 && <div className={`text-[10px] ${t.textMuted}`}>+ ещё {wf.items.length - 3}</div>}
+                  {Array.isArray(wf.items) && wf.items.length > 3 && <div className={`text-[10px] ${t.textMuted}`}>+ ещё {wf.items.length - 3}</div>}
                 </div>
 
                 <div className="mt-2 flex items-center justify-between">
@@ -767,7 +806,7 @@ export const Workflow: React.FC<WorkflowProps> = ({
                 </div>
 
                 <div className="mt-2 space-y-0.5 text-xs">
-                  {wf.items.slice(0, 3).map((it, idx) => (
+                  {(Array.isArray(wf.items) ? wf.items : []).slice(0, 3).map((it, idx) => (
                     <div key={idx} className={`flex justify-between ${t.textSecondary}`}>
                       <span className="truncate max-w-[160px]">
                         {it.productName} × {it.quantity}
@@ -775,7 +814,7 @@ export const Workflow: React.FC<WorkflowProps> = ({
                       <span className={`font-mono ${t.textMuted} text-[10px]`}>{toUZS(it.total).toLocaleString()}</span>
                     </div>
                   ))}
-                  {wf.items.length > 3 && <div className={`text-[10px] ${t.textMuted}`}>+ ещё {wf.items.length - 3}</div>}
+                  {Array.isArray(wf.items) && wf.items.length > 3 && <div className={`text-[10px] ${t.textMuted}`}>+ ещё {wf.items.length - 3}</div>}
                 </div>
 
                 <div className={`mt-2 font-mono font-bold ${t.textMuted} line-through text-sm`}>{wf.totalAmountUZS.toLocaleString()} сум</div>

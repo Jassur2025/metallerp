@@ -193,7 +193,8 @@ export const Sales: React.FC<SalesProps> = ({
       id: `ORD-${Date.now()}`,
       date: new Date().toISOString(),
       customerName: wf.customerName,
-      sellerName: wf.createdBy || 'Sales',
+      sellerId: wf.sellerId, // Employee ID for KPI
+      sellerName: wf.sellerName || wf.createdBy || 'Sales',
       items: wf.items,
       subtotalAmount: wf.subtotalAmount,
       vatRateSnapshot: wf.vatRateSnapshot,
@@ -505,8 +506,13 @@ export const Sales: React.FC<SalesProps> = ({
     const paymentStatus = customStatus || (isPaid ? 'paid' : (cashUSD + cashUZS + cardUZS + bankUZS === 0 ? 'unpaid' : 'partial'));
     const totalPaidUSD = cashUSD + (cashUZS / exchangeRate) + (cardUZS / exchangeRate) + (bankUZS / exchangeRate);
 
+    // Find seller employee by name for KPI
+    const sellerEmployee = employees.find(e => e.name?.toLowerCase() === (sellerName || '').toLowerCase());
+
     const newOrder: Order = {
-      id: `ORD-${Date.now()}`, date: new Date().toISOString(), customerName, sellerName: sellerName || 'Администратор',
+      id: `ORD-${Date.now()}`, date: new Date().toISOString(), customerName,
+      sellerId: sellerEmployee?.id || currentEmployee?.id, // Employee ID for KPI
+      sellerName: sellerName || currentEmployee?.name || 'Администратор',
       items: [...cart], subtotalAmount: subtotalUSD, vatRateSnapshot: settings.vatRate, vatAmount: vatAmountUSD,
       totalAmount: totalAmountUSD, exchangeRate, totalAmountUZS, status: 'completed', paymentMethod: method, paymentStatus, amountPaid: totalPaidUSD,
       paymentCurrency: method === 'cash' ? (paymentCurrency || 'USD') : 'USD' // Fallback

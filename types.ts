@@ -111,6 +111,7 @@ export interface Order {
   id: string;
   date: string;
   customerName: string;
+  sellerId?: string; // Employee ID for KPI calculation
   sellerName: string; // Added: Who made the sale
   items: OrderItem[];
 
@@ -139,6 +140,8 @@ export interface WorkflowOrder {
   customerName: string;
   customerPhone?: string;
   createdBy: string; // Employee name/email who created the order
+  sellerId?: string; // Employee ID for KPI calculation
+  sellerName?: string; // Seller name for display
   items: OrderItem[];
 
   // Financials

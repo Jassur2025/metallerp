@@ -52,9 +52,14 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
 
     // Repayment State
     const [repaymentAmount, setRepaymentAmount] = useState<number>(0);
-    const [repaymentMethod, setRepaymentMethod] = useState<'cash' | 'bank' | 'card'>('cash');
+    const [repaymentMethod, setRepaymentMethod] = useState<'cash' | 'bank' | 'card' | 'mixed'>('cash');
     const [repaymentCurrency, setRepaymentCurrency] = useState<'USD' | 'UZS'>('UZS');
     const [exchangeRate, setExchangeRate] = useState<number>(12800); // Default, should come from settings
+    // Микс-оплата
+    const [mixCashUZS, setMixCashUZS] = useState<number>(0);
+    const [mixCashUSD, setMixCashUSD] = useState<number>(0);
+    const [mixCard, setMixCard] = useState<number>(0);
+    const [mixBank, setMixBank] = useState<number>(0);
 
     // Form State
     const [formData, setFormData] = useState<Partial<Client>>({
@@ -104,6 +109,11 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
         setRepaymentAmount(0);
         setRepaymentMethod('cash');
         setRepaymentCurrency('UZS'); // Default to UZS
+        // Сброс микс-полей
+        setMixCashUZS(0);
+        setMixCashUSD(0);
+        setMixCard(0);
+        setMixBank(0);
         setIsRepayModalOpen(true);
     };
 
@@ -133,28 +143,103 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
     };
 
     const handleRepayDebt = () => {
-        if (!selectedClientForRepayment || repaymentAmount <= 0) return;
+        if (!selectedClientForRepayment) return;
 
-        // Calculate amount in USD to subtract from debt
-        let amountInUSD = repaymentAmount;
-        if (repaymentCurrency === 'UZS' && exchangeRate > 0) {
-            amountInUSD = repaymentAmount / exchangeRate;
+        let amountInUSD = 0;
+        const newTransactions: Transaction[] = [];
+        const baseId = Date.now();
+
+        if (repaymentMethod === 'mixed') {
+            // Микс-оплата: создаём транзакции для каждого способа
+            if (mixCashUZS > 0) {
+                const usd = mixCashUZS / exchangeRate;
+                amountInUSD += usd;
+                newTransactions.push({
+                    id: `TRX-${baseId}-cash-uzs`,
+                    date: new Date().toISOString(),
+                    type: 'client_payment',
+                    amount: mixCashUZS,
+                    currency: 'UZS',
+                    exchangeRate: exchangeRate,
+                    method: 'cash',
+                    description: `Погашение долга (нал UZS): ${selectedClientForRepayment.name}`,
+                    relatedId: selectedClientForRepayment.id
+                });
+            }
+            if (mixCashUSD > 0) {
+                amountInUSD += mixCashUSD;
+                newTransactions.push({
+                    id: `TRX-${baseId}-cash-usd`,
+                    date: new Date().toISOString(),
+                    type: 'client_payment',
+                    amount: mixCashUSD,
+                    currency: 'USD',
+                    method: 'cash',
+                    description: `Погашение долга (нал USD): ${selectedClientForRepayment.name}`,
+                    relatedId: selectedClientForRepayment.id
+                });
+            }
+            if (mixCard > 0) {
+                const usd = mixCard / exchangeRate;
+                amountInUSD += usd;
+                newTransactions.push({
+                    id: `TRX-${baseId}-card`,
+                    date: new Date().toISOString(),
+                    type: 'client_payment',
+                    amount: mixCard,
+                    currency: 'UZS',
+                    exchangeRate: exchangeRate,
+                    method: 'card',
+                    description: `Погашение долга (карта): ${selectedClientForRepayment.name}`,
+                    relatedId: selectedClientForRepayment.id
+                });
+            }
+            if (mixBank > 0) {
+                const usd = mixBank / exchangeRate;
+                amountInUSD += usd;
+                newTransactions.push({
+                    id: `TRX-${baseId}-bank`,
+                    date: new Date().toISOString(),
+                    type: 'client_payment',
+                    amount: mixBank,
+                    currency: 'UZS',
+                    exchangeRate: exchangeRate,
+                    method: 'bank',
+                    description: `Погашение долга (перечисление): ${selectedClientForRepayment.name}`,
+                    relatedId: selectedClientForRepayment.id
+                });
+            }
+
+            if (newTransactions.length === 0) {
+                toast.warning('Введите сумму хотя бы одним способом');
+                return;
+            }
+        } else {
+            // Одиночный способ оплаты
+            if (repaymentAmount <= 0) {
+                toast.warning('Введите сумму погашения');
+                return;
+            }
+            amountInUSD = repaymentAmount;
+            if (repaymentCurrency === 'UZS' && exchangeRate > 0) {
+                amountInUSD = repaymentAmount / exchangeRate;
+            }
+
+            newTransactions.push({
+                id: `TRX-${baseId}`,
+                date: new Date().toISOString(),
+                type: 'client_payment',
+                amount: repaymentAmount,
+                currency: repaymentCurrency,
+                exchangeRate: repaymentCurrency === 'UZS' ? exchangeRate : undefined,
+                method: repaymentMethod,
+                description: `Погашение долга: ${selectedClientForRepayment.name}`,
+                relatedId: selectedClientForRepayment.id
+            });
         }
 
-        // 1. Create Transaction
-        const newTransaction: Transaction = {
-            id: `TRX-${Date.now()}`,
-            date: new Date().toISOString(),
-            type: 'client_payment',
-            amount: repaymentAmount,
-            currency: repaymentCurrency,
-            exchangeRate: repaymentCurrency === 'UZS' ? exchangeRate : undefined,
-            method: repaymentMethod,
-            description: `Погашение долга: ${selectedClientForRepayment.name}`,
-            relatedId: selectedClientForRepayment.id
-        };
-
-        const updatedTransactions = [...transactions, newTransaction];
+        // Сохраняем все транзакции
+        const updatedTransactions = [...transactions, ...newTransactions];
         setTransactions(updatedTransactions);
         if (onSaveTransactions) {
             onSaveTransactions(updatedTransactions);
@@ -887,8 +972,8 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
             {/* Repayment Modal */}
             {isRepayModalOpen && selectedClientForRepayment && (
                 <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className={`${t.bgCard} rounded-2xl w-full max-w-sm border ${t.border} shadow-2xl animate-scale-in`}>
-                        <div className={`p-6 border-b ${t.border} flex justify-between items-center`}>
+                    <div className={`${t.bgCard} rounded-2xl w-full max-w-md border ${t.border} shadow-2xl animate-scale-in max-h-[90vh] overflow-y-auto`}>
+                        <div className={`p-6 border-b ${t.border} flex justify-between items-center sticky top-0 ${t.bgCard} z-10`}>
                             <h3 className={`text-xl font-bold ${t.text} flex items-center gap-2`}>
                                 <Wallet className="text-emerald-500" /> Погашение долга
                             </h3>
@@ -896,7 +981,7 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
                                 <Plus size={24} className="rotate-45" />
                             </button>
                         </div>
-                        <div className="p-6 space-y-6">
+                        <div className="p-6 space-y-4">
                             <div className={`${theme === 'dark' ? 'bg-slate-900' : 'bg-slate-100'} p-4 rounded-xl border ${t.border}`}>
                                 <p className={`text-sm ${t.textMuted} mb-1`}>Клиент</p>
                                 <p className={`text-lg font-bold ${t.text}`}>{selectedClientForRepayment.name}</p>
@@ -910,7 +995,7 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
 
                             <div className="space-y-2">
                                 <label className={`text-sm font-medium ${t.textMuted}`}>Способ оплаты</label>
-                                <div className="grid grid-cols-3 gap-2">
+                                <div className="grid grid-cols-4 gap-2">
                                     <button
                                         onClick={() => {
                                             setRepaymentMethod('cash');
@@ -918,7 +1003,7 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
                                         }}
                                         className={`py-2 rounded-lg text-xs font-medium border transition-all ${repaymentMethod === 'cash' ? 'bg-emerald-500/20 border-emerald-500 text-emerald-500' : `${t.bgCard} ${t.border} ${t.textMuted} hover:${t.text}`}`}
                                     >
-                                        Наличные
+                                        Нал
                                     </button>
                                     <button
                                         onClick={() => {
@@ -927,7 +1012,7 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
                                         }}
                                         className={`py-2 rounded-lg text-xs font-medium border transition-all ${repaymentMethod === 'bank' ? 'bg-purple-500/20 border-purple-500 text-purple-500' : `${t.bgCard} ${t.border} ${t.textMuted} hover:${t.text}`}`}
                                     >
-                                        Перечисление
+                                        Банк
                                     </button>
                                     <button
                                         onClick={() => {
@@ -938,76 +1023,148 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
                                     >
                                         Карта
                                     </button>
+                                    <button
+                                        onClick={() => setRepaymentMethod('mixed')}
+                                        className={`py-2 rounded-lg text-xs font-medium border transition-all ${repaymentMethod === 'mixed' ? 'bg-amber-500/20 border-amber-500 text-amber-500' : `${t.bgCard} ${t.border} ${t.textMuted} hover:${t.text}`}`}
+                                    >
+                                        Микс
+                                    </button>
                                 </div>
                             </div>
 
-                            {/* Currency Selector (Only for Cash) */}
-                            {repaymentMethod === 'cash' && (
-                                <div className="space-y-2">
-                                    <label className={`text-sm font-medium ${t.textMuted}`}>Валюта</label>
-                                    <div className={`flex ${theme === 'dark' ? 'bg-slate-900' : 'bg-slate-100'} rounded-lg p-1 border ${t.border}`}>
-                                        <button
-                                            onClick={() => setRepaymentCurrency('UZS')}
-                                            className={`flex-1 py-1.5 rounded text-xs font-medium transition-all ${repaymentCurrency === 'UZS' ? 'bg-slate-700 text-white' : `${t.textMuted} hover:${t.text}`}`}
-                                        >
-                                            UZS (Сумы)
-                                        </button>
-                                        <button
-                                            onClick={() => setRepaymentCurrency('USD')}
-                                            className={`flex-1 py-1.5 rounded text-xs font-medium transition-all ${repaymentCurrency === 'USD' ? 'bg-slate-700 text-white' : `${t.textMuted} hover:${t.text}`}`}
-                                        >
-                                            USD (Доллары)
-                                        </button>
+                            {/* Курс обмена - всегда показываем */}
+                            <div className="space-y-2">
+                                <label className={`text-sm font-medium ${t.textMuted}`}>Курс обмена (1 USD = ? UZS)</label>
+                                <input
+                                    type="number"
+                                    className={`w-full ${t.input} border ${t.border} rounded-lg px-4 py-2 ${t.text} font-mono focus:ring-2 focus:ring-emerald-500 outline-none`}
+                                    value={exchangeRate}
+                                    onChange={e => setExchangeRate(Number(e.target.value))}
+                                />
+                            </div>
+
+                            {/* Микс-оплата */}
+                            {repaymentMethod === 'mixed' ? (
+                                <div className="space-y-3">
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div className="space-y-1">
+                                            <label className={`text-xs font-medium ${t.textMuted}`}>💵 Нал (сум)</label>
+                                            <input
+                                                type="number"
+                                                className={`w-full ${t.input} border ${t.border} rounded-lg px-3 py-2 ${t.text} font-mono text-sm focus:ring-2 focus:ring-emerald-500 outline-none`}
+                                                value={mixCashUZS || ''}
+                                                onChange={e => setMixCashUZS(Number(e.target.value))}
+                                                placeholder="0"
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className={`text-xs font-medium ${t.textMuted}`}>💵 Нал ($)</label>
+                                            <input
+                                                type="number"
+                                                className={`w-full ${t.input} border ${t.border} rounded-lg px-3 py-2 ${t.text} font-mono text-sm focus:ring-2 focus:ring-emerald-500 outline-none`}
+                                                value={mixCashUSD || ''}
+                                                onChange={e => setMixCashUSD(Number(e.target.value))}
+                                                placeholder="0"
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className={`text-xs font-medium ${t.textMuted}`}>💳 Карта (сум)</label>
+                                            <input
+                                                type="number"
+                                                className={`w-full ${t.input} border ${t.border} rounded-lg px-3 py-2 ${t.text} font-mono text-sm focus:ring-2 focus:ring-blue-500 outline-none`}
+                                                value={mixCard || ''}
+                                                onChange={e => setMixCard(Number(e.target.value))}
+                                                placeholder="0"
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className={`text-xs font-medium ${t.textMuted}`}>🏦 Перечисл. (сум)</label>
+                                            <input
+                                                type="number"
+                                                className={`w-full ${t.input} border ${t.border} rounded-lg px-3 py-2 ${t.text} font-mono text-sm focus:ring-2 focus:ring-purple-500 outline-none`}
+                                                value={mixBank || ''}
+                                                onChange={e => setMixBank(Number(e.target.value))}
+                                                placeholder="0"
+                                            />
+                                        </div>
+                                    </div>
+                                    
+                                    {/* Итоги микс-оплаты */}
+                                    <div className={`${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-100'} p-3 rounded-lg border ${t.border}`}>
+                                        <div className="flex justify-between text-sm mb-1">
+                                            <span className={`${t.textMuted}`}>Итого в USD:</span>
+                                            <span className={`${t.success} font-mono font-bold`}>
+                                                ${((mixCashUZS / exchangeRate) + mixCashUSD + (mixCard / exchangeRate) + (mixBank / exchangeRate)).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                            </span>
+                                        </div>
+                                        <div className="flex justify-between text-sm">
+                                            <span className={`${t.textMuted}`}>Остаток долга:</span>
+                                            <span className={`${t.text} font-mono opacity-80`}>
+                                                ${Math.max(0, (selectedClientForRepayment.totalDebt || 0) - ((mixCashUZS / exchangeRate) + mixCashUSD + (mixCard / exchangeRate) + (mixBank / exchangeRate))).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                            </span>
+                                        </div>
                                     </div>
                                 </div>
+                            ) : (
+                                <>
+                                    {/* Currency Selector (Only for Cash) */}
+                                    {repaymentMethod === 'cash' && (
+                                        <div className="space-y-2">
+                                            <label className={`text-sm font-medium ${t.textMuted}`}>Валюта</label>
+                                            <div className={`flex ${theme === 'dark' ? 'bg-slate-900' : 'bg-slate-100'} rounded-lg p-1 border ${t.border}`}>
+                                                <button
+                                                    onClick={() => setRepaymentCurrency('UZS')}
+                                                    className={`flex-1 py-1.5 rounded text-xs font-medium transition-all ${repaymentCurrency === 'UZS' ? 'bg-slate-700 text-white' : `${t.textMuted} hover:${t.text}`}`}
+                                                >
+                                                    UZS (Сумы)
+                                                </button>
+                                                <button
+                                                    onClick={() => setRepaymentCurrency('USD')}
+                                                    className={`flex-1 py-1.5 rounded text-xs font-medium transition-all ${repaymentCurrency === 'USD' ? 'bg-slate-700 text-white' : `${t.textMuted} hover:${t.text}`}`}
+                                                >
+                                                    USD (Доллары)
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div className="space-y-2">
+                                        <label className={`text-sm font-medium ${t.textMuted}`}>
+                                            Сумма погашения ({repaymentCurrency})
+                                        </label>
+                                        <div className="relative">
+                                            <DollarSign className={`absolute left-3 top-1/2 -translate-y-1/2 ${t.textMuted}`} size={18} />
+                                            <input
+                                                type="number"
+                                                className={`w-full ${t.input} border ${t.border} rounded-lg pl-10 pr-4 py-3 ${t.text} text-lg font-mono focus:ring-2 focus:ring-emerald-500 outline-none`}
+                                                value={repaymentAmount || ''}
+                                                onChange={e => setRepaymentAmount(Number(e.target.value))}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className={`${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-100'} p-3 rounded-lg border ${t.border}`}>
+                                        <div className="flex justify-between text-sm mb-1">
+                                            <span className={`${t.textMuted}`}>Сумма в USD:</span>
+                                            <span className={`${t.text} font-mono`}>
+                                                ${(repaymentCurrency === 'UZS' && exchangeRate > 0 ? (repaymentAmount / exchangeRate) : repaymentAmount).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                            </span>
+                                        </div>
+                                        <div className="flex justify-between text-sm">
+                                            <span className={`${t.textMuted}`}>Остаток долга:</span>
+                                            <span className={`${t.text} font-mono opacity-80`}>
+                                                ${Math.max(0, (selectedClientForRepayment.totalDebt || 0) - (repaymentCurrency === 'UZS' && exchangeRate > 0 ? (repaymentAmount / exchangeRate) : repaymentAmount)).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </>
                             )}
-
-                            <div className="space-y-2">
-                                <label className={`text-sm font-medium ${t.textMuted}`}>
-                                    Сумма погашения ({repaymentCurrency})
-                                </label>
-                                <div className="relative">
-                                    <DollarSign className={`absolute left-3 top-1/2 -translate-y-1/2 ${t.textMuted}`} size={18} />
-                                    <input
-                                        type="number"
-                                        className={`w-full ${t.input} border ${t.border} rounded-lg pl-10 pr-4 py-3 ${t.text} text-lg font-mono focus:ring-2 focus:ring-emerald-500 outline-none`}
-                                        value={repaymentAmount || ''}
-                                        onChange={e => setRepaymentAmount(Number(e.target.value))}
-                                    />
-                                </div>
-                            </div>
-
-                            {/* Exchange Rate Input (If UZS) */}
-                            {repaymentCurrency === 'UZS' && (
-                                <div className="space-y-2 animate-fade-in">
-                                    <label className={`text-sm font-medium ${t.textMuted}`}>Курс обмена (1 USD = ? UZS)</label>
-                                    <input
-                                        type="number"
-                                        className={`w-full ${t.input} border ${t.border} rounded-lg px-4 py-2 ${t.text} font-mono focus:ring-2 focus:ring-emerald-500 outline-none`}
-                                        value={exchangeRate}
-                                        onChange={e => setExchangeRate(Number(e.target.value))}
-                                    />
-                                </div>
-                            )}
-
-                            <div className={`${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-100'} p-3 rounded-lg border ${t.border}`}>
-                                <div className="flex justify-between text-sm mb-1">
-                                    <span className={`${t.textMuted}`}>Сумма в USD:</span>
-                                    <span className={`${t.text} font-mono`}>
-                                        ${(repaymentCurrency === 'UZS' && exchangeRate > 0 ? (repaymentAmount / exchangeRate) : repaymentAmount).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                                    </span>
-                                </div>
-                                <div className="flex justify-between text-sm">
-                                    <span className={`${t.textMuted}`}>Остаток долга:</span>
-                                    <span className={`${t.text} font-mono opacity-80`}>
-                                        ${Math.max(0, (selectedClientForRepayment.totalDebt || 0) - (repaymentCurrency === 'UZS' && exchangeRate > 0 ? (repaymentAmount / exchangeRate) : repaymentAmount)).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                                    </span>
-                                </div>
-                            </div>
 
                             <button
                                 onClick={handleRepayDebt}
-                                disabled={repaymentAmount <= 0}
+                                disabled={repaymentMethod === 'mixed' 
+                                    ? (mixCashUZS + mixCashUSD + mixCard + mixBank) <= 0 
+                                    : repaymentAmount <= 0}
                                 className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 disabled:text-slate-500 text-white py-3 rounded-xl font-bold transition-colors shadow-lg shadow-emerald-600/20"
                             >
                                 Подтвердить оплату

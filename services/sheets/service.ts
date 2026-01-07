@@ -211,15 +211,15 @@ export const sheetsService = {
 
   // Workflow Orders
   getWorkflowOrders: (accessToken: string, useCache: boolean = true) =>
-    getAll<WorkflowOrder>('workflowOrders', accessToken, 'WorkflowOrders!A2:V', mapRowToWorkflowOrder, useCache),
+    getAll<WorkflowOrder>('workflowOrders', accessToken, 'WorkflowOrders!A2:X', mapRowToWorkflowOrder, useCache),
 
   saveAllWorkflowOrders: (accessToken: string, workflowOrders: WorkflowOrder[]) =>
     saveAllWithMerge<WorkflowOrder>(
       'workflowOrders',
       accessToken,
-      'WorkflowOrders!A2:V',
-      'WorkflowOrders!A2:V',
-      'WorkflowOrders!A2:V',
+      'WorkflowOrders!A2:X',
+      'WorkflowOrders!A2:X',
+      'WorkflowOrders!A2:X',
       workflowOrders,
       mapRowToWorkflowOrder,
       mapWorkflowOrderToRow
@@ -259,15 +259,15 @@ export const sheetsService = {
 
   // Orders
   getOrders: (accessToken: string, useCache: boolean = true) =>
-    getAll<Order>('orders', accessToken, 'Orders!A2:Q', mapRowToOrder, useCache),
+    getAll<Order>('orders', accessToken, 'Orders!A2:R', mapRowToOrder, useCache),
 
   saveAllOrders: (accessToken: string, orders: Order[]) =>
     saveAllWithMerge<Order>(
       'orders',
       accessToken,
-      'Orders!A2:Q',
-      'Orders!A2:Q',
-      'Orders!A2:Q',
+      'Orders!A2:R',
+      'Orders!A2:R',
+      'Orders!A2:R',
       orders,
       mapRowToOrder,
       mapOrderToRow
@@ -394,14 +394,14 @@ export const sheetsService = {
     if (!spreadsheetId) throw new Error('Spreadsheet ID not set');
 
     const ranges = [
-      'Orders!A2:Q',
+      'Orders!A2:R',
       'Products!A2:L',
       'Expenses!A2:H',
       'Clients!A2:Q',
       'Transactions!A2:J',
       'FixedAssets!A2:J',
       'Purchases!A2:L',
-      'WorkflowOrders!A2:V',
+      'WorkflowOrders!A2:X',
       'Staff!A2:O',
       'Journal!A2:M',
     ];
