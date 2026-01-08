@@ -430,7 +430,7 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
             }
 
             newTransactions.push({
-                id: `TRX-${baseId}`,
+                id: IdGenerator.transaction(),
                 date: new Date().toISOString(),
                 type: 'client_payment',
                 amount: repaymentAmount,
