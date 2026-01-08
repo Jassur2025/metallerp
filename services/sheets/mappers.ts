@@ -78,6 +78,7 @@ export function mapRowToProduct(row: Row): Product {
     minStockLevel: asNumber(row, 9, 0),
     origin: pick(asString(row, 10, 'local'), ['import', 'local'] as const, 'local'),
     updatedAt: asOptionalString(row, 11),
+    _version: asOptionalNumber(row, 12),
   };
 }
 
@@ -95,6 +96,7 @@ export function mapProductToRow(p: Product): unknown[] {
     p.minStockLevel,
     p.origin || 'local',
     p.updatedAt || '',
+    p._version ?? 1,
   ];
 }
 
@@ -117,7 +119,8 @@ export function mapRowToOrder(row: Row): Order {
     amountPaid: asNumber(row, 14, 0),
     paymentCurrency: pick(asString(row, 15, 'USD'), CURRENCIES, 'USD'),
     updatedAt: asOptionalString(row, 16),
-    sellerId: asOptionalString(row, 17), // Employee ID for KPI (added at end for compatibility)
+    sellerId: asOptionalString(row, 17),
+    _version: asOptionalNumber(row, 18),
   };
 }
 
@@ -140,7 +143,8 @@ export function mapOrderToRow(o: Order): unknown[] {
     o.amountPaid,
     o.paymentCurrency || 'USD',
     o.updatedAt || '',
-    o.sellerId || '', // Employee ID for KPI (added at end for compatibility)
+    o.sellerId || '',
+    o._version ?? 1,
   ];
 }
 
@@ -154,11 +158,12 @@ export function mapRowToExpense(row: Row): Expense {
     paymentMethod: pick(asString(row, 5), ['cash', 'bank', 'card'] as const, 'cash'),
     currency: pick(asString(row, 6, 'USD'), CURRENCIES, 'USD'),
     updatedAt: asOptionalString(row, 7),
+    _version: asOptionalNumber(row, 8),
   };
 }
 
 export function mapExpenseToRow(e: Expense): unknown[] {
-  return [e.id, e.date, e.description, e.amount, e.category, e.paymentMethod || 'cash', e.currency || 'USD', e.updatedAt || ''];
+  return [e.id, e.date, e.description, e.amount, e.category, e.paymentMethod || 'cash', e.currency || 'USD', e.updatedAt || '', e._version ?? 1];
 }
 
 export function mapRowToFixedAsset(row: Row): FixedAsset {
@@ -173,6 +178,7 @@ export function mapRowToFixedAsset(row: Row): FixedAsset {
     depreciationRate: asNumber(row, 7, 0),
     lastDepreciationDate: asOptionalString(row, 8),
     updatedAt: asOptionalString(row, 9),
+    _version: asOptionalNumber(row, 10),
   };
 }
 
@@ -188,6 +194,7 @@ export function mapFixedAssetToRow(fa: FixedAsset): unknown[] {
     fa.depreciationRate,
     fa.lastDepreciationDate || '',
     fa.updatedAt || '',
+    fa._version ?? 1,
   ];
 }
 
@@ -211,6 +218,7 @@ export function mapRowToClient(row: Row): Client {
     bankName: asOptionalString(row, 14),
     addressLegal: asOptionalString(row, 15),
     updatedAt: asOptionalString(row, 16),
+    _version: asOptionalNumber(row, 17),
   };
 }
 
@@ -234,6 +242,7 @@ export function mapClientToRow(c: Client): unknown[] {
     c.bankName || '',
     c.addressLegal || '',
     c.updatedAt || '',
+    c._version ?? 1,
   ];
 }
 
@@ -254,6 +263,7 @@ export function mapRowToEmployee(row: Row): Employee {
     commissionRate: asNumber(row, 12, 0),
     hasKPI: asString(row, 13) === 'true',
     terminationDate: asOptionalString(row, 14),
+    _version: asOptionalNumber(row, 15),
   };
 }
 
@@ -274,6 +284,7 @@ export function mapEmployeeToRow(e: Employee): unknown[] {
     e.commissionRate || 0,
     e.hasKPI ? 'true' : 'false',
     e.terminationDate || '',
+    e._version ?? 1,
   ];
 }
 
@@ -305,6 +316,7 @@ export function mapRowToPurchase(row: Row): Purchase {
     paymentStatus,
     amountPaid,
     updatedAt: asOptionalString(row, 11),
+    _version: asOptionalNumber(row, 12),
   };
 }
 
@@ -322,6 +334,7 @@ export function mapPurchaseToRow(p: Purchase): unknown[] {
     p.paymentStatus,
     p.amountPaid,
     p.updatedAt || '',
+    p._version ?? 1,
   ];
 }
 
@@ -337,6 +350,7 @@ export function mapRowToTransaction(row: Row): Transaction {
     description: asString(row, 7),
     relatedId: asOptionalString(row, 8),
     updatedAt: asOptionalString(row, 9),
+    _version: asOptionalNumber(row, 10),
   };
 }
 
@@ -352,6 +366,7 @@ export function mapTransactionToRow(t: Transaction): unknown[] {
     t.description,
     t.relatedId || '',
     t.updatedAt || '',
+    t._version ?? 1,
   ];
 }
 
@@ -379,8 +394,9 @@ export function mapRowToWorkflowOrder(row: Row): WorkflowOrder {
     convertedToOrderId: asOptionalString(row, 19),
     convertedAt: asOptionalString(row, 20),
     updatedAt: asOptionalString(row, 21),
-    sellerId: asOptionalString(row, 22), // Employee ID for KPI (added at end for compatibility)
-    sellerName: asOptionalString(row, 23), // Seller name (added at end for compatibility)
+    sellerId: asOptionalString(row, 22),
+    sellerName: asOptionalString(row, 23),
+    _version: asOptionalNumber(row, 24),
   };
 }
 
@@ -408,8 +424,9 @@ export function mapWorkflowOrderToRow(o: WorkflowOrder): unknown[] {
     o.convertedToOrderId || '',
     o.convertedAt || '',
     o.updatedAt || '',
-    o.sellerId || '', // Employee ID for KPI (added at end for compatibility)
-    o.sellerName || '', // Seller name (added at end for compatibility)
+    o.sellerId || '',
+    o.sellerName || '',
+    o._version ?? 1,
   ];
 }
 

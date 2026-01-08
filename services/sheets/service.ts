@@ -2,7 +2,7 @@ import type { Client, Employee, Expense, FixedAsset, JournalEvent, Order, Produc
 import { cacheService } from '../cacheService';
 import { cachedFetch } from './cache';
 import { clearRange, fetchSheets, writeRange } from './api';
-import { mergeById } from './merge';
+import { mergeById, mergeByIdWithVersion, withIncrementedVersion, withIncrementedVersionBatch, hasVersionConflict } from './merge';
 import { initializeSheets } from './initialize';
 import {
   mapClientToRow,
@@ -61,10 +61,38 @@ function filterDataRows(values: unknown[][]): unknown[][] {
 }
 
 /**
- * Вычисляет хеш массива ID для быстрого сравнения
+ * Вычисляет хеш массива ID + версий для быстрого сравнения
  */
-function computeDataHash<T extends { id: string }>(items: T[]): string {
-  return items.map(i => i.id).sort().join('|');
+function computeDataHash<T extends { id: string; _version?: number }>(items: T[]): string {
+  return items.map(i => `${i.id}:${i._version ?? 0}`).sort().join('|');
+}
+
+/**
+ * Callback для обработки конфликтов версий
+ */
+type ConflictHandler<T> = (conflicts: Array<{ local: T; remote: T }>) => void;
+
+/**
+ * Глобальный обработчик конфликтов (может быть установлен из UI)
+ */
+let globalConflictHandler: ConflictHandler<unknown> | null = null;
+
+export function setConflictHandler<T>(handler: ConflictHandler<T> | null): void {
+  globalConflictHandler = handler as ConflictHandler<unknown> | null;
+}
+
+function notifyConflicts<T>(conflicts: Array<{ local: T; remote: T }>, entityType: string): void {
+  if (conflicts.length === 0) return;
+  
+  warnDev(`⚠️ Обнаружены конфликты версий в ${entityType}:`, conflicts.map(c => ({
+    id: (c.local as { id: string }).id,
+    localVersion: (c.local as { _version?: number })._version,
+    remoteVersion: (c.remote as { _version?: number })._version
+  })));
+  
+  if (globalConflictHandler) {
+    globalConflictHandler(conflicts);
+  }
 }
 
 async function getAll<T>(
@@ -91,17 +119,17 @@ async function getAll<T>(
 const MAX_CONFLICT_RETRIES = 3;
 
 /**
- * Безопасное сохранение с защитой от race condition.
+ * Безопасное сохранение с защитой от race condition и версионированием.
  * 
  * Алгоритм:
  * 1. Блокировка записи (мьютекс) - только один процесс пишет в таблицу
  * 2. Читаем актуальные данные из Google Sheets
- * 3. Merge локальных и удалённых данных
- * 4. Перед записью ещё раз проверяем - не изменились ли данные
- * 5. Если изменились - повторяем merge с новыми данными
- * 6. Записываем результат
+ * 3. Merge с учётом версий (_version) - новые версии побеждают
+ * 4. Перед записью проверяем - не изменились ли данные
+ * 5. Если конфликт версий - уведомляем пользователя
+ * 6. Записываем результат с инкрементом версий
  */
-async function saveAllWithMerge<T extends { id: string; updatedAt?: string }>(
+async function saveAllWithMerge<T extends { id: string; updatedAt?: string; _version?: number }>(
   cacheKey: string,
   accessToken: string,
   readRange: string,
@@ -130,9 +158,16 @@ async function saveAllWithMerge<T extends { id: string; updatedAt?: string }>(
 
       const initialHash = computeDataHash(remoteItems);
 
-      // 2. Merge локальные и удалённые данные
-      const merged = mergeById(localItems, remoteItems);
-      logDev(`💾 Saving ${cacheKey}: merged=${merged.length} local=${localItems.length} remote=${remoteItems.length} (attempt ${retries + 1})`);
+      // 2. Merge с учётом версий - детектируем конфликты
+      const { merged, conflicts } = mergeByIdWithVersion(localItems, remoteItems);
+      
+      // Уведомляем о конфликтах версий (remote победил)
+      if (conflicts.length > 0) {
+        notifyConflicts(conflicts, cacheKey);
+        logDev(`⚠️ ${cacheKey}: ${conflicts.length} записей перезаписаны более новыми версиями с сервера`);
+      }
+      
+      logDev(`💾 Saving ${cacheKey}: merged=${merged.length} local=${localItems.length} remote=${remoteItems.length} conflicts=${conflicts.length} (attempt ${retries + 1})`);
 
       // 3. Перед записью - проверяем не изменились ли данные (double-check)
       let currentRemote: T[] = [];
@@ -151,8 +186,12 @@ async function saveAllWithMerge<T extends { id: string; updatedAt?: string }>(
         retries++;
         warnDev(`⚠️ Конфликт записи ${cacheKey}! Данные изменились другим пользователем. Повтор merge (попытка ${retries}/${MAX_CONFLICT_RETRIES})`);
         
-        // Повторяем merge с новыми данными
-        const reMerged = mergeById(localItems, currentRemote);
+        // Повторяем merge с учётом версий
+        const { merged: reMerged, conflicts: reConflicts } = mergeByIdWithVersion(localItems, currentRemote);
+        
+        if (reConflicts.length > 0) {
+          notifyConflicts(reConflicts, cacheKey);
+        }
         
         if (reMerged.length === 0) {
           await clearRange(accessToken, clearA1);
@@ -211,15 +250,15 @@ export const sheetsService = {
 
   // Workflow Orders
   getWorkflowOrders: (accessToken: string, useCache: boolean = true) =>
-    getAll<WorkflowOrder>('workflowOrders', accessToken, 'WorkflowOrders!A2:X', mapRowToWorkflowOrder, useCache),
+    getAll<WorkflowOrder>('workflowOrders', accessToken, 'WorkflowOrders!A2:Y', mapRowToWorkflowOrder, useCache),
 
   saveAllWorkflowOrders: (accessToken: string, workflowOrders: WorkflowOrder[]) =>
     saveAllWithMerge<WorkflowOrder>(
       'workflowOrders',
       accessToken,
-      'WorkflowOrders!A2:X',
-      'WorkflowOrders!A2:X',
-      'WorkflowOrders!A2:X',
+      'WorkflowOrders!A2:Y',
+      'WorkflowOrders!A2:Y',
+      'WorkflowOrders!A2:Y',
       workflowOrders,
       mapRowToWorkflowOrder,
       mapWorkflowOrderToRow
@@ -227,15 +266,15 @@ export const sheetsService = {
 
   // Purchases
   getPurchases: (accessToken: string, useCache: boolean = true) =>
-    getAll<Purchase>('purchases', accessToken, 'Purchases!A2:L', mapRowToPurchase, useCache),
+    getAll<Purchase>('purchases', accessToken, 'Purchases!A2:M', mapRowToPurchase, useCache),
 
   saveAllPurchases: (accessToken: string, purchases: Purchase[]) =>
     saveAllWithMerge<Purchase>(
       'purchases',
       accessToken,
-      'Purchases!A2:L',
-      'Purchases!A2:L',
-      'Purchases!A2:L',
+      'Purchases!A2:M',
+      'Purchases!A2:M',
+      'Purchases!A2:M',
       purchases,
       mapRowToPurchase,
       mapPurchaseToRow
@@ -243,15 +282,15 @@ export const sheetsService = {
 
   // Products
   getProducts: (accessToken: string, useCache: boolean = true) =>
-    getAll<Product>('products', accessToken, 'Products!A2:L', mapRowToProduct, useCache),
+    getAll<Product>('products', accessToken, 'Products!A2:M', mapRowToProduct, useCache),
 
   saveAllProducts: (accessToken: string, products: Product[]) =>
     saveAllWithMerge<Product>(
       'products',
       accessToken,
-      'Products!A2:L',
-      'Products!A2:L',
-      'Products!A2:L',
+      'Products!A2:M',
+      'Products!A2:M',
+      'Products!A2:M',
       products,
       mapRowToProduct,
       mapProductToRow
@@ -259,15 +298,15 @@ export const sheetsService = {
 
   // Orders
   getOrders: (accessToken: string, useCache: boolean = true) =>
-    getAll<Order>('orders', accessToken, 'Orders!A2:R', mapRowToOrder, useCache),
+    getAll<Order>('orders', accessToken, 'Orders!A2:S', mapRowToOrder, useCache),
 
   saveAllOrders: (accessToken: string, orders: Order[]) =>
     saveAllWithMerge<Order>(
       'orders',
       accessToken,
-      'Orders!A2:R',
-      'Orders!A2:R',
-      'Orders!A2:R',
+      'Orders!A2:S',
+      'Orders!A2:S',
+      'Orders!A2:S',
       orders,
       mapRowToOrder,
       mapOrderToRow
@@ -275,15 +314,15 @@ export const sheetsService = {
 
   // Expenses
   getExpenses: (accessToken: string, useCache: boolean = true) =>
-    getAll<Expense>('expenses', accessToken, 'Expenses!A2:H', mapRowToExpense, useCache),
+    getAll<Expense>('expenses', accessToken, 'Expenses!A2:I', mapRowToExpense, useCache),
 
   saveAllExpenses: (accessToken: string, expenses: Expense[]) =>
     saveAllWithMerge<Expense>(
       'expenses',
       accessToken,
-      'Expenses!A2:H',
-      'Expenses!A2:H',
-      'Expenses!A2:H',
+      'Expenses!A2:I',
+      'Expenses!A2:I',
+      'Expenses!A2:I',
       expenses,
       mapRowToExpense,
       mapExpenseToRow
@@ -291,15 +330,15 @@ export const sheetsService = {
 
   // Fixed Assets
   getFixedAssets: (accessToken: string, useCache: boolean = true) =>
-    getAll<FixedAsset>('fixedAssets', accessToken, 'FixedAssets!A2:J', mapRowToFixedAsset, useCache),
+    getAll<FixedAsset>('fixedAssets', accessToken, 'FixedAssets!A2:K', mapRowToFixedAsset, useCache),
 
   saveAllFixedAssets: (accessToken: string, assets: FixedAsset[]) =>
     saveAllWithMerge<FixedAsset>(
       'fixedAssets',
       accessToken,
-      'FixedAssets!A2:J',
-      'FixedAssets!A2:J',
-      'FixedAssets!A2:J',
+      'FixedAssets!A2:K',
+      'FixedAssets!A2:K',
+      'FixedAssets!A2:K',
       assets,
       mapRowToFixedAsset,
       mapFixedAssetToRow
@@ -307,15 +346,15 @@ export const sheetsService = {
 
   // Clients
   getClients: (accessToken: string, useCache: boolean = true) =>
-    getAll<Client>('clients', accessToken, 'Clients!A2:Q', mapRowToClient, useCache),
+    getAll<Client>('clients', accessToken, 'Clients!A2:R', mapRowToClient, useCache),
 
   saveAllClients: (accessToken: string, clients: Client[]) =>
     saveAllWithMerge<Client>(
       'clients',
       accessToken,
-      'Clients!A2:Q',
-      'Clients!A2:Q',
-      'Clients!A2:Q',
+      'Clients!A2:R',
+      'Clients!A2:R',
+      'Clients!A2:R',
       clients,
       mapRowToClient,
       mapClientToRow
@@ -323,15 +362,15 @@ export const sheetsService = {
 
   // Employees
   getEmployees: (accessToken: string, useCache: boolean = true) =>
-    getAll<Employee>('employees', accessToken, 'Staff!A2:O', mapRowToEmployee, useCache),
+    getAll<Employee>('employees', accessToken, 'Staff!A2:P', mapRowToEmployee, useCache),
 
   saveAllEmployees: (accessToken: string, employees: Employee[]) =>
     saveAllWithMerge<Employee>(
       'employees',
       accessToken,
-      'Staff!A2:O',
-      'Staff!A2:O',
-      'Staff!A2:O',
+      'Staff!A2:P',
+      'Staff!A2:P',
+      'Staff!A2:P',
       employees,
       mapRowToEmployee,
       mapEmployeeToRow
@@ -358,15 +397,15 @@ export const sheetsService = {
 
   // Transactions
   getTransactions: (accessToken: string, useCache: boolean = true) =>
-    getAll<Transaction>('transactions', accessToken, 'Transactions!A2:J', mapRowToTransaction, useCache),
+    getAll<Transaction>('transactions', accessToken, 'Transactions!A2:K', mapRowToTransaction, useCache),
 
   saveAllTransactions: (accessToken: string, transactions: Transaction[]) =>
     saveAllWithMerge<Transaction>(
       'transactions',
       accessToken,
-      'Transactions!A2:J',
-      'Transactions!A2:J',
-      'Transactions!A2:J',
+      'Transactions!A2:K',
+      'Transactions!A2:K',
+      'Transactions!A2:K',
       transactions,
       mapRowToTransaction,
       mapTransactionToRow
@@ -394,15 +433,15 @@ export const sheetsService = {
     if (!spreadsheetId) throw new Error('Spreadsheet ID not set');
 
     const ranges = [
-      'Orders!A2:R',
-      'Products!A2:L',
-      'Expenses!A2:H',
-      'Clients!A2:Q',
-      'Transactions!A2:J',
-      'FixedAssets!A2:J',
-      'Purchases!A2:L',
-      'WorkflowOrders!A2:X',
-      'Staff!A2:O',
+      'Orders!A2:S',
+      'Products!A2:M',
+      'Expenses!A2:I',
+      'Clients!A2:R',
+      'Transactions!A2:K',
+      'FixedAssets!A2:K',
+      'Purchases!A2:M',
+      'WorkflowOrders!A2:Y',
+      'Staff!A2:P',
       'Journal!A2:M',
     ];
 
@@ -439,10 +478,10 @@ export const sheetsService = {
   },
 };
 
+// Re-export версионные утилиты для использования в компонентах
+export { mergeById, mergeByIdWithVersion, withIncrementedVersion, withIncrementedVersionBatch, hasVersionConflict };
 
-
-
-
-
+// Export конфликт-хендлер отдельно (он определён в этом файле)
+// setConflictHandler уже экспортируется выше через export function
 
 

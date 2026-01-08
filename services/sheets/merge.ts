@@ -4,6 +4,7 @@
 interface SyncableRecord {
   id: string;
   updatedAt?: string;
+  _version?: number;
 }
 
 /**
@@ -168,10 +169,99 @@ export function withUpdatedAtBatch<T extends { id: string }>(items: T[]): (T & {
   }));
 }
 
+/**
+ * Инкрементирует версию записи для optimistic concurrency control
+ * @param item - Запись для обновления
+ * @returns Запись с инкрементированной версией и обновлённым updatedAt
+ */
+export function withIncrementedVersion<T extends SyncableRecord>(item: T): T & { _version: number; updatedAt: string } {
+  return {
+    ...item,
+    _version: (item._version ?? 0) + 1,
+    updatedAt: new Date().toISOString()
+  };
+}
 
+/**
+ * Пакетно инкрементирует версии для массива записей
+ */
+export function withIncrementedVersionBatch<T extends SyncableRecord>(items: T[]): (T & { _version: number; updatedAt: string })[] {
+  const now = new Date().toISOString();
+  return items.map(item => ({
+    ...item,
+    _version: (item._version ?? 0) + 1,
+    updatedAt: now
+  }));
+}
 
+/**
+ * Проверяет конфликт версий между локальной и удалённой записью
+ * @returns true если есть конфликт (удалённая версия новее)
+ */
+export function hasVersionConflict<T extends SyncableRecord>(local: T, remote: T): boolean {
+  const localVersion = local._version ?? 0;
+  const remoteVersion = remote._version ?? 0;
+  
+  // Конфликт если удалённая версия выше локальной
+  return remoteVersion > localVersion;
+}
 
-
-
-
-
+/**
+ * Умное слияние с учётом версий (optimistic concurrency control)
+ * 
+ * Приоритет:
+ * 1. Если версия равна - используем updatedAt для разрешения
+ * 2. Если локальная версия выше - локальные данные победили
+ * 3. Если удалённая версия выше - нужно слить или отклонить локальные изменения
+ */
+export function mergeByIdWithVersion<T extends SyncableRecord>(
+  localItems: T[], 
+  remoteItems: T[],
+  conflictHandler?: (local: T, remote: T) => T
+): { merged: T[]; conflicts: Array<{ local: T; remote: T }> } {
+  const merged = new Map<string, T>();
+  const conflicts: Array<{ local: T; remote: T }> = [];
+  
+  // Сначала добавляем все удаленные записи
+  for (const item of remoteItems) {
+    merged.set(item.id, item);
+  }
+  
+  // Затем обрабатываем локальные записи
+  for (const localItem of localItems) {
+    const remoteItem = merged.get(localItem.id);
+    
+    if (!remoteItem) {
+      // Запись есть только локально — добавляем её
+      merged.set(localItem.id, localItem);
+    } else {
+      const localVersion = localItem._version ?? 0;
+      const remoteVersion = remoteItem._version ?? 0;
+      
+      if (localVersion > remoteVersion) {
+        // Локальная версия новее - используем её
+        merged.set(localItem.id, localItem);
+      } else if (localVersion < remoteVersion) {
+        // Удалённая версия новее - конфликт
+        if (conflictHandler) {
+          // Используем handler для разрешения
+          merged.set(localItem.id, conflictHandler(localItem, remoteItem));
+        } else {
+          // Записываем конфликт для ручного разрешения
+          conflicts.push({ local: localItem, remote: remoteItem });
+          // По умолчанию оставляем удалённую версию
+        }
+      } else {
+        // Версии равны - сравниваем по updatedAt
+        const localTime = localItem.updatedAt ? new Date(localItem.updatedAt).getTime() : 0;
+        const remoteTime = remoteItem.updatedAt ? new Date(remoteItem.updatedAt).getTime() : 0;
+        
+        if (localTime >= remoteTime) {
+          merged.set(localItem.id, localItem);
+        }
+      }
+    }
+  }
+  
+  return { merged: Array.from(merged.values()), conflicts };
+}

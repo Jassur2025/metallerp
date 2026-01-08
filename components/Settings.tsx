@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
 import { AppSettings, ExpenseCategory, ExpensePnLCategory } from '../types';
+import { IdGenerator } from '../utils/idGenerator';
 import { Save, Settings as SettingsIcon, AlertCircle, Database, CheckCircle, XCircle, Loader2, Send, Plus, Trash2, Receipt, RefreshCw } from 'lucide-react';
 import { getSpreadsheetId, saveSpreadsheetId, sheetsService } from '../services/sheetsService';
 import { telegramService } from '../services/telegramService';
@@ -156,7 +157,7 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
     const addExpenseCategory = () => {
         if (!newCategoryName.trim()) return;
         const newCat: ExpenseCategory = {
-            id: `cat-${Date.now()}`,
+            id: IdGenerator.generate('CAT'),
             name: newCategoryName.trim(),
             pnlCategory: newCategoryPnL
         };

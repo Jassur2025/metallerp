@@ -7,6 +7,7 @@ import { useToast } from '../contexts/ToastContext';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
 import { Plus, Search, Loader2, BrainCircuit, Trash2, DollarSign, Pencil, TrendingUp, Lock } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { IdGenerator } from '../utils/idGenerator';
 
 
 interface InventoryProps {
@@ -104,7 +105,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
     } else {
       // Create Mode
       const product: Product = {
-        id: Date.now().toString(),
+        id: IdGenerator.product(),
         name: formData.name!,
         type: formData.type as ProductType || ProductType.OTHER,
         dimensions: formData.dimensions || '-',

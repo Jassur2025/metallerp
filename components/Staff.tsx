@@ -3,6 +3,7 @@ import { Employee, UserRole } from '../types';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
 import { Plus, Search, Edit2, Phone, Mail, Briefcase, Calendar, DollarSign, User, Shield, CheckCircle, XCircle, Trash2 } from 'lucide-react';
+import { IdGenerator } from '../utils/idGenerator';
 
 
 interface StaffProps {
@@ -98,7 +99,7 @@ export const Staff: React.FC<StaffProps> = ({ employees, onSave }) => {
         } else {
             // Create
             const newEmployee: Employee = {
-                id: Date.now().toString(),
+                id: IdGenerator.employee(),
                 ...formData as Employee
             };
             updatedEmployees = [...employees, newEmployee];

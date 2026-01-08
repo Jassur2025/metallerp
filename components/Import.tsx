@@ -3,6 +3,7 @@ import {
     Purchase, Product, Transaction, ProductType, Unit,
     PurchaseItem, PurchaseOverheads, AppSettings
 } from '../types';
+import { IdGenerator } from '../utils/idGenerator';
 import { Plus, Trash2, Save, Calculator, Container, DollarSign, AlertTriangle, Truck, Scale, FileText, History, Wallet, CheckCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { PaymentSplitModal, PaymentDistribution } from './Sales/PaymentSplitModal';
@@ -74,7 +75,7 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
             } else {
                 // Auto-create product if not found
                 const newProduct: Product = {
-                    id: `PROD-${Date.now()}`,
+                    id: IdGenerator.product(),
                     name: inputProductName.trim(),
                     type: ProductType.OTHER,
                     dimensions: '-',
@@ -183,7 +184,7 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
         const status = distribution ? (distribution.isPaid ? 'paid' : (paidUSD > 0 ? 'partial' : 'unpaid')) : (paymentMethod === 'debt' ? 'unpaid' : 'paid');
 
         const purchase: Purchase = {
-            id: `PUR-${Date.now()}`,
+            id: IdGenerator.purchase(),
             date: new Date(date).toISOString(),
             supplierName,
             status: 'completed',
@@ -211,7 +212,7 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
             if (distribution.cashUSD > 0) {
                 newTransactions.push({
                     ...baseTrx,
-                    id: `TRX-CUSD-${Date.now()}-1`,
+                    id: IdGenerator.transaction(),
                     amount: distribution.cashUSD,
                     currency: 'USD',
                     method: 'cash',
@@ -221,7 +222,7 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
             if (distribution.cashUZS > 0) {
                 newTransactions.push({
                     ...baseTrx,
-                    id: `TRX-CUZS-${Date.now()}-2`,
+                    id: IdGenerator.transaction(),
                     amount: distribution.cashUZS,
                     currency: 'UZS',
                     method: 'cash',
@@ -231,7 +232,7 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
             if (distribution.cardUZS > 0) {
                 newTransactions.push({
                     ...baseTrx,
-                    id: `TRX-CARD-${Date.now()}-3`,
+                    id: IdGenerator.transaction(),
                     amount: distribution.cardUZS,
                     currency: 'UZS',
                     method: 'card',
@@ -241,7 +242,7 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
             if (distribution.bankUZS > 0) {
                 newTransactions.push({
                     ...baseTrx,
-                    id: `TRX-BANK-${Date.now()}-4`,
+                    id: IdGenerator.transaction(),
                     amount: distribution.bankUZS,
                     currency: 'UZS',
                     method: 'bank',
@@ -251,7 +252,7 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
         } else if (paymentMethod !== 'debt') {
             newTransactions.push({
                 ...baseTrx,
-                id: `TRX-${Date.now()}`,
+                id: IdGenerator.transaction(),
                 amount: totals.totalInvoiceValue,
                 currency: 'USD',
                 method: paymentMethod as 'cash' | 'bank',
@@ -330,7 +331,7 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
 
         // 1. Create Transaction
         const newTransaction: Transaction = {
-            id: `TRX - ${Date.now()} `,
+            id: IdGenerator.transaction(),
             date: new Date().toISOString(),
             type: 'supplier_payment',
             amount: repaymentAmount,
@@ -386,7 +387,7 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
         }
 
         const product: Product = {
-            id: `PROD - ${Date.now()} `,
+            id: IdGenerator.product(),
             name: newProduct.name!,
             type: newProduct.type || 'Прочее' as ProductType,
             dimensions: newProduct.dimensions || '-',

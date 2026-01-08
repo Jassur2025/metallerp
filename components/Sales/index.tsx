@@ -5,6 +5,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { useTheme, getThemeClasses } from '../../contexts/ThemeContext';
 import { SUPER_ADMIN_EMAILS, IS_DEV_MODE } from '../../constants';
 import { useAuth } from '../../contexts/AuthContext';
+import { IdGenerator } from '../../utils/idGenerator';
 
 
 // Sub-components
@@ -216,7 +217,7 @@ export const Sales: React.FC<SalesProps> = ({
     const paymentMethod: PaymentMethod = 'mixed';
 
     const newOrder: Order = {
-      id: `ORD-${Date.now()}`,
+      id: IdGenerator.order(),
       date: new Date().toISOString(),
       customerName: wf.customerName,
       sellerId: wf.sellerId, // Employee ID for KPI
@@ -239,8 +240,9 @@ export const Sales: React.FC<SalesProps> = ({
       const it = wf.items.find((i: OrderItem) => i.productId === p.id);
       return it ? { ...p, quantity: p.quantity - it.quantity } : p;
     });
-    setProducts(updatedProducts);
+    // CRITICAL: Save to Sheets FIRST, then update state
     await onSaveProducts?.(updatedProducts);
+    setProducts(updatedProducts);
 
     // Update client (create if missing)
     const nextClients = [...clients];
@@ -248,7 +250,7 @@ export const Sales: React.FC<SalesProps> = ({
     let clientId = '';
     if (idx === -1) {
       const c: Client = {
-        id: `CLI-${Date.now()}`,
+        id: IdGenerator.client(),
         name: wf.customerName,
         phone: wf.customerPhone || '',
         creditLimit: 0,
@@ -300,10 +302,10 @@ export const Sales: React.FC<SalesProps> = ({
       description: `Оплата заказа ${newOrder.id} (Workflow)`, relatedId: clientId
     };
 
-    if (cashUSD > 0) newTrx.push({ ...baseTrx, id: `TRX-${Date.now()}-1`, amount: cashUSD, currency: 'USD', method: 'cash' });
-    if (cashUZS > 0) newTrx.push({ ...baseTrx, id: `TRX-${Date.now()}-2`, amount: cashUZS, currency: 'UZS', method: 'cash' });
-    if (cardUZS > 0) newTrx.push({ ...baseTrx, id: `TRX-${Date.now()}-3`, amount: cardUZS, currency: 'UZS', method: 'card' });
-    if (bankUZS > 0) newTrx.push({ ...baseTrx, id: `TRX-${Date.now()}-4`, amount: bankUZS, currency: 'UZS', method: 'bank' });
+    if (cashUSD > 0) newTrx.push({ ...baseTrx, id: IdGenerator.transaction(), amount: cashUSD, currency: 'USD', method: 'cash' });
+    if (cashUZS > 0) newTrx.push({ ...baseTrx, id: IdGenerator.transaction(), amount: cashUZS, currency: 'UZS', method: 'cash' });
+    if (cardUZS > 0) newTrx.push({ ...baseTrx, id: IdGenerator.transaction(), amount: cardUZS, currency: 'UZS', method: 'card' });
+    if (bankUZS > 0) newTrx.push({ ...baseTrx, id: IdGenerator.transaction(), amount: bankUZS, currency: 'UZS', method: 'bank' });
 
     // If using transactions to track balance, these `client_payment`s will be summed up by `calculateBalance`.
     // And since `paymentMethod` is 'mixed', `calculateBalance` will SKIP the order itself.
@@ -313,18 +315,20 @@ export const Sales: React.FC<SalesProps> = ({
     // `calculateBalance` ignores `debt_obligation`. It's purely for ledger of "why debt increased".
     if (remainingUSD > 0.05) {
       newTrx.push({
-        ...baseTrx, id: `TRX-${Date.now()}-5`, type: 'debt_obligation', amount: remainingUSD, currency: 'USD', method: 'debt',
+        ...baseTrx, id: IdGenerator.transaction(), type: 'debt_obligation', amount: remainingUSD, currency: 'USD', method: 'debt',
         description: `Долг по заказу ${newOrder.id}`
       });
     }
 
     const updatedTx = [...transactions, ...newTrx];
-    setTransactions(updatedTx);
+    // CRITICAL: Save to Sheets FIRST, then update state
     await onSaveTransactions?.(updatedTx);
+    setTransactions(updatedTx);
 
     const updatedOrders = [newOrder, ...orders];
-    setOrders(updatedOrders);
+    // CRITICAL: Save to Sheets FIRST, then update state
     await onSaveOrders?.(updatedOrders);
+    setOrders(updatedOrders);
 
     const nextWorkflow = workflowOrders.map(o =>
       o.id === wf.id ? { ...o, status: 'completed' as const, convertedToOrderId: newOrder.id, convertedAt: new Date().toISOString() } : o
@@ -332,7 +336,7 @@ export const Sales: React.FC<SalesProps> = ({
     await onSaveWorkflowOrders(nextWorkflow);
 
     await onAddJournalEvent?.({
-      id: `JE-${Date.now()}`,
+      id: IdGenerator.journal(),
       date: new Date().toISOString(),
       type: 'employee_action',
       employeeName: currentEmployee?.name || 'Кассир',
@@ -383,7 +387,7 @@ export const Sales: React.FC<SalesProps> = ({
     await onSaveWorkflowOrders(updatedWorkflow);
 
     await onAddJournalEvent?.({
-      id: `JE-${Date.now()}`,
+      id: IdGenerator.journalEvent(),
       date: new Date().toISOString(),
       type: 'employee_action',
       employeeName: currentEmployee?.name || 'Кассир',
@@ -536,7 +540,7 @@ export const Sales: React.FC<SalesProps> = ({
     const sellerEmployee = employees.find(e => e.name?.toLowerCase() === (sellerName || '').toLowerCase());
 
     const newOrder: Order = {
-      id: `ORD-${Date.now()}`, date: new Date().toISOString(), customerName,
+      id: IdGenerator.order(), date: new Date().toISOString(), customerName,
       sellerId: sellerEmployee?.id || currentEmployee?.id, // Employee ID for KPI
       sellerName: sellerName || currentEmployee?.name || 'Администратор',
       items: [...cart], subtotalAmount: subtotalUSD, vatRateSnapshot: settings.vatRate, vatAmount: vatAmountUSD,
@@ -549,8 +553,9 @@ export const Sales: React.FC<SalesProps> = ({
       const cartItem = cart.find(item => item.productId === p.id);
       return cartItem ? { ...p, quantity: p.quantity - cartItem.quantity } : p;
     });
-    setProducts(updatedProducts);
+    // CRITICAL: Save to Sheets FIRST, then update state
     await onSaveProducts?.(updatedProducts);
+    setProducts(updatedProducts);
 
     // Update/Create Client
     let currentClients = [...clients];
@@ -558,7 +563,7 @@ export const Sales: React.FC<SalesProps> = ({
     let clientId = '';
 
     if (clientIndex === -1) {
-      const newClient: Client = { id: `CLI-${Date.now()}`, name: customerName, phone: '', creditLimit: 0, totalPurchases: 0, totalDebt: 0, notes: 'Автоматически создан при продаже' };
+      const newClient: Client = { id: IdGenerator.client(), name: customerName, phone: '', creditLimit: 0, totalPurchases: 0, totalDebt: 0, notes: 'Автоматически создан при продаже' };
       currentClients.push(newClient);
       clientIndex = currentClients.length - 1;
       clientId = newClient.id;
@@ -583,27 +588,29 @@ export const Sales: React.FC<SalesProps> = ({
       description: `Оплата заказа ${newOrder.id}`, relatedId: clientId
     };
 
-    if (cashUSD > 0) newTrx.push({ ...baseTrx, id: `TRX-${Date.now()}-1`, amount: cashUSD, currency: 'USD', method: 'cash' });
-    if (cashUZS > 0) newTrx.push({ ...baseTrx, id: `TRX-${Date.now()}-2`, amount: cashUZS, currency: 'UZS', method: 'cash' });
-    if (cardUZS > 0) newTrx.push({ ...baseTrx, id: `TRX-${Date.now()}-3`, amount: cardUZS, currency: 'UZS', method: 'card' });
-    if (bankUZS > 0) newTrx.push({ ...baseTrx, id: `TRX-${Date.now()}-4`, amount: bankUZS, currency: 'UZS', method: 'bank' });
+    if (cashUSD > 0) newTrx.push({ ...baseTrx, id: IdGenerator.transaction(), amount: cashUSD, currency: 'USD', method: 'cash' });
+    if (cashUZS > 0) newTrx.push({ ...baseTrx, id: IdGenerator.transaction(), amount: cashUZS, currency: 'UZS', method: 'cash' });
+    if (cardUZS > 0) newTrx.push({ ...baseTrx, id: IdGenerator.transaction(), amount: cardUZS, currency: 'UZS', method: 'card' });
+    if (bankUZS > 0) newTrx.push({ ...baseTrx, id: IdGenerator.transaction(), amount: bankUZS, currency: 'UZS', method: 'bank' });
 
     // Debt Obligation
     if (remainingUSD > 0.05) {
       newTrx.push({
-        ...baseTrx, id: `TRX-${Date.now()}-5`, type: 'debt_obligation', amount: remainingUSD, currency: 'USD', method: 'debt',
+        ...baseTrx, id: IdGenerator.transaction(), type: 'debt_obligation', amount: remainingUSD, currency: 'USD', method: 'debt',
         description: `Долг по заказу ${newOrder.id}`
       });
     }
 
     const updatedTransactions = [...transactions, ...newTrx];
-    setTransactions(updatedTransactions);
+    // CRITICAL: Save to Sheets FIRST, then update state
     await onSaveTransactions?.(updatedTransactions);
+    setTransactions(updatedTransactions);
 
     // Save order
     const updatedOrders = [newOrder, ...orders];
-    setOrders(updatedOrders);
+    // CRITICAL: Save to Sheets FIRST, then update state
     await onSaveOrders?.(updatedOrders);
+    setOrders(updatedOrders);
 
     // Clear form
     setCart([]);
@@ -619,7 +626,7 @@ export const Sales: React.FC<SalesProps> = ({
 
     // Journal
     await onAddJournalEvent?.({
-      id: `JE-${Date.now()}`, date: new Date().toISOString(), type: 'employee_action',
+      id: IdGenerator.journalEvent(), date: new Date().toISOString(), type: 'employee_action',
       employeeName: sellerName || 'Администратор', action: 'Создан заказ',
       description: `Продажа на сумму ${totalAmountUZS.toLocaleString()} сўм ($${totalAmountUSD.toFixed(2)}) клиенту ${customerName}.`,
       module: 'sales', relatedType: 'order', relatedId: newOrder.id,
@@ -726,7 +733,7 @@ export const Sales: React.FC<SalesProps> = ({
   const handleAddExpense = async () => {
     if (!expenseDesc || !expenseAmount) return;
     const newExpense: Expense = {
-      id: `EXP-${Date.now()}`, date: new Date().toISOString(), description: expenseDesc,
+      id: IdGenerator.expense(), date: new Date().toISOString(), description: expenseDesc,
       amount: parseFloat(expenseAmount), category: expenseCategory, paymentMethod: expenseMethod,
       currency: expenseCurrency,
       exchangeRate: exchangeRate > 0 ? exchangeRate : settings.defaultExchangeRate,
@@ -734,8 +741,9 @@ export const Sales: React.FC<SalesProps> = ({
       employeeId: selectedEmployeeId || undefined
     };
     const updatedExpenses = [newExpense, ...expenses];
-    setExpenses(updatedExpenses);
+    // CRITICAL: Save to Sheets FIRST, then update state
     await onSaveExpenses?.(updatedExpenses);
+    setExpenses(updatedExpenses);
     setExpenseDesc(''); setExpenseAmount(''); setWithVat(false); setExpenseVatAmount(''); setSelectedEmployeeId('');
     toast.success('Расход добавлен!');
   };
@@ -763,7 +771,7 @@ export const Sales: React.FC<SalesProps> = ({
     }
 
     const newTransaction: Transaction = {
-      id: `TRX-${Date.now()}`, date: new Date().toISOString(), type: 'client_return',
+      id: IdGenerator.transaction(), date: new Date().toISOString(), type: 'client_return',
       amount: returnAmountUSD, currency: 'USD', method: returnMethod,
       description: `Возврат товара: ${product.name} (${qty} ${product.unit})`, relatedId: client?.id
     };
@@ -781,7 +789,7 @@ export const Sales: React.FC<SalesProps> = ({
 
     // Create refund transaction (negative expense = money going out)
     const newTransaction: Transaction = {
-      id: `TRX-${Date.now()}`,
+      id: IdGenerator.transaction(),
       date: new Date().toISOString(),
       type: 'client_refund',
       amount: data.amount,
@@ -793,8 +801,9 @@ export const Sales: React.FC<SalesProps> = ({
     };
 
     const updatedTransactions = [...transactions, newTransaction];
-    setTransactions(updatedTransactions);
+    // CRITICAL: Save to Sheets FIRST, then update state
     await onSaveTransactions?.(updatedTransactions);
+    setTransactions(updatedTransactions);
 
     // Update client debt if exists
     if (client) {
@@ -819,7 +828,7 @@ export const Sales: React.FC<SalesProps> = ({
   // --- Client Save ---
   const handleSaveClient = () => {
     if (!newClientData.name || !newClientData.phone) { toast.warning('Имя и Телефон обязательны!'); return; }
-    const newClient: Client = { id: Date.now().toString(), ...newClientData as Client };
+    const newClient: Client = { id: IdGenerator.client(), ...newClientData as Client };
     onSaveClients([...clients, newClient]);
     setCustomerName(newClient.name);
     setIsClientModalOpen(false);
@@ -1064,8 +1073,9 @@ export const Sales: React.FC<SalesProps> = ({
                               onClick={async () => {
                                 if (confirm(`Удалить заказ ${o.id}?`)) {
                                   const updated = orders.filter(ord => ord.id !== o.id);
-                                  setOrders(updated);
+                                  // CRITICAL: Save to Sheets FIRST, then update state
                                   await onSaveOrders?.(updated);
+                                  setOrders(updated);
                                   toast.success('Заказ удалён');
                                 }
                               }}
@@ -1376,8 +1386,9 @@ export const Sales: React.FC<SalesProps> = ({
                         } 
                       : o
                   );
-                  setOrders(updated);
+                  // CRITICAL: Save to Sheets FIRST, then update state
                   await onSaveOrders?.(updated);
+                  setOrders(updated);
                   toast.success('Заказ обновлён');
                   setEditingOrderId(null);
                 }}

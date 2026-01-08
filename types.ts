@@ -1,4 +1,15 @@
 
+/**
+ * Base interface for optimistic concurrency control
+ * All entities should extend this to support version tracking
+ */
+export interface Versionable {
+  /** Version number for optimistic concurrency control. Increments on each update. */
+  _version?: number;
+  /** ISO timestamp of last update */
+  updatedAt?: string;
+}
+
 export enum ProductType {
   PIPE = 'Труба',
   PROFILE = 'Профиль',
@@ -58,14 +69,13 @@ export interface AppSettings {
   };
 }
 
-export interface Client {
+export interface Client extends Versionable {
   id: string;
   name: string;
   type?: 'individual' | 'legal'; // Default to 'individual'
   phone: string;
   email?: string;
   address?: string; // Physical address
-  updatedAt?: string; // ISO timestamp for sync
 
   // Legal Entity Details
   companyName?: string;
@@ -79,9 +89,10 @@ export interface Client {
   notes?: string;
   totalPurchases?: number;
   totalDebt?: number;
+  // _version and updatedAt inherited from Versionable
 }
 
-export interface Product {
+export interface Product extends Versionable {
   id: string;
   name: string;
   type: ProductType;
@@ -93,7 +104,7 @@ export interface Product {
   costPrice: number; // Base currency (USD) - Weighted Average Cost
   minStockLevel: number;
   origin?: 'import' | 'local'; // New field: Origin of the product
-  updatedAt?: string; // ISO timestamp for sync
+  // _version and updatedAt inherited from Versionable
 }
 
 export interface OrderItem {
@@ -107,7 +118,7 @@ export interface OrderItem {
   total: number; // Base currency (USD)
 }
 
-export interface Order {
+export interface Order extends Versionable {
   id: string;
   date: string;
   customerName: string;
@@ -130,11 +141,11 @@ export interface Order {
   paymentStatus: 'paid' | 'unpaid' | 'partial';
   paymentCurrency?: 'USD' | 'UZS'; // New field for cash currency
   amountPaid: number; // Amount actually paid (USD)
-  updatedAt?: string; // ISO timestamp for sync
+  // _version and updatedAt inherited from Versionable
 }
 
 // Workflow Order - Pre-order created by sales department
-export interface WorkflowOrder {
+export interface WorkflowOrder extends Versionable {
   id: string;
   date: string;
   customerName: string;
@@ -174,10 +185,10 @@ export interface WorkflowOrder {
   // Link to actual Order (when converted to sale)
   convertedToOrderId?: string;
   convertedAt?: string;
-  updatedAt?: string; // ISO timestamp for sync
+  // _version and updatedAt inherited from Versionable
 }
 
-export interface Expense {
+export interface Expense extends Versionable {
   id: string;
   date: string;
   description: string;
@@ -188,7 +199,7 @@ export interface Expense {
   exchangeRate?: number; // Rate at time of expense (USD -> UZS)
   vatAmount?: number; // In original currency
   employeeId?: string; // Link to employee for salary/advances
-  updatedAt?: string; // ISO timestamp for sync
+  // _version and updatedAt inherited from Versionable
 }
 
 export interface PurchaseOverheads {
@@ -209,7 +220,7 @@ export interface PurchaseItem {
   totalLineCost: number; // quantity * landedCost
 }
 
-export interface Purchase {
+export interface Purchase extends Versionable {
   id: string;
   date: string;
   supplierName: string;
@@ -218,16 +229,16 @@ export interface Purchase {
   overheads: PurchaseOverheads;
   totalInvoiceAmount: number; // Sum of items invoice prices
   totalLandedAmount: number; // Sum of landed costs (Invoice + Overheads)
-  updatedAt?: string; // ISO timestamp for sync
 
   // Payment Info
   paymentMethod: 'cash' | 'bank' | 'card' | 'debt' | 'mixed';
   paymentCurrency?: 'USD' | 'UZS'; // Валюта оплаты для наличных
   paymentStatus: 'paid' | 'unpaid' | 'partial';
   amountPaid: number; // Amount actually paid (USD)
+  // _version and updatedAt inherited from Versionable
 }
 
-export interface Transaction {
+export interface Transaction extends Versionable {
   id: string;
   date: string;
   type: 'client_payment' | 'supplier_payment' | 'client_return' | 'debt_obligation' | 'client_refund' | 'expense';
@@ -237,7 +248,7 @@ export interface Transaction {
   method: 'cash' | 'bank' | 'card' | 'debt';
   description: string;
   relatedId?: string; // Client ID or Purchase ID
-  updatedAt?: string; // ISO timestamp for sync
+  // _version and updatedAt inherited from Versionable
 }
 
 export interface DashboardStats {
@@ -266,7 +277,7 @@ export enum FixedAssetCategory {
   LAND = 'Земля' // 0%
 }
 
-export interface FixedAsset {
+export interface FixedAsset extends Versionable {
   id: string;
   name: string;
   category: FixedAssetCategory;
@@ -279,13 +290,13 @@ export interface FixedAsset {
   paymentMethod?: 'cash' | 'bank' | 'card'; // Способ оплаты
   paymentCurrency?: 'USD' | 'UZS'; // Валюта оплаты (для наличных)
   amountPaid?: number; // USD - сумма оплачено (для частичной оплаты)
-  updatedAt?: string; // ISO timestamp for sync
+  // _version and updatedAt inherited from Versionable
 }
 
 // Staff Management & RBAC
 export type UserRole = 'admin' | 'manager' | 'accountant' | 'sales' | 'warehouse';
 
-export interface Employee {
+export interface Employee extends Versionable {
   id: string;
   name: string;
   email: string; // Gmail address
@@ -299,7 +310,6 @@ export interface Employee {
   hasKPI?: boolean; // Whether the employee has KPI based salary
   status: 'active' | 'inactive';
   notes?: string;
-  updatedAt?: string; // ISO timestamp for sync
   permissions?: {
     dashboard?: boolean;
     inventory?: boolean;

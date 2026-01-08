@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { FixedAsset, FixedAssetCategory, Transaction } from '../types';
+import { IdGenerator } from '../utils/idGenerator';
 import { Plus, Trash2, RefreshCw, Landmark, Calendar, DollarSign, TrendingDown, Edit2 } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
@@ -61,7 +62,7 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
         const paid = amountPaid ? parseFloat(amountPaid) : cost;
         const rate = parseFloat(customExchangeRate) || defaultExchangeRate;
         const depreciationRate = getDepreciationRate(category);
-        const assetId = `FA-${Date.now()}`;
+        const assetId = IdGenerator.fixedAsset();
         const currency = paymentMethod === 'cash' ? paymentCurrency : 'UZS';
 
         if (paid > cost) {
@@ -95,7 +96,7 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
             const transactionAmount = currency === 'UZS' ? paid * rate : paid;
 
             const newTransaction: Transaction = {
-                id: `TRX-${Date.now()}`,
+                id: IdGenerator.transaction(),
                 date: purchaseDate,
                 type: 'expense',
                 amount: transactionAmount,
@@ -107,8 +108,9 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
             };
 
             const updatedTransactions = [...transactions, newTransaction];
-            setTransactions(updatedTransactions);
+            // CRITICAL: Save to Sheets FIRST, then update state
             await onSaveTransactions(updatedTransactions);
+            setTransactions(updatedTransactions);
         }
 
         setIsModalOpen(false);

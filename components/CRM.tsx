@@ -7,6 +7,7 @@ import { Plus, Search, Phone, Mail, MapPin, Edit, Trash2, DollarSign, Wallet, Hi
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid, PieChart, Pie, Cell } from 'recharts';
 import { checkAllPhones, formatPhoneForTablet, validateUzbekistanPhone } from '../utils/phoneFormatter';
 import { SUPER_ADMIN_EMAILS } from '../constants';
+import { IdGenerator } from '../utils/idGenerator';
 
 interface CRMProps {
     clients: Client[];
@@ -335,7 +336,7 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
         } else {
             // Create
             const newClient: Client = {
-                id: Date.now().toString(),
+                id: IdGenerator.client(),
                 ...formData as Client,
                 totalPurchases: 0,
                 totalDebt: 0
@@ -350,7 +351,6 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
 
         let amountInUSD = 0;
         const newTransactions: Transaction[] = [];
-        const baseId = Date.now();
         const orderRef = selectedOrderForRepayment ? ` (Чек #${selectedOrderForRepayment.slice(-10)})` : '';
 
         if (repaymentMethod === 'mixed') {
@@ -359,7 +359,7 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
                 const usd = mixCashUZS / exchangeRate;
                 amountInUSD += usd;
                 newTransactions.push({
-                    id: `TRX-${baseId}-cash-uzs`,
+                    id: IdGenerator.transaction(),
                     date: new Date().toISOString(),
                     type: 'client_payment',
                     amount: mixCashUZS,
@@ -373,7 +373,7 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
             if (mixCashUSD > 0) {
                 amountInUSD += mixCashUSD;
                 newTransactions.push({
-                    id: `TRX-${baseId}-cash-usd`,
+                    id: IdGenerator.transaction(),
                     date: new Date().toISOString(),
                     type: 'client_payment',
                     amount: mixCashUSD,
@@ -387,7 +387,7 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
                 const usd = mixCard / exchangeRate;
                 amountInUSD += usd;
                 newTransactions.push({
-                    id: `TRX-${baseId}-card`,
+                    id: IdGenerator.transaction(),
                     date: new Date().toISOString(),
                     type: 'client_payment',
                     amount: mixCard,
@@ -402,7 +402,7 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
                 const usd = mixBank / exchangeRate;
                 amountInUSD += usd;
                 newTransactions.push({
-                    id: `TRX-${baseId}-bank`,
+                    id: IdGenerator.transaction(),
                     date: new Date().toISOString(),
                     type: 'client_payment',
                     amount: mixBank,

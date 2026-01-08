@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Product, Purchase, PurchaseItem, PurchaseOverheads, Transaction, WorkflowOrder, OrderItem, ProductType, Unit } from '../types';
+import { IdGenerator } from '../utils/idGenerator';
 import { Plus, DollarSign, Wallet, CreditCard, Building2, Banknote, AlertTriangle } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
@@ -206,7 +207,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
         }
 
         const product: Product = {
-            id: Date.now().toString(),
+            id: IdGenerator.product(),
             name: newProductData.name.trim(),
             type: (newProductData.type as ProductType) || ProductType.OTHER,
             dimensions: newProductData.dimensions.trim(),
@@ -220,8 +221,9 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
         };
 
         const updated = [...products, product];
-        setProducts(updated);
+        // CRITICAL: Save to Sheets FIRST, then update state
         await onSaveProducts?.(updated);
+        setProducts(updated);
         setSelectedProductId(product.id);
         setIsNewProductModalOpen(false);
         toast.success('Товар добавлен. Теперь можно добавить его в закупку.');
@@ -396,7 +398,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
         const status = distribution ? (distribution.isPaid ? 'paid' : (paidUSD > 0 ? 'partial' : 'unpaid')) : (paymentMethod === 'debt' ? 'unpaid' : 'paid');
 
         const purchase: Purchase = {
-            id: `PUR-${Date.now()}`,
+            id: IdGenerator.purchase(),
             date: new Date(date).toISOString(),
             supplierName,
             status: 'completed',
@@ -423,16 +425,16 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
 
         if (distribution) {
             if (distribution.cashUSD > 0) {
-                newTransactions.push({ ...baseTrx, id: `TRX-CUSD-${Date.now()}`, amount: distribution.cashUSD, currency: 'USD', method: 'cash', description: `Оплата поставщику (USD Cash): ${supplierName} (Закупка #${purchase.id})` });
+                newTransactions.push({ ...baseTrx, id: IdGenerator.transaction(), amount: distribution.cashUSD, currency: 'USD', method: 'cash', description: `Оплата поставщику (USD Cash): ${supplierName} (Закупка #${purchase.id})` });
             }
             if (distribution.cashUZS > 0) {
-                newTransactions.push({ ...baseTrx, id: `TRX-CUZS-${Date.now()}`, amount: distribution.cashUZS, currency: 'UZS', exchangeRate: settings.defaultExchangeRate, method: 'cash', description: `Оплата поставщику (UZS Cash): ${supplierName} (Закупка #${purchase.id})` });
+                newTransactions.push({ ...baseTrx, id: IdGenerator.transaction(), amount: distribution.cashUZS, currency: 'UZS', exchangeRate: settings.defaultExchangeRate, method: 'cash', description: `Оплата поставщику (UZS Cash): ${supplierName} (Закупка #${purchase.id})` });
             }
             if (distribution.cardUZS > 0) {
-                newTransactions.push({ ...baseTrx, id: `TRX-CARD-${Date.now()}`, amount: distribution.cardUZS, currency: 'UZS', exchangeRate: settings.defaultExchangeRate, method: 'card', description: `Оплата поставщику (UZS Card): ${supplierName} (Закупка #${purchase.id})` });
+                newTransactions.push({ ...baseTrx, id: IdGenerator.transaction(), amount: distribution.cardUZS, currency: 'UZS', exchangeRate: settings.defaultExchangeRate, method: 'card', description: `Оплата поставщику (UZS Card): ${supplierName} (Закупка #${purchase.id})` });
             }
             if (distribution.bankUZS > 0) {
-                newTransactions.push({ ...baseTrx, id: `TRX-BANK-${Date.now()}`, amount: distribution.bankUZS, currency: 'UZS', exchangeRate: settings.defaultExchangeRate, method: 'bank', description: `Оплата поставщику (UZS Bank): ${supplierName} (Закупка #${purchase.id})` });
+                newTransactions.push({ ...baseTrx, id: IdGenerator.transaction(), amount: distribution.bankUZS, currency: 'UZS', exchangeRate: settings.defaultExchangeRate, method: 'bank', description: `Оплата поставщику (UZS Bank): ${supplierName} (Закупка #${purchase.id})` });
             }
         } else if (paymentMethod !== 'debt') {
             // Для карты и банка - всегда UZS
@@ -444,7 +446,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
 
             newTransactions.push({
                 ...baseTrx,
-                id: `TRX-${Date.now()}`,
+                id: IdGenerator.transaction(),
                 amount: transactionAmount,
                 currency: currency,
                 exchangeRate: currency === 'UZS' ? settings.defaultExchangeRate : undefined,
@@ -455,8 +457,9 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
 
         if (newTransactions.length > 0) {
             const updatedTransactions = [...transactions, ...newTransactions];
-            setTransactions(updatedTransactions);
+            // CRITICAL: Save to Sheets FIRST, then update state
             if (onSaveTransactions) await onSaveTransactions(updatedTransactions);
+            setTransactions(updatedTransactions);
         }
 
         // 3. Update Product Stock & Cost
@@ -475,7 +478,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                 if (idx !== -1) nextProducts[idx] = { ...existing, quantity: newQuantity, costPrice: newCost };
             } else {
                 nextProducts.push({
-                    id: item.productId || Date.now().toString(),
+                    id: item.productId || IdGenerator.product(),
                     name: item.productName || 'Новый товар',
                     type: ProductType.OTHER,
                     dimensions: '-',
@@ -490,8 +493,9 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
             }
         });
 
-        setProducts(nextProducts);
+        // CRITICAL: Save to Sheets FIRST, then update state
         if (onSaveProducts) await onSaveProducts(nextProducts);
+        setProducts(nextProducts);
 
         // Reset
         setCart([]);
@@ -627,7 +631,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
 
         // 1. Create Transaction
         const newTransaction: Transaction = {
-            id: `TRX-${Date.now()}`,
+            id: IdGenerator.transaction(),
             date: new Date().toISOString(),
             type: 'supplier_payment',
             amount: repaymentAmount, // Amount in ACTUAL currency

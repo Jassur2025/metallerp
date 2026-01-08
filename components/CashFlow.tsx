@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Order, Expense, AppSettings } from '../types';
+import { IdGenerator } from '../utils/idGenerator';
 import { validateUSD } from '../utils/finance';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, Cell } from 'recharts';
 import { ArrowUpRight, ArrowDownRight, Wallet, Plus, Calendar, DollarSign, Tag, Printer, FileSpreadsheet, Download } from 'lucide-react';
@@ -139,7 +140,7 @@ export const CashFlow: React.FC<CashFlowProps> = ({ orders, expenses, settings, 
         if (!newExpense.amount || !newExpense.description) return;
 
         const expense: Expense = {
-            id: `EXP-${Date.now()}`,
+            id: IdGenerator.expense(),
             date: new Date(newExpense.date!).toISOString(),
             amount: Number(newExpense.amount),
             category: newExpense.category || 'Прочее',

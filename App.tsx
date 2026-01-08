@@ -54,6 +54,7 @@ import { validateAccessToken, isTokenExpiredError, logTokenStatus } from './util
 import { telegramService } from './services/telegramService';
 import { calculateBaseTotals } from './utils/finance';
 import { useSaveHandler, createSaveHandlerFactory } from './hooks/useSaveHandler';
+import { useConflictHandler } from './hooks/useConflictHandler';
 
 const isDev = import.meta.env.DEV;
 const logDev = (...args: unknown[]) => { if (isDev) console.log(...args); };
@@ -122,6 +123,10 @@ const defaultSettings: AppSettings = {
 const AppContent: React.FC = () => {
   const { user, logout, accessToken, refreshAccessToken } = useAuth();
   const toast = useToast();
+  
+  // Настраиваем глобальный обработчик конфликтов версий
+  useConflictHandler();
+  
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(() => {
     try {

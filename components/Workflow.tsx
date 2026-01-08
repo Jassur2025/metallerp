@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Product, WorkflowOrder, OrderItem, Order, Client, Transaction, AppSettings, Employee, JournalEvent } from '../types';
+import { IdGenerator } from '../utils/idGenerator';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
 import { Plus, Trash2, Search, ClipboardList, BadgeCheck, Send, AlertTriangle, Wallet, Building2, CreditCard, XCircle, RotateCcw, Edit3 } from 'lucide-react';
@@ -163,8 +164,9 @@ export const Workflow: React.FC<WorkflowProps> = ({
   };
 
   const saveWorkflowOrders = async (next: WorkflowOrder[]) => {
-    setWorkflowOrders(next);
+    // CRITICAL: Save to Sheets FIRST, then update state
     await onSaveWorkflowOrders?.(next);
+    setWorkflowOrders(next);
   };
 
   const submitWorkflowOrder = async () => {
@@ -191,7 +193,7 @@ export const Workflow: React.FC<WorkflowProps> = ({
       paymentMethod === 'cash' ? paymentCurrency : paymentMethod === 'debt' ? 'USD' : 'UZS';
 
     const wf: WorkflowOrder = {
-      id: `WF-${Date.now()}`,
+      id: IdGenerator.workflow(),
       date: new Date().toISOString(),
       customerName: customerName.trim(),
       customerPhone: customerPhone.trim() || undefined,
@@ -250,7 +252,7 @@ export const Workflow: React.FC<WorkflowProps> = ({
 
     // Create Order (real sale)
     const newOrder: Order = {
-      id: `ORD-${Date.now()}`,
+      id: IdGenerator.order(),
       date: new Date().toISOString(),
       customerName: wf.customerName,
       sellerId: wf.sellerId, // ID продавца для KPI
@@ -274,8 +276,9 @@ export const Workflow: React.FC<WorkflowProps> = ({
       const it = wf.items.find(i => i.productId === p.id);
       return it ? { ...p, quantity: p.quantity - it.quantity } : p;
     });
-    setProducts(updatedProducts);
+    // CRITICAL: Save to Sheets FIRST, then update state
     await onSaveProducts?.(updatedProducts);
+    setProducts(updatedProducts);
 
     // Update clients stats (auto-create if missing)
     let currentClients = [...clients];
@@ -283,7 +286,7 @@ export const Workflow: React.FC<WorkflowProps> = ({
     let clientId = '';
     if (idx === -1) {
       const c: Client = {
-        id: `CLI-${Date.now()}`,
+        id: IdGenerator.client(),
         name: wf.customerName,
         phone: wf.customerPhone || '',
         creditLimit: 0,
@@ -308,7 +311,7 @@ export const Workflow: React.FC<WorkflowProps> = ({
     // Create transaction for debt obligation
     if (isDebt) {
       const trx: Transaction = {
-        id: `TRX-${Date.now()}`,
+        id: IdGenerator.transaction(),
         date: new Date().toISOString(),
         type: 'debt_obligation',
         amount: wf.totalAmount,
@@ -318,14 +321,16 @@ export const Workflow: React.FC<WorkflowProps> = ({
         relatedId: clientId
       };
       const updatedTx = [...transactions, trx];
-      setTransactions(updatedTx);
+      // CRITICAL: Save to Sheets FIRST, then update state
       await onSaveTransactions?.(updatedTx);
+      setTransactions(updatedTx);
     }
 
     // Save orders
     const updatedOrders = [newOrder, ...orders];
-    setOrders(updatedOrders);
+    // CRITICAL: Save to Sheets FIRST, then update state
     await onSaveOrders?.(updatedOrders);
+    setOrders(updatedOrders);
 
     // Update workflow status
     const nextWorkflow = workflowOrders.map(o =>
@@ -335,7 +340,7 @@ export const Workflow: React.FC<WorkflowProps> = ({
 
     // Journal
     await onAddJournalEvent?.({
-      id: `JE-${Date.now()}`,
+      id: IdGenerator.journalEvent(),
       date: new Date().toISOString(),
       type: 'employee_action',
       employeeName: currentEmployee?.name || 'Кассир',
@@ -413,7 +418,7 @@ export const Workflow: React.FC<WorkflowProps> = ({
 
     // Journal
     await onAddJournalEvent?.({
-      id: `JE-${Date.now()}`,
+      id: IdGenerator.journalEvent(),
       date: new Date().toISOString(),
       type: 'employee_action',
       employeeName: currentEmployee?.name || 'Продажи',
