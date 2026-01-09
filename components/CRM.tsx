@@ -13,6 +13,7 @@ interface CRMProps {
     clients: Client[];
     onSave: (clients: Client[]) => void;
     orders: Order[];
+    onSaveOrders?: (orders: Order[]) => void;
     transactions: Transaction[];
     setTransactions: (t: Transaction[]) => void;
     onSaveTransactions?: (transactions: Transaction[]) => Promise<boolean | void>;
@@ -21,7 +22,7 @@ interface CRMProps {
 
 type CRMView = 'clients' | 'repaymentStats';
 
-export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions, setTransactions, onSaveTransactions, currentUser }) => {
+export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, onSaveOrders, transactions, setTransactions, onSaveTransactions, currentUser }) => {
     const toast = useToast();
     const { theme } = useTheme();
     const t = getThemeClasses(theme);
@@ -449,7 +450,25 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, transactions,
             onSaveTransactions(updatedTransactions);
         }
 
-        // 2. Update Client Debt
+        // 2. Update Order amountPaid if specific order was selected
+        if (selectedOrderForRepayment && onSaveOrders) {
+            const updatedOrders = orders.map(order => {
+                if (order.id === selectedOrderForRepayment) {
+                    const newAmountPaid = (order.amountPaid || 0) + amountInUSD;
+                    const newDebt = Math.max(0, (order.totalAmount || 0) - newAmountPaid);
+                    return {
+                        ...order,
+                        amountPaid: newAmountPaid,
+                        // Если долг полностью погашен, можно изменить paymentMethod
+                        paymentMethod: newDebt < 0.01 ? 'paid' : order.paymentMethod
+                    };
+                }
+                return order;
+            });
+            onSaveOrders(updatedOrders);
+        }
+
+        // 3. Update Client Debt
         const updatedClients = clients.map(c => {
             if (c.id === selectedClientForRepayment.id) {
                 return {

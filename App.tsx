@@ -764,6 +764,7 @@ const AppContent: React.FC = () => {
           clients={clients}
           onSave={handleSaveClients}
           orders={orders}
+          onSaveOrders={handleSaveOrders}
           transactions={transactions}
           setTransactions={setTransactions}
           onSaveTransactions={handleSaveTransactions}
