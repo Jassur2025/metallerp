@@ -144,13 +144,34 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, onSaveOrders,
                 (companyName && orderClientName.includes(companyName));
             
             if (matchesClient && order.paymentMethod === 'debt') {
-                const debtAmount = (order.totalAmount || 0) - (order.amountPaid || 0);
+                // Рассчитать погашения из транзакций для этого заказа
+                const repayments = transactions.filter(t => {
+                    const desc = (t.description || '').toLowerCase();
+                    const isRepayment = desc.includes('погашение');
+                    const matchesOrder = 
+                        t.relatedId === order.id ||
+                        t.relatedId?.toLowerCase() === order.id.toLowerCase() ||
+                        desc.includes(order.id.toLowerCase());
+                    return isRepayment && matchesOrder;
+                });
+                
+                // Суммируем погашения в USD
+                let totalRepaidUSD = order.amountPaid || 0;
+                repayments.forEach(r => {
+                    if (r.currency === 'UZS' && r.exchangeRate) {
+                        totalRepaidUSD += (r.amount || 0) / r.exchangeRate;
+                    } else {
+                        totalRepaidUSD += (r.amount || 0);
+                    }
+                });
+                
+                const debtAmount = (order.totalAmount || 0) - totalRepaidUSD;
                 if (debtAmount > 0.01) {
                     unpaidOrders.push({
                         id: order.id,
                         date: order.date,
                         totalAmount: order.totalAmount || 0,
-                        amountPaid: order.amountPaid || 0,
+                        amountPaid: totalRepaidUSD,
                         debtAmount,
                         items: (order.items || []).map(it => it.productName).slice(0, 2).join(', ') + (order.items && order.items.length > 2 ? '...' : '')
                     });
@@ -168,26 +189,42 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, onSaveOrders,
             
             if (matchesClient && txDescription.includes('долг по заказу')) {
                 // Извлечь ID заказа из описания
-                const orderIdMatch = txDescription.match(/ord-\d+/i);
+                const orderIdMatch = txDescription.match(/ord-[a-z0-9]+/i);
                 const orderId = orderIdMatch ? orderIdMatch[0].toUpperCase() : tx.id;
                 
                 // Проверить не добавлен ли уже этот заказ
-                const existingOrder = unpaidOrders.find(o => o.id === orderId);
+                const existingOrder = unpaidOrders.find(o => o.id === orderId || o.id.toLowerCase() === orderId.toLowerCase());
                 if (!existingOrder) {
                     // Рассчитать сколько погашено по этому заказу
-                    const repayments = transactions.filter(t => 
-                        t.description?.toLowerCase().includes(orderId.toLowerCase()) && 
-                        t.description?.toLowerCase().includes('погашение')
-                    );
-                    const totalRepaid = repayments.reduce((sum, t) => sum + (t.amount || 0), 0);
-                    const debtAmount = (tx.amount || 0) - totalRepaid;
+                    // Ищем по relatedId или по упоминанию ID заказа в описании
+                    const repayments = transactions.filter(t => {
+                        const desc = (t.description || '').toLowerCase();
+                        const isRepayment = desc.includes('погашение');
+                        const matchesOrder = 
+                            t.relatedId === orderId ||
+                            t.relatedId?.toLowerCase() === orderId.toLowerCase() ||
+                            desc.includes(orderId.toLowerCase());
+                        return isRepayment && matchesOrder;
+                    });
+                    
+                    // Суммируем в USD
+                    let totalRepaidUSD = 0;
+                    repayments.forEach(r => {
+                        if (r.currency === 'UZS' && r.exchangeRate) {
+                            totalRepaidUSD += (r.amount || 0) / r.exchangeRate;
+                        } else {
+                            totalRepaidUSD += (r.amount || 0);
+                        }
+                    });
+                    
+                    const debtAmount = (tx.amount || 0) - totalRepaidUSD;
                     
                     if (debtAmount > 0.01) {
                         unpaidOrders.push({
                             id: orderId,
                             date: tx.date,
                             totalAmount: tx.amount || 0,
-                            amountPaid: totalRepaid,
+                            amountPaid: totalRepaidUSD,
                             debtAmount,
                             items: tx.description || ''
                         });
@@ -352,7 +389,8 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, onSaveOrders,
 
         let amountInUSD = 0;
         const newTransactions: Transaction[] = [];
-        const orderRef = selectedOrderForRepayment ? ` (Чек #${selectedOrderForRepayment.slice(-10)})` : '';
+        // Используем полный ID заказа для правильного сопоставления при расчёте погашений
+        const orderRef = selectedOrderForRepayment ? ` (Чек ${selectedOrderForRepayment})` : '';
 
         if (repaymentMethod === 'mixed') {
             // Микс-оплата: создаём транзакции для каждого способа
