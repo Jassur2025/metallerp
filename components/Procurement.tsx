@@ -54,6 +54,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
     const [repaymentAmount, setRepaymentAmount] = useState<number>(0);
     const [repaymentMethod, setRepaymentMethod] = useState<PaymentMethod>('cash');
     const [repaymentCurrency, setRepaymentCurrency] = useState<PaymentCurrency>('USD');
+    const [isRepaymentSplitModalOpen, setIsRepaymentSplitModalOpen] = useState(false);
 
     // Expanded purchase rows in history
     const [expandedPurchaseIds, setExpandedPurchaseIds] = useState<Set<string>>(new Set());
@@ -669,42 +670,135 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
         setIsRepayModalOpen(true);
     };
 
-    const handleRepayDebt = () => {
-        if (!selectedPurchaseForRepayment || repaymentAmount <= 0) return;
-
-        // Calculate USD Equivalent for Purchase update
-        let amountUSD = repaymentAmount;
-        if (repaymentCurrency === 'UZS') {
-            amountUSD = repaymentAmount / settings.defaultExchangeRate;
-        }
-
-        // Validate if trying to pay more than debt
+    const handleRepayDebt = (distribution?: PaymentDistribution) => {
+        if (!selectedPurchaseForRepayment) return;
+        
+        const rate = settings.defaultExchangeRate || 12900;
         const remainingDebt = selectedPurchaseForRepayment.totalInvoiceAmount - selectedPurchaseForRepayment.amountPaid;
-        // Allow small rounding error margin (0.01)
-        if (amountUSD > remainingDebt + 0.1) {
-            toast.warning(`Сумма превышает остаток долга! (Макс: $${remainingDebt.toFixed(2)})`);
-            return;
-        }
-
-        // 1. Create Transaction
-        const newTransaction: Transaction = {
-            id: IdGenerator.transaction(),
+        const remainingDebtUZS = remainingDebt * rate;
+        
+        let amountUSD: number;
+        let amountUZS: number;
+        const newTransactions: Transaction[] = [];
+        const baseTrx = {
             date: new Date().toISOString(),
-            type: 'supplier_payment',
-            amount: repaymentAmount, // Amount in ACTUAL currency
-            currency: repaymentCurrency,
-            exchangeRate: repaymentCurrency === 'UZS' ? settings.defaultExchangeRate : undefined,
-            method: repaymentMethod,
-            description: `Погашение долга поставщику: ${selectedPurchaseForRepayment.supplierName} (Закупка #${selectedPurchaseForRepayment.id})`,
+            type: 'supplier_payment' as const,
             relatedId: selectedPurchaseForRepayment.id
         };
-        const updatedTransactions = [...transactions, newTransaction];
-        setTransactions(updatedTransactions);
-        if (onSaveTransactions) {
-            onSaveTransactions(updatedTransactions);
+        
+        if (distribution) {
+            // Микс оплата
+            amountUZS = distribution.cashUZS + distribution.cardUZS + distribution.bankUZS + (distribution.cashUSD * rate);
+            amountUSD = amountUZS / rate;
+            
+            if (distribution.cashUSD > 0) {
+                newTransactions.push({ 
+                    ...baseTrx, 
+                    id: IdGenerator.transaction(), 
+                    amount: distribution.cashUSD, 
+                    currency: 'USD', 
+                    method: 'cash', 
+                    description: `Погашение долга поставщику (Нал USD): ${selectedPurchaseForRepayment.supplierName}` 
+                });
+            }
+            if (distribution.cashUZS > 0) {
+                newTransactions.push({ 
+                    ...baseTrx, 
+                    id: IdGenerator.transaction(), 
+                    amount: distribution.cashUZS, 
+                    currency: 'UZS', 
+                    exchangeRate: rate, 
+                    method: 'cash', 
+                    description: `Погашение долга поставщику (Нал сум): ${selectedPurchaseForRepayment.supplierName}` 
+                });
+            }
+            if (distribution.cardUZS > 0) {
+                newTransactions.push({ 
+                    ...baseTrx, 
+                    id: IdGenerator.transaction(), 
+                    amount: distribution.cardUZS, 
+                    currency: 'UZS', 
+                    exchangeRate: rate, 
+                    method: 'card', 
+                    description: `Погашение долга поставщику (Карта): ${selectedPurchaseForRepayment.supplierName}` 
+                });
+            }
+            if (distribution.bankUZS > 0) {
+                newTransactions.push({ 
+                    ...baseTrx, 
+                    id: IdGenerator.transaction(), 
+                    amount: distribution.bankUZS, 
+                    currency: 'UZS', 
+                    exchangeRate: rate, 
+                    method: 'bank', 
+                    description: `Погашение долга поставщику (Р/С): ${selectedPurchaseForRepayment.supplierName}` 
+                });
+            }
+        } else {
+            // Обычная оплата одним методом
+            if (repaymentAmount <= 0) return;
+            
+            // Calculate USD Equivalent for Purchase update
+            if (repaymentCurrency === 'UZS') {
+                amountUZS = repaymentAmount;
+                amountUSD = repaymentAmount / rate;
+            } else {
+                amountUSD = repaymentAmount;
+                amountUZS = repaymentAmount * rate;
+            }
+            
+            // Validate if trying to pay more than debt
+            if (amountUSD > remainingDebt + 0.1) {
+                toast.warning(`Сумма превышает остаток долга! (Макс: $${remainingDebt.toFixed(2)})`);
+                return;
+            }
+            
+            // Проверка баланса кассы
+            if (balances) {
+                if (repaymentMethod === 'cash') {
+                    if (repaymentCurrency === 'USD' && balances.cashUSD < amountUSD) {
+                        toast.error(`Недостаточно USD в кассе. Доступно: $${balances.cashUSD.toFixed(2)}`);
+                        return;
+                    }
+                    if (repaymentCurrency === 'UZS' && balances.cashUZS < amountUZS) {
+                        toast.error(`Недостаточно сум в кассе. Доступно: ${balances.cashUZS.toLocaleString()} сум`);
+                        return;
+                    }
+                } else if (repaymentMethod === 'card' && balances.cardUZS < amountUZS) {
+                    toast.error(`Недостаточно средств на карте. Доступно: ${balances.cardUZS.toLocaleString()} сум`);
+                    return;
+                } else if (repaymentMethod === 'bank' && balances.bankUZS < amountUZS) {
+                    toast.error(`Недостаточно средств на Р/С. Доступно: ${balances.bankUZS.toLocaleString()} сум`);
+                    return;
+                }
+            }
+            
+            // Create single transaction
+            const methodLabel = repaymentMethod === 'cash' 
+                ? (repaymentCurrency === 'USD' ? 'Нал USD' : 'Нал сум') 
+                : repaymentMethod === 'card' ? 'Карта' : 'Р/С';
+                
+            newTransactions.push({
+                ...baseTrx,
+                id: IdGenerator.transaction(),
+                amount: repaymentAmount,
+                currency: repaymentCurrency,
+                exchangeRate: repaymentCurrency === 'UZS' ? rate : undefined,
+                method: repaymentMethod as 'cash' | 'bank' | 'card',
+                description: `Погашение долга поставщику (${methodLabel}): ${selectedPurchaseForRepayment.supplierName}`
+            });
         }
 
-        // 2. Update Purchase (Always in USD)
+        // Save Transactions
+        if (newTransactions.length > 0) {
+            const updatedTransactions = [...transactions, ...newTransactions];
+            setTransactions(updatedTransactions);
+            if (onSaveTransactions) {
+                onSaveTransactions(updatedTransactions);
+            }
+        }
+
+        // Update Purchase (Always in USD)
         const updatedPurchases = purchases.map(p => {
             if (p.id === selectedPurchaseForRepayment.id) {
                 const newAmountPaid = p.amountPaid + amountUSD;
@@ -719,7 +813,8 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
         onSavePurchases(updatedPurchases);
 
         setIsRepayModalOpen(false);
-        toast.success(`Оплата поставщику проведена: ${repaymentAmount.toLocaleString()} ${repaymentCurrency}`);
+        setIsRepaymentSplitModalOpen(false);
+        toast.success(`Оплата поставщику проведена: ${amountUZS.toLocaleString()} сум ($${amountUSD.toFixed(2)})`);
     };
 
     return (
@@ -807,10 +902,35 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                                 </div>
                             </div>
 
+                            {/* Available Balances */}
+                            {balances && (
+                                <div className={`${t.bg} p-3 rounded-xl border ${t.border}`}>
+                                    <p className={`text-xs font-medium ${t.textMuted} mb-2`}>Доступно в кассах:</p>
+                                    <div className="grid grid-cols-2 gap-2 text-xs">
+                                        <div className="flex justify-between">
+                                            <span className={t.textMuted}>Нал USD:</span>
+                                            <span className="text-emerald-400 font-mono">${balances.cashUSD.toLocaleString()}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className={t.textMuted}>Нал сум:</span>
+                                            <span className="text-blue-400 font-mono">{balances.cashUZS.toLocaleString()}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className={t.textMuted}>Карта:</span>
+                                            <span className="text-purple-400 font-mono">{balances.cardUZS.toLocaleString()}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className={t.textMuted}>Р/С:</span>
+                                            <span className="text-amber-400 font-mono">{balances.bankUZS.toLocaleString()}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
                             {/* Payment Method Selector */}
                             <div className="space-y-2">
                                 <label className={`text-sm font-medium ${t.textMuted}`}>Способ оплаты</label>
-                                <div className="grid grid-cols-3 gap-2">
+                                <div className="grid grid-cols-4 gap-2">
                                     <button
                                         onClick={() => {
                                             setRepaymentMethod('cash');
@@ -822,7 +942,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                                             }`}
                                     >
                                         <Banknote size={20} />
-                                        <span className="text-xs font-bold">Наличные</span>
+                                        <span className="text-xs font-bold">Нал</span>
                                     </button>
                                     <button
                                         onClick={() => {
@@ -848,7 +968,17 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                                             }`}
                                     >
                                         <Building2 size={20} />
-                                        <span className="text-xs font-bold">Безнал</span>
+                                        <span className="text-xs font-bold">Р/С</span>
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            setIsRepayModalOpen(false);
+                                            setIsRepaymentSplitModalOpen(true);
+                                        }}
+                                        className={`p-3 rounded-xl border flex flex-col items-center gap-2 transition-all bg-gradient-to-br from-purple-600/20 to-pink-600/20 border-purple-500/50 text-purple-400 hover:border-purple-400`}
+                                    >
+                                        <Wallet size={20} />
+                                        <span className="text-xs font-bold">Микс</span>
                                     </button>
                                 </div>
                             </div>
@@ -1107,6 +1237,21 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                         </div>
                     </div>
                 </div>
+            )}
+
+            {/* Payment Split Modal for Repayment */}
+            {selectedPurchaseForRepayment && (
+                <PaymentSplitModal
+                    isOpen={isRepaymentSplitModalOpen}
+                    onClose={() => {
+                        setIsRepaymentSplitModalOpen(false);
+                        setIsRepayModalOpen(true);
+                    }}
+                    totalAmountUSD={selectedPurchaseForRepayment.totalInvoiceAmount - selectedPurchaseForRepayment.amountPaid}
+                    totalAmountUZS={(selectedPurchaseForRepayment.totalInvoiceAmount - selectedPurchaseForRepayment.amountPaid) * (settings.defaultExchangeRate || 12900)}
+                    exchangeRate={settings.defaultExchangeRate || 12900}
+                    onConfirm={handleRepayDebt}
+                />
             )}
         </div>
     );
