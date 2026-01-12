@@ -98,8 +98,21 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fi
     // 1. VAT Liability (Owed to Government)
     const vatLiability = safeOrders.reduce((sum, o) => sum + (o.vatAmount || 0), 0);
 
-    // 2. Accounts Payable (Debt to Suppliers)
-    const accountsPayable = safePurchases.reduce((sum, p) => sum + (Math.max(0, (p.totalInvoiceAmount || 0) - (p.amountPaid || 0))), 0);
+    // 2. Accounts Payable (Debt to Suppliers) - Кредиторка в USD
+    // Если есть новые поля (totalInvoiceAmountUZS), используем их, иначе legacy
+    const accountsPayable = safePurchases.reduce((sum, p) => {
+        const purchaseRate = p.exchangeRate || settings.defaultExchangeRate || currentRate;
+        
+        // Новая логика: долг в UZS с НДС
+        if (p.totalInvoiceAmountUZS !== undefined) {
+            const totalDebtUZS = (p.totalInvoiceAmountUZS || 0) - (p.amountPaid || 0);
+            return sum + Math.max(0, totalDebtUZS / purchaseRate);
+        }
+        
+        // Legacy: долг в USD
+        const amountPaidUSD = p.amountPaidUSD || (p.amountPaid || 0);
+        return sum + Math.max(0, (p.totalInvoiceAmount || 0) - amountPaidUSD);
+    }, 0);
 
     // 3. Accounts Payable - Fixed Assets (Debt for Fixed Assets)
     const fixedAssetsPayable = safeFixedAssets.reduce((sum, fa) => {
@@ -111,7 +124,14 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fi
     // Собственный капитал = Активы - Обязательства
     // Но для баланса: если товар куплен в долг, то собственный капитал = 0
     // Если товар оплачен, то собственный капитал = стоимость оплаченного товара
-    const paidForInventory = safePurchases.reduce((sum, p) => sum + (p.amountPaid || 0), 0);
+    const paidForInventory = safePurchases.reduce((sum, p) => {
+        // Используем amountPaidUSD если есть, иначе конвертируем amountPaid
+        if (p.amountPaidUSD !== undefined) {
+            return sum + (p.amountPaidUSD || 0);
+        }
+        // Legacy: amountPaid уже в USD
+        return sum + (p.amountPaid || 0);
+    }, 0);
     const equity = paidForInventory;
 
     // 3. Fixed Assets Fund (Capital invested in Fixed Assets)

@@ -249,7 +249,7 @@ export const Reports: React.FC<ReportsProps> = ({ orders, expenses, products, pu
       {/* Report Content */}
       <div className={`flex-1 overflow-auto ${t.bgMain} custom-scrollbar`}>
         {activeTab === 'pnl' && <PnL orders={orders} expenses={expenses} defaultExchangeRate={settings.defaultExchangeRate} />}
-        {activeTab === 'cashflow' && <CashFlow orders={orders} expenses={expenses} settings={settings} onAddExpense={onAddExpense} />}
+        {activeTab === 'cashflow' && <CashFlow orders={orders} expenses={expenses} settings={settings} onAddExpense={onAddExpense} transactions={transactions} />}
         {activeTab === 'sales' && <SalesAnalytics orders={orders} settings={settings} />}
         {activeTab === 'statistics' && <SalesStatistics orders={orders} products={products} transactions={transactions} />}
         {activeTab === 'vat' && <VatReport purchases={purchases} orders={orders} expenses={expenses} settings={settings} />}

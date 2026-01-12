@@ -215,9 +215,12 @@ export interface PurchaseItem {
   dimensions?: string; // Размер товара
   quantity: number;
   unit: Unit;
-  invoicePrice: number; // Supplier price per unit (USD)
-  landedCost: number; // Final calculated cost per unit (USD)
-  totalLineCost: number; // quantity * landedCost
+  invoicePrice: number; // Цена поставщика за ед. (UZS) - С НДС
+  invoicePriceWithoutVat: number; // Цена без НДС (UZS)
+  vatAmount: number; // Сумма НДС (UZS)
+  landedCost: number; // Финальная себестоимость за ед. (USD) - БЕЗ НДС
+  totalLineCost: number; // quantity * landedCost (USD)
+  totalLineCostUZS: number; // quantity * invoicePrice (UZS) - С НДС для кредиторки
 }
 
 export interface Purchase extends Versionable {
@@ -227,14 +230,25 @@ export interface Purchase extends Versionable {
   status: 'completed';
   items: PurchaseItem[];
   overheads: PurchaseOverheads;
-  totalInvoiceAmount: number; // Sum of items invoice prices
-  totalLandedAmount: number; // Sum of landed costs (Invoice + Overheads)
+  
+  // Суммы в UZS (с НДС) - для кредиторки
+  totalInvoiceAmountUZS: number; // Сумма счёта в сумах (с НДС)
+  totalVatAmountUZS: number; // Сумма НДС в сумах
+  totalWithoutVatUZS: number; // Сумма без НДС в сумах
+  
+  // Суммы в USD (без НДС) - для ТМЦ
+  totalInvoiceAmount: number; // Sum of items invoice prices (USD) - legacy, kept for compatibility
+  totalLandedAmount: number; // Sum of landed costs (USD) - БЕЗ НДС
+  
+  // Курс на момент закупки
+  exchangeRate: number;
 
   // Payment Info
   paymentMethod: 'cash' | 'bank' | 'card' | 'debt' | 'mixed';
   paymentCurrency?: 'USD' | 'UZS'; // Валюта оплаты для наличных
   paymentStatus: 'paid' | 'unpaid' | 'partial';
-  amountPaid: number; // Amount actually paid (USD)
+  amountPaid: number; // Amount actually paid (UZS) - теперь в сумах
+  amountPaidUSD: number; // Amount paid converted to USD
   // _version and updatedAt inherited from Versionable
 }
 

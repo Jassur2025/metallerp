@@ -281,91 +281,129 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
         setCart(cart.map(item => {
             if (item.productId !== productId) return item;
             const validPrice = Math.max(0, price);
+            const vatRate = settings.vatRate || 12;
+            const priceWithoutVat = validPrice / (1 + vatRate / 100);
+            const vatAmount = validPrice - priceWithoutVat;
             return {
                 ...item,
-                invoicePrice: validPrice,
-                landedCost: validPrice,
-                totalLineCost: item.quantity * validPrice
+                invoicePrice: validPrice, // UZS с НДС
+                invoicePriceWithoutVat: priceWithoutVat, // UZS без НДС
+                vatAmount: vatAmount, // НДС в UZS
+                landedCost: validPrice, // будет пересчитано
+                totalLineCost: item.quantity * validPrice,
+                totalLineCostUZS: item.quantity * validPrice
             };
         }));
     };
 
     // --- Calculation Logic ---
+    // Закупка в UZS с НДС, в ТМЦ приходит без НДС
     const totals: Totals = useMemo(() => {
-        const totalInvoiceValue = cart.reduce((sum, item) => sum + (item.quantity * item.invoicePrice), 0);
+        const rate = settings.defaultExchangeRate || 12800;
+        const vatRate = settings.vatRate || 12;
+        
+        // Сумма в UZS (с НДС) - для кредиторки поставщику
+        const totalInvoiceValueUZS = cart.reduce((sum, item) => sum + (item.quantity * item.invoicePrice), 0);
+        
+        // Сумма НДС в UZS
+        const totalVatAmountUZS = totalInvoiceValueUZS - (totalInvoiceValueUZS / (1 + vatRate / 100));
+        
+        // Сумма без НДС в UZS
+        const totalWithoutVatUZS = totalInvoiceValueUZS - totalVatAmountUZS;
+        
+        // Сумма без НДС в USD - для приходования в ТМЦ
+        const totalInvoiceValue = totalWithoutVatUZS / rate;
 
         let totalOverheads = 0;
         let totalLandedValue = totalInvoiceValue;
-        let itemsWithLandedCost = cart;
+        let itemsWithLandedCost: PurchaseItem[] = [];
 
         if (procurementType === 'import') {
             totalOverheads = overheads.logistics + overheads.customsDuty + overheads.other;
             totalLandedValue = totalInvoiceValue + totalOverheads;
 
             itemsWithLandedCost = cart.map(item => {
-                if (totalInvoiceValue === 0) return item;
+                if (totalInvoiceValueUZS === 0) return item as PurchaseItem;
 
-                const lineValue = item.quantity * item.invoicePrice;
-                const proportion = lineValue / totalInvoiceValue;
+                const lineValueUZS = item.quantity * item.invoicePrice;
+                const lineVat = lineValueUZS - (lineValueUZS / (1 + vatRate / 100));
+                const lineWithoutVat = lineValueUZS - lineVat;
+                const lineWithoutVatUSD = lineWithoutVat / rate;
+                
+                const proportion = lineWithoutVatUSD / totalInvoiceValue;
                 const allocatedOverhead = totalOverheads * proportion;
-                const landedCostPerUnit = item.invoicePrice + (allocatedOverhead / item.quantity);
+                const landedCostPerUnit = (lineWithoutVatUSD + allocatedOverhead) / item.quantity;
 
                 return {
                     ...item,
-                    landedCost: landedCostPerUnit,
-                    totalLineCost: (landedCostPerUnit * item.quantity)
+                    invoicePriceWithoutVat: (item.invoicePrice / (1 + vatRate / 100)),
+                    vatAmount: item.invoicePrice - (item.invoicePrice / (1 + vatRate / 100)),
+                    landedCost: landedCostPerUnit, // USD без НДС
+                    totalLineCost: landedCostPerUnit * item.quantity, // USD
+                    totalLineCostUZS: lineValueUZS // UZS с НДС
                 };
             });
         } else {
-            // Local: Landed Cost = Invoice Price
-            itemsWithLandedCost = cart.map(item => ({
-                ...item,
-                landedCost: item.invoicePrice,
-                totalLineCost: item.quantity * item.invoicePrice
-            }));
+            // Local: себестоимость = цена без НДС в USD
+            itemsWithLandedCost = cart.map(item => {
+                const priceWithoutVat = item.invoicePrice / (1 + vatRate / 100);
+                const vatAmount = item.invoicePrice - priceWithoutVat;
+                const landedCostUSD = priceWithoutVat / rate;
+                
+                return {
+                    ...item,
+                    invoicePriceWithoutVat: priceWithoutVat,
+                    vatAmount: vatAmount,
+                    landedCost: landedCostUSD, // USD без НДС
+                    totalLineCost: item.quantity * landedCostUSD, // USD
+                    totalLineCostUZS: item.quantity * item.invoicePrice // UZS с НДС
+                };
+            });
         }
 
         return {
-            totalInvoiceValue,
+            totalInvoiceValue, // USD без НДС (legacy)
+            totalInvoiceValueUZS, // UZS с НДС
+            totalVatAmountUZS,
+            totalWithoutVatUZS,
             totalOverheads,
-            totalLandedValue,
+            totalLandedValue, // USD без НДС
             itemsWithLandedCost
         };
-    }, [cart, overheads, procurementType]);
+    }, [cart, overheads, procurementType, settings.defaultExchangeRate, settings.vatRate]);
 
     // Update amountPaid when totals change if method is not debt
     React.useEffect(() => {
         if (paymentMethod !== 'debt') {
-            setAmountPaid(totals.totalInvoiceValue); // Usually we pay invoice amount to supplier
+            // Оплата поставщику в UZS (с НДС)
+            setAmountPaid(totals.totalInvoiceValueUZS);
         } else {
             setAmountPaid(0);
         }
-    }, [totals.totalInvoiceValue, paymentMethod]);
+    }, [totals.totalInvoiceValueUZS, paymentMethod]);
 
-    // Проверка достаточности средств на кассе
-    const checkBalance = (method: PaymentMethod, currency: PaymentCurrency, amountUSD: number): { ok: boolean; message: string } => {
+    // Проверка достаточности средств на кассе (теперь в UZS)
+    const checkBalance = (method: PaymentMethod, currency: PaymentCurrency, amountUZS: number): { ok: boolean; message: string } => {
         if (!balances) return { ok: true, message: '' }; // Если балансы не переданы, пропускаем проверку
         
         const rate = settings.defaultExchangeRate || 12900;
         
         if (method === 'cash') {
             if (currency === 'USD') {
+                const amountUSD = amountUZS / rate;
                 if (balances.cashUSD < amountUSD) {
                     return { ok: false, message: `Недостаточно USD в кассе. Доступно: $${balances.cashUSD.toFixed(2)}, нужно: $${amountUSD.toFixed(2)}` };
                 }
             } else {
-                const amountUZS = amountUSD * rate;
                 if (balances.cashUZS < amountUZS) {
                     return { ok: false, message: `Недостаточно сум в кассе. Доступно: ${balances.cashUZS.toLocaleString()} сум, нужно: ${amountUZS.toLocaleString()} сум` };
                 }
             }
         } else if (method === 'bank') {
-            const amountUZS = amountUSD * rate;
             if (balances.bankUZS < amountUZS) {
                 return { ok: false, message: `Недостаточно средств на Р/С. Доступно: ${balances.bankUZS.toLocaleString()} сум, нужно: ${amountUZS.toLocaleString()} сум` };
             }
         } else if (method === 'card') {
-            const amountUZS = amountUSD * rate;
             if (balances.cardUZS < amountUZS) {
                 return { ok: false, message: `Недостаточно средств на карте. Доступно: ${balances.cardUZS.toLocaleString()} сум, нужно: ${amountUZS.toLocaleString()} сум` };
             }
@@ -377,11 +415,12 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
     const finalizeProcurement = async (distribution?: PaymentDistribution) => {
         if (!supplierName || cart.length === 0) return;
 
-        const totalToPayUSD = totals.totalInvoiceValue;
+        const rate = settings.defaultExchangeRate || 12800;
+        const totalToPayUZS = totals.totalInvoiceValueUZS; // Оплата в UZS с НДС
         
         // Проверка баланса перед оплатой (если не в долг и не смешанная)
         if (paymentMethod !== 'debt' && paymentMethod !== 'mixed' && !distribution) {
-            const balanceCheck = checkBalance(paymentMethod, paymentCurrency, totalToPayUSD);
+            const balanceCheck = checkBalance(paymentMethod, paymentCurrency, totalToPayUZS);
             if (!balanceCheck.ok) {
                 toast.error(balanceCheck.message);
                 // Предложить записать в долг
@@ -394,8 +433,15 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
             }
         }
 
-        const paidUSD = distribution ? totalToPayUSD - distribution.remainingUSD : (paymentMethod === 'debt' ? 0 : totalToPayUSD);
-        const status = distribution ? (distribution.isPaid ? 'paid' : (paidUSD > 0 ? 'partial' : 'unpaid')) : (paymentMethod === 'debt' ? 'unpaid' : 'paid');
+        // Оплачено в UZS
+        const paidUZS = distribution 
+            ? (distribution.cashUZS + distribution.cardUZS + distribution.bankUZS + (distribution.cashUSD * rate))
+            : (paymentMethod === 'debt' ? 0 : totalToPayUZS);
+        const paidUSD = paidUZS / rate;
+        
+        const status = distribution 
+            ? (distribution.isPaid ? 'paid' : (paidUZS > 0 ? 'partial' : 'unpaid')) 
+            : (paymentMethod === 'debt' ? 'unpaid' : 'paid');
 
         const purchase: Purchase = {
             id: IdGenerator.purchase(),
@@ -404,18 +450,28 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
             status: 'completed',
             items: totals.itemsWithLandedCost,
             overheads: procurementType === 'import' ? overheads : { logistics: 0, customsDuty: 0, importVat: 0, other: 0 },
-            totalInvoiceAmount: totals.totalInvoiceValue,
+            
+            // Суммы в UZS (с НДС) - для кредиторки
+            totalInvoiceAmountUZS: totals.totalInvoiceValueUZS,
+            totalVatAmountUZS: totals.totalVatAmountUZS,
+            totalWithoutVatUZS: totals.totalWithoutVatUZS,
+            
+            // Суммы в USD (без НДС) - для ТМЦ
+            totalInvoiceAmount: totals.totalInvoiceValue, // legacy
             totalLandedAmount: totals.totalLandedValue,
+            
+            exchangeRate: rate,
             paymentMethod: distribution ? 'mixed' : paymentMethod,
-            paymentCurrency: paymentMethod === 'cash' ? paymentCurrency : undefined,
+            paymentCurrency: paymentMethod === 'cash' ? paymentCurrency : 'UZS',
             paymentStatus: status as 'paid' | 'unpaid' | 'partial',
-            amountPaid: paidUSD
+            amountPaid: paidUZS, // Теперь в UZS
+            amountPaidUSD: paidUSD
         };
 
         // 1. Save Purchase
         onSavePurchases([...purchases, purchase]);
 
-        // 2. Record Transactions
+        // 2. Record Transactions (все в UZS кроме наличных USD)
         const newTransactions: Transaction[] = [];
         const baseTrx = {
             date: new Date().toISOString(),
@@ -428,28 +484,29 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                 newTransactions.push({ ...baseTrx, id: IdGenerator.transaction(), amount: distribution.cashUSD, currency: 'USD', method: 'cash', description: `Оплата поставщику (USD Cash): ${supplierName} (Закупка #${purchase.id})` });
             }
             if (distribution.cashUZS > 0) {
-                newTransactions.push({ ...baseTrx, id: IdGenerator.transaction(), amount: distribution.cashUZS, currency: 'UZS', exchangeRate: settings.defaultExchangeRate, method: 'cash', description: `Оплата поставщику (UZS Cash): ${supplierName} (Закупка #${purchase.id})` });
+                newTransactions.push({ ...baseTrx, id: IdGenerator.transaction(), amount: distribution.cashUZS, currency: 'UZS', exchangeRate: rate, method: 'cash', description: `Оплата поставщику (UZS Cash): ${supplierName} (Закупка #${purchase.id})` });
             }
             if (distribution.cardUZS > 0) {
-                newTransactions.push({ ...baseTrx, id: IdGenerator.transaction(), amount: distribution.cardUZS, currency: 'UZS', exchangeRate: settings.defaultExchangeRate, method: 'card', description: `Оплата поставщику (UZS Card): ${supplierName} (Закупка #${purchase.id})` });
+                newTransactions.push({ ...baseTrx, id: IdGenerator.transaction(), amount: distribution.cardUZS, currency: 'UZS', exchangeRate: rate, method: 'card', description: `Оплата поставщику (UZS Card): ${supplierName} (Закупка #${purchase.id})` });
             }
             if (distribution.bankUZS > 0) {
-                newTransactions.push({ ...baseTrx, id: IdGenerator.transaction(), amount: distribution.bankUZS, currency: 'UZS', exchangeRate: settings.defaultExchangeRate, method: 'bank', description: `Оплата поставщику (UZS Bank): ${supplierName} (Закупка #${purchase.id})` });
+                newTransactions.push({ ...baseTrx, id: IdGenerator.transaction(), amount: distribution.bankUZS, currency: 'UZS', exchangeRate: rate, method: 'bank', description: `Оплата поставщику (UZS Bank): ${supplierName} (Закупка #${purchase.id})` });
             }
         } else if (paymentMethod !== 'debt') {
-            // Для карты и банка - всегда UZS
+            // Все оплаты теперь в UZS (кроме наличных USD)
             const isCardOrBank = paymentMethod === 'card' || paymentMethod === 'bank';
             const currency = isCardOrBank ? 'UZS' : paymentCurrency;
+            // Сумма оплаты в UZS (с НДС)
             const transactionAmount = currency === 'UZS'
-                ? totals.totalInvoiceValue * settings.defaultExchangeRate
-                : totals.totalInvoiceValue;
+                ? totalToPayUZS
+                : totalToPayUZS / rate; // Если USD - конвертируем
 
             newTransactions.push({
                 ...baseTrx,
                 id: IdGenerator.transaction(),
                 amount: transactionAmount,
                 currency: currency,
-                exchangeRate: currency === 'UZS' ? settings.defaultExchangeRate : undefined,
+                exchangeRate: currency === 'UZS' ? rate : undefined,
                 method: paymentMethod as 'cash' | 'bank' | 'card',
                 description: `Оплата поставщику (${paymentMethod === 'cash' ? (paymentCurrency === 'USD' ? 'Нал USD' : 'Нал UZS') : paymentMethod === 'card' ? 'Карта' : 'Р/С'}): ${supplierName}`
             });
@@ -949,7 +1006,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                                 </div>
 
                                 <div className="space-y-2">
-                                    <label className={`text-xs font-medium ${t.textMuted}`}>Цена продажи (USD)</label>
+                                    <label className={`text-xs font-medium ${t.textMuted}`}>Цена продажи (сум)</label>
                                     <input
                                         type="number"
                                         className={`w-full ${t.bg} border ${t.border} rounded-lg px-3 py-2 ${t.text} outline-none focus:ring-2 focus:ring-indigo-500 font-mono`}

@@ -1,9 +1,9 @@
 import React, { useState, useMemo } from 'react';
-import { Order, Expense, AppSettings } from '../types';
+import { Order, Expense, AppSettings, Transaction as TransactionType } from '../types';
 import { IdGenerator } from '../utils/idGenerator';
 import { validateUSD } from '../utils/finance';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, Cell } from 'recharts';
-import { ArrowUpRight, ArrowDownRight, Wallet, Plus, Calendar, DollarSign, Tag, Printer, FileSpreadsheet, Download } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, Cell, PieChart, Pie, Legend } from 'recharts';
+import { ArrowUpRight, ArrowDownRight, Wallet, Plus, Calendar, DollarSign, Tag, Printer, FileSpreadsheet, Download, CreditCard, Building2, Banknote, RefreshCw } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { getThemeClasses } from '../contexts/ThemeContext';
@@ -16,6 +16,7 @@ interface CashFlowProps {
     expenses: Expense[];
     settings: AppSettings;
     onAddExpense: (expense: Expense) => void;
+    transactions?: TransactionType[]; // Добавляем транзакции для анализа по счетам
 }
 
 interface Transaction {
@@ -23,17 +24,24 @@ interface Transaction {
     date: string; // ISO string
     dateObj: Date;
     type: 'income' | 'expense';
-    amount: number;
+    amount: number; // В выбранной валюте
+    amountUSD: number;
+    amountUZS: number;
     description: string;
     category?: string;
+    method?: 'cash' | 'bank' | 'card';
+    currency?: 'USD' | 'UZS';
 }
 
-export const CashFlow: React.FC<CashFlowProps> = ({ orders, expenses, settings, onAddExpense }) => {
+type DisplayCurrency = 'USD' | 'UZS';
+
+export const CashFlow: React.FC<CashFlowProps> = ({ orders, expenses, settings, onAddExpense, transactions: rawTransactions }) => {
     const { theme } = useTheme();
     const t = getThemeClasses(theme);
     const toast = useToast();
     const [showModal, setShowModal] = useState(false);
     const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+    const [displayCurrency, setDisplayCurrency] = useState<DisplayCurrency>('UZS');
     const [newExpense, setNewExpense] = useState<Partial<Expense>>({
         amount: 0,
         category: 'Прочее',
@@ -41,46 +49,132 @@ export const CashFlow: React.FC<CashFlowProps> = ({ orders, expenses, settings, 
         date: new Date().toISOString().split('T')[0]
     });
 
-    // Merge and Sort Transactions
+    const rate = settings.defaultExchangeRate || 12800;
+
+    // Merge and Sort Transactions с поддержкой обеих валют
     const transactions: Transaction[] = useMemo(() => {
         const incomeTx: Transaction[] = orders.map(o => {
-            // Use validateUSD to ensure we don't show billion dollar errors
             const correctedAmount = validateUSD(o.totalAmount, settings.defaultExchangeRate, { id: o.id, type: 'order' });
+            const amountUZS = o.totalAmountUZS || correctedAmount * rate;
             return {
                 id: o.id,
                 date: o.date,
                 dateObj: new Date(o.date),
-                type: 'income',
-                amount: correctedAmount,
+                type: 'income' as const,
+                amount: displayCurrency === 'USD' ? correctedAmount : amountUZS,
+                amountUSD: correctedAmount,
+                amountUZS: amountUZS,
                 description: `Заказ от ${o.customerName}`,
-                category: 'Продажа'
+                category: 'Продажа',
+                method: o.paymentMethod === 'bank' ? 'bank' : o.paymentMethod === 'card' ? 'card' : 'cash',
+                currency: o.paymentCurrency || 'USD'
             };
         });
 
         const expenseTx: Transaction[] = expenses.map(e => {
             let amountUSD = 0;
+            let amountUZS = 0;
+            const expRate = e.exchangeRate || settings.defaultExchangeRate || rate;
+            
             if (e.currency === 'UZS') {
-                // If explicitly UZS, convert to USD using the transaction rate or default
-                const rate = e.exchangeRate || settings.defaultExchangeRate || 1;
-                amountUSD = (e.amount || 0) / rate;
+                amountUZS = e.amount || 0;
+                amountUSD = amountUZS / expRate;
             } else {
-                // Currency is USD. Check for bug (UZS entered as USD).
                 amountUSD = validateUSD(e.amount, settings.defaultExchangeRate, { id: e.id, type: 'expense' });
+                amountUZS = amountUSD * expRate;
             }
 
             return {
                 id: e.id,
                 date: e.date,
                 dateObj: new Date(e.date),
-                type: 'expense',
-                amount: amountUSD,
+                type: 'expense' as const,
+                amount: displayCurrency === 'USD' ? amountUSD : amountUZS,
+                amountUSD,
+                amountUZS,
                 description: e.description,
-                category: e.category
+                category: e.category,
+                method: e.paymentMethod || 'cash',
+                currency: e.currency || 'USD'
             };
         });
 
         return [...incomeTx, ...expenseTx].sort((a, b) => b.dateObj.getTime() - a.dateObj.getTime());
-    }, [orders, expenses, settings.defaultExchangeRate]);
+    }, [orders, expenses, settings.defaultExchangeRate, displayCurrency, rate]);
+
+    // Анализ по счетам (из rawTransactions)
+    const accountAnalysis = useMemo(() => {
+        const analysis = {
+            cashUSD: { income: 0, expense: 0, balance: 0 },
+            cashUZS: { income: 0, expense: 0, balance: 0 },
+            bankUZS: { income: 0, expense: 0, balance: 0 },
+            cardUZS: { income: 0, expense: 0, balance: 0 }
+        };
+
+        // Анализ из заказов
+        orders.forEach(o => {
+            const amountUSD = validateUSD(o.totalAmount, settings.defaultExchangeRate, { id: o.id, type: 'order' });
+            const amountUZS = o.totalAmountUZS || amountUSD * rate;
+            
+            if (o.paymentMethod === 'bank') {
+                analysis.bankUZS.income += amountUZS;
+            } else if (o.paymentMethod === 'card') {
+                analysis.cardUZS.income += amountUZS;
+            } else if (o.paymentCurrency === 'UZS') {
+                analysis.cashUZS.income += amountUZS;
+            } else {
+                analysis.cashUSD.income += amountUSD;
+            }
+        });
+
+        // Анализ из расходов
+        expenses.forEach(e => {
+            const expRate = e.exchangeRate || settings.defaultExchangeRate || rate;
+            const amountUZS = e.currency === 'UZS' ? (e.amount || 0) : (e.amount || 0) * expRate;
+            const amountUSD = e.currency === 'USD' ? (e.amount || 0) : (e.amount || 0) / expRate;
+            
+            if (e.paymentMethod === 'bank') {
+                analysis.bankUZS.expense += amountUZS;
+            } else if (e.paymentMethod === 'card') {
+                analysis.cardUZS.expense += amountUZS;
+            } else if (e.currency === 'UZS') {
+                analysis.cashUZS.expense += amountUZS;
+            } else {
+                analysis.cashUSD.expense += amountUSD;
+            }
+        });
+
+        // Анализ из транзакций (payments)
+        (rawTransactions || []).forEach(tx => {
+            const txRate = tx.exchangeRate || settings.defaultExchangeRate || rate;
+            const isIncome = tx.type === 'client_payment';
+            const isExpense = tx.type === 'supplier_payment' || tx.type === 'expense';
+            
+            if (tx.method === 'bank') {
+                const amountUZS = tx.currency === 'UZS' ? tx.amount : tx.amount * txRate;
+                if (isIncome) analysis.bankUZS.income += amountUZS;
+                if (isExpense) analysis.bankUZS.expense += amountUZS;
+            } else if (tx.method === 'card') {
+                const amountUZS = tx.currency === 'UZS' ? tx.amount : tx.amount * txRate;
+                if (isIncome) analysis.cardUZS.income += amountUZS;
+                if (isExpense) analysis.cardUZS.expense += amountUZS;
+            } else if (tx.currency === 'UZS') {
+                if (isIncome) analysis.cashUZS.income += tx.amount;
+                if (isExpense) analysis.cashUZS.expense += tx.amount;
+            } else {
+                if (isIncome) analysis.cashUSD.income += tx.amount;
+                if (isExpense) analysis.cashUSD.expense += tx.amount;
+            }
+        });
+
+        // Расчёт балансов
+        analysis.cashUSD.balance = analysis.cashUSD.income - analysis.cashUSD.expense;
+        analysis.cashUZS.balance = analysis.cashUZS.income - analysis.cashUZS.expense;
+        analysis.bankUZS.balance = analysis.bankUZS.income - analysis.bankUZS.expense;
+        analysis.cardUZS.balance = analysis.cardUZS.income - analysis.cardUZS.expense;
+
+        return analysis;
+    }, [orders, expenses, rawTransactions, settings.defaultExchangeRate, rate]);
 
     // Stats
     const num = (v: any): number => {
@@ -250,14 +344,45 @@ export const CashFlow: React.FC<CashFlowProps> = ({ orders, expenses, settings, 
         window.print();
     };
 
+    const formatAmount = (amount: number) => {
+        if (displayCurrency === 'USD') {
+            return `$${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        }
+        return `${amount.toLocaleString()} сум`;
+    };
+
     return (
         <div className="p-6 space-y-6 animate-fade-in pb-20 print:p-0 print:pb-0 print:text-black">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
                     <h2 className={`text-3xl font-bold ${t.text} tracking-tight print:text-black`}>Cash Flow</h2>
-                    <p className={`${t.textMuted} mt-1 print:text-gray-600`}>Отчет о движении денежных средств (USD)</p>
+                    <p className={`${t.textMuted} mt-1 print:text-gray-600`}>Отчет о движении денежных средств</p>
                 </div>
                 <div className="flex gap-2 print:hidden">
+                    {/* Переключатель валюты */}
+                    <div className={`flex rounded-lg border ${t.border} overflow-hidden`}>
+                        <button
+                            onClick={() => setDisplayCurrency('UZS')}
+                            className={`px-3 py-2 text-sm font-medium transition-all ${
+                                displayCurrency === 'UZS' 
+                                    ? 'bg-blue-500 text-white' 
+                                    : `${t.bgCard} ${t.textMuted} hover:${t.text}`
+                            }`}
+                        >
+                            UZS
+                        </button>
+                        <button
+                            onClick={() => setDisplayCurrency('USD')}
+                            className={`px-3 py-2 text-sm font-medium transition-all ${
+                                displayCurrency === 'USD' 
+                                    ? 'bg-emerald-500 text-white' 
+                                    : `${t.bgCard} ${t.textMuted} hover:${t.text}`
+                            }`}
+                        >
+                            USD
+                        </button>
+                    </div>
+
                     <button
                         onClick={handleExportExcel}
                         className={`bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-500 border border-emerald-500/50 px-3 py-2 rounded-lg flex items-center gap-2 transition-all`}
@@ -296,7 +421,7 @@ export const CashFlow: React.FC<CashFlowProps> = ({ orders, expenses, settings, 
             </div>
 
             <div id="cashflow-report-content" className="space-y-6">
-                {/* Cards */}
+                {/* Summary Cards */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 print:grid-cols-3 print:gap-4">
                     <div className={`${t.bgCard} p-6 rounded-2xl border ${t.border} shadow-lg print:bg-white print:border-gray-300 print:shadow-none`}>
                         <div className="flex items-center gap-3 mb-2">
@@ -305,7 +430,7 @@ export const CashFlow: React.FC<CashFlowProps> = ({ orders, expenses, settings, 
                             </div>
                             <span className={`${t.textMuted} font-medium print:text-gray-600`}>Всего поступлений</span>
                         </div>
-                        <h3 className={`text-3xl font-bold ${t.text} font-mono print:text-black`}>${totalIncome.toLocaleString()}</h3>
+                        <h3 className={`text-3xl font-bold ${t.text} font-mono print:text-black`}>{formatAmount(totalIncome)}</h3>
                     </div>
 
                     <div className={`${t.bgCard} p-6 rounded-2xl border ${t.border} shadow-lg print:bg-white print:border-gray-300 print:shadow-none`}>
@@ -315,7 +440,7 @@ export const CashFlow: React.FC<CashFlowProps> = ({ orders, expenses, settings, 
                             </div>
                             <span className={`${t.textMuted} font-medium print:text-gray-600`}>Всего расходов</span>
                         </div>
-                        <h3 className={`text-3xl font-bold ${t.text} font-mono print:text-black`}>${totalExpense.toLocaleString()}</h3>
+                        <h3 className={`text-3xl font-bold ${t.text} font-mono print:text-black`}>{formatAmount(totalExpense)}</h3>
                     </div>
 
                     <div className={`${t.bgCard} p-6 rounded-2xl border ${t.border} shadow-lg relative overflow-hidden print:bg-white print:border-gray-300 print:shadow-none`}>
@@ -329,14 +454,119 @@ export const CashFlow: React.FC<CashFlowProps> = ({ orders, expenses, settings, 
                             <span className={`${t.textMuted} font-medium print:text-gray-600`}>Чистый поток</span>
                         </div>
                         <h3 className={`text-3xl font-bold font-mono ${netCashFlow >= 0 ? 'text-blue-500' : 'text-red-500'} print:text-black`}>
-                            {netCashFlow >= 0 ? '+' : ''}${netCashFlow.toLocaleString()}
+                            {netCashFlow >= 0 ? '+' : ''}{formatAmount(netCashFlow)}
                         </h3>
                     </div>
                 </div>
 
-                {/* Chart - Hide on print usually as they don't render well without specific size config, or keep if responsive */}
+                {/* Анализ по счетам */}
+                <div className={`${t.bgCard} border ${t.border} rounded-2xl p-6 shadow-lg print:bg-white print:border-gray-300 print:shadow-none`}>
+                    <h3 className={`text-xl font-bold ${t.text} mb-4 print:text-black flex items-center gap-2`}>
+                        <Building2 size={20} className="text-blue-500" />
+                        Анализ по счетам и валютам
+                    </h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        {/* Касса USD */}
+                        <div className={`p-4 rounded-xl border ${t.border} ${theme === 'dark' ? 'bg-emerald-500/5' : 'bg-emerald-50'}`}>
+                            <div className="flex items-center gap-2 mb-3">
+                                <Banknote size={18} className="text-emerald-500" />
+                                <span className={`font-medium ${t.text}`}>Касса USD</span>
+                            </div>
+                            <div className="space-y-1 text-sm">
+                                <div className="flex justify-between">
+                                    <span className={t.textMuted}>Приход:</span>
+                                    <span className="text-emerald-500 font-mono">${accountAnalysis.cashUSD.income.toLocaleString()}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className={t.textMuted}>Расход:</span>
+                                    <span className="text-red-500 font-mono">${accountAnalysis.cashUSD.expense.toLocaleString()}</span>
+                                </div>
+                                <div className={`flex justify-between pt-2 border-t ${t.border}`}>
+                                    <span className={`font-medium ${t.text}`}>Остаток:</span>
+                                    <span className={`font-mono font-bold ${accountAnalysis.cashUSD.balance >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                                        ${accountAnalysis.cashUSD.balance.toLocaleString()}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Касса UZS */}
+                        <div className={`p-4 rounded-xl border ${t.border} ${theme === 'dark' ? 'bg-blue-500/5' : 'bg-blue-50'}`}>
+                            <div className="flex items-center gap-2 mb-3">
+                                <Banknote size={18} className="text-blue-500" />
+                                <span className={`font-medium ${t.text}`}>Касса UZS</span>
+                            </div>
+                            <div className="space-y-1 text-sm">
+                                <div className="flex justify-between">
+                                    <span className={t.textMuted}>Приход:</span>
+                                    <span className="text-emerald-500 font-mono">{accountAnalysis.cashUZS.income.toLocaleString()} сум</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className={t.textMuted}>Расход:</span>
+                                    <span className="text-red-500 font-mono">{accountAnalysis.cashUZS.expense.toLocaleString()} сум</span>
+                                </div>
+                                <div className={`flex justify-between pt-2 border-t ${t.border}`}>
+                                    <span className={`font-medium ${t.text}`}>Остаток:</span>
+                                    <span className={`font-mono font-bold ${accountAnalysis.cashUZS.balance >= 0 ? 'text-blue-500' : 'text-red-500'}`}>
+                                        {accountAnalysis.cashUZS.balance.toLocaleString()} сум
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Р/С (Банк) */}
+                        <div className={`p-4 rounded-xl border ${t.border} ${theme === 'dark' ? 'bg-purple-500/5' : 'bg-purple-50'}`}>
+                            <div className="flex items-center gap-2 mb-3">
+                                <Building2 size={18} className="text-purple-500" />
+                                <span className={`font-medium ${t.text}`}>Р/С (Банк)</span>
+                            </div>
+                            <div className="space-y-1 text-sm">
+                                <div className="flex justify-between">
+                                    <span className={t.textMuted}>Приход:</span>
+                                    <span className="text-emerald-500 font-mono">{accountAnalysis.bankUZS.income.toLocaleString()} сум</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className={t.textMuted}>Расход:</span>
+                                    <span className="text-red-500 font-mono">{accountAnalysis.bankUZS.expense.toLocaleString()} сум</span>
+                                </div>
+                                <div className={`flex justify-between pt-2 border-t ${t.border}`}>
+                                    <span className={`font-medium ${t.text}`}>Остаток:</span>
+                                    <span className={`font-mono font-bold ${accountAnalysis.bankUZS.balance >= 0 ? 'text-purple-500' : 'text-red-500'}`}>
+                                        {accountAnalysis.bankUZS.balance.toLocaleString()} сум
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Карта */}
+                        <div className={`p-4 rounded-xl border ${t.border} ${theme === 'dark' ? 'bg-amber-500/5' : 'bg-amber-50'}`}>
+                            <div className="flex items-center gap-2 mb-3">
+                                <CreditCard size={18} className="text-amber-500" />
+                                <span className={`font-medium ${t.text}`}>Карта</span>
+                            </div>
+                            <div className="space-y-1 text-sm">
+                                <div className="flex justify-between">
+                                    <span className={t.textMuted}>Приход:</span>
+                                    <span className="text-emerald-500 font-mono">{accountAnalysis.cardUZS.income.toLocaleString()} сум</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className={t.textMuted}>Расход:</span>
+                                    <span className="text-red-500 font-mono">{accountAnalysis.cardUZS.expense.toLocaleString()} сум</span>
+                                </div>
+                                <div className={`flex justify-between pt-2 border-t ${t.border}`}>
+                                    <span className={`font-medium ${t.text}`}>Остаток:</span>
+                                    <span className={`font-mono font-bold ${accountAnalysis.cardUZS.balance >= 0 ? 'text-amber-500' : 'text-red-500'}`}>
+                                        {accountAnalysis.cardUZS.balance.toLocaleString()} сум
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Chart */}
                 <div className={`${t.bgCard} border ${t.border} rounded-2xl p-6 shadow-lg print:bg-white print:border-gray-300 print:shadow-none print:break-inside-avoid`}>
-                    <h3 className={`text-xl font-bold ${t.text} mb-6 print:text-black`}>Динамика за 14 дней</h3>
+                    <h3 className={`text-xl font-bold ${t.text} mb-6 print:text-black`}>Динамика за 14 дней ({displayCurrency})</h3>
                     <div className="h-[300px] w-full">
                         <ResponsiveContainer width="100%" height="100%">
                             <BarChart data={chartData}>
@@ -352,7 +582,7 @@ export const CashFlow: React.FC<CashFlowProps> = ({ orders, expenses, settings, 
                                     fontSize={12} 
                                     tickLine={false} 
                                     axisLine={false} 
-                                    tickFormatter={val => `$${val}`} 
+                                    tickFormatter={val => displayCurrency === 'USD' ? `$${val}` : `${(val/1000).toFixed(0)}k`} 
                                 />
                                 <Tooltip
                                     contentStyle={{ 
@@ -361,6 +591,7 @@ export const CashFlow: React.FC<CashFlowProps> = ({ orders, expenses, settings, 
                                         color: theme === 'dark' ? '#f1f5f9' : '#0f172a' 
                                     }}
                                     cursor={{ fill: theme === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)' }}
+                                    formatter={(value: number) => formatAmount(value)}
                                 />
                                 <ReferenceLine y={0} stroke={theme === 'dark' ? "#475569" : "#cbd5e1"} />
                                 <Bar dataKey="income" name="Доход" fill="#10b981" radius={[4, 4, 0, 0]} />
@@ -383,7 +614,7 @@ export const CashFlow: React.FC<CashFlowProps> = ({ orders, expenses, settings, 
                                     <th className="px-6 py-4">Тип</th>
                                     <th className="px-6 py-4">Категория</th>
                                     <th className="px-6 py-4">Описание</th>
-                                    <th className="px-6 py-4 text-right">Сумма (USD)</th>
+                                    <th className="px-6 py-4 text-right">Сумма ({displayCurrency})</th>
                                 </tr>
                             </thead>
                             <tbody className={`divide-y ${t.divide} text-sm print:divide-gray-300`}>
@@ -406,7 +637,7 @@ export const CashFlow: React.FC<CashFlowProps> = ({ orders, expenses, settings, 
                                         <td className={`px-6 py-4 ${t.textMuted} print:text-black`}>{tx.category}</td>
                                         <td className={`px-6 py-4 ${t.textMuted} print:text-gray-600`}>{tx.description}</td>
                                         <td className={`px-6 py-4 text-right font-mono font-bold ${tx.type === 'income' ? 'text-emerald-500 print:text-black' : 'text-red-500 print:text-black'}`}>
-                                            {tx.type === 'income' ? '+' : '-'}${tx.amount.toFixed(2)}
+                                            {tx.type === 'income' ? '+' : '-'}{formatAmount(tx.amount)}
                                         </td>
                                     </tr>
                                 ))}

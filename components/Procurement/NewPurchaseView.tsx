@@ -257,12 +257,12 @@ export const NewPurchaseView: React.FC<NewPurchaseViewProps> = ({
             </div>
             <div className="space-y-2">
               <label className={`text-xs font-medium ${t.textMuted}`}>
-                {procurementType === 'import' ? 'Цена Invoice (USD)' : 'Цена закупки (USD)'}
+                {procurementType === 'import' ? 'Цена Invoice (USD)' : 'Цена за ед. (UZS с НДС)'}
               </label>
               <input
                 type="number"
                 className={`w-full ${t.bg} border ${t.border} rounded-lg px-3 py-2 ${t.text} focus:ring-2 focus:ring-emerald-500 outline-none`}
-                placeholder="0.00"
+                placeholder={procurementType === 'import' ? '0.00' : '0'}
                 value={inputPrice || ''}
                 onChange={(e) => setInputPrice(Number(e.target.value))}
               />
@@ -353,13 +353,13 @@ export const NewPurchaseView: React.FC<NewPurchaseViewProps> = ({
               <tr>
                 <th className="px-4 py-3">Товар</th>
                 <th className="px-4 py-3 text-right">Кол-во</th>
-                <th className="px-4 py-3 text-right">Цена</th>
+                <th className="px-4 py-3 text-right">{procurementType === 'import' ? 'Цена $' : 'Цена (сум)'}</th>
                 {procurementType === 'import' && (
                   <th className="px-4 py-3 text-right bg-amber-500/5 text-amber-200">
                     Себест. (Landed)
                   </th>
                 )}
-                <th className="px-4 py-3 text-right">Сумма</th>
+                <th className="px-4 py-3 text-right">{procurementType === 'import' ? 'Сумма $' : 'Себест. $'}</th>
                 <th className="px-4 py-3 text-center"></th>
               </tr>
             </thead>
@@ -388,13 +388,13 @@ export const NewPurchaseView: React.FC<NewPurchaseViewProps> = ({
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-1">
-                        <span className={`text-xs ${t.textMuted}`}>$</span>
+                        <span className={`text-xs ${t.textMuted}`}>{procurementType === 'import' ? '$' : ''}</span>
                         <input
                           type="number"
-                          className={`w-20 ${t.bg} border ${t.border} rounded px-2 py-1 text-right font-mono ${t.text} focus:ring-2 focus:ring-emerald-500 outline-none text-sm`}
+                          className={`w-24 ${t.bg} border ${t.border} rounded px-2 py-1 text-right font-mono ${t.text} focus:ring-2 focus:ring-emerald-500 outline-none text-sm`}
                           value={item.invoicePrice}
                           onChange={(e) => updateCartItemPrice(item.productId, Number(e.target.value))}
-                          step={0.01}
+                          step={procurementType === 'import' ? 0.01 : 100}
                           min={0}
                         />
                       </div>
@@ -405,7 +405,7 @@ export const NewPurchaseView: React.FC<NewPurchaseViewProps> = ({
                       </td>
                     )}
                     <td className={`px-4 py-3 text-right font-mono ${t.text}`}>
-                      ${item.totalLineCost.toFixed(2)}
+                      ${item.landedCost.toFixed(2)}
                     </td>
                     <td className="px-4 py-3 text-center">
                       <button
@@ -431,24 +431,48 @@ export const NewPurchaseView: React.FC<NewPurchaseViewProps> = ({
 
         {/* Footer Summary */}
         <div className={`${t.bg} p-6 border-t ${t.border}`}>
-          <div className="grid grid-cols-3 gap-8 mb-6">
-            <div>
-              <p className={`text-xs ${t.textMuted} uppercase`}>Сумма закупки</p>
-              <p className={`text-xl font-mono font-bold ${t.text}`}>
-                ${totals.totalInvoiceValue.toFixed(2)}
-              </p>
-            </div>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            {procurementType === 'local' && (
+              <>
+                <div>
+                  <p className={`text-xs ${t.textMuted} uppercase`}>Сумма (с НДС)</p>
+                  <p className={`text-lg font-mono font-bold ${t.text}`}>
+                    {totals.totalInvoiceValueUZS?.toLocaleString() || 0} сум
+                  </p>
+                </div>
+                <div>
+                  <p className={`text-xs ${t.textMuted} uppercase`}>НДС ({settings.vatRate || 12}%)</p>
+                  <p className={`text-lg font-mono font-bold text-amber-400`}>
+                    {totals.totalVatAmountUZS?.toLocaleString() || 0} сум
+                  </p>
+                </div>
+                <div>
+                  <p className={`text-xs ${t.textMuted} uppercase`}>Сумма (без НДС)</p>
+                  <p className={`text-lg font-mono font-bold ${t.text}`}>
+                    {totals.totalWithoutVatUZS?.toLocaleString() || 0} сум
+                  </p>
+                </div>
+              </>
+            )}
             {procurementType === 'import' && (
-              <div>
-                <p className={`text-xs ${t.textMuted} uppercase`}>Накладные расходы</p>
-                <p className="text-xl font-mono font-bold text-amber-400">
-                  +${totals.totalOverheads.toFixed(2)}
-                </p>
-              </div>
+              <>
+                <div>
+                  <p className={`text-xs ${t.textMuted} uppercase`}>Сумма Invoice</p>
+                  <p className={`text-lg font-mono font-bold ${t.text}`}>
+                    ${totals.totalInvoiceValue.toFixed(2)}
+                  </p>
+                </div>
+                <div>
+                  <p className={`text-xs ${t.textMuted} uppercase`}>Накладные расходы</p>
+                  <p className="text-lg font-mono font-bold text-amber-400">
+                    +${totals.totalOverheads.toFixed(2)}
+                  </p>
+                </div>
+              </>
             )}
             <div>
-              <p className={`text-xs ${t.textMuted} uppercase`}>Итого Себестоимость</p>
-              <p className={`text-2xl font-mono font-bold ${t.text} border-b-2 border-primary-500 inline-block`}>
+              <p className={`text-xs ${t.textMuted} uppercase`}>В ТМЦ (себест.)</p>
+              <p className={`text-xl font-mono font-bold text-emerald-500 border-b-2 border-emerald-500 inline-block`}>
                 ${totals.totalLandedValue.toFixed(2)}
               </p>
             </div>
@@ -457,12 +481,14 @@ export const NewPurchaseView: React.FC<NewPurchaseViewProps> = ({
           {/* Payment Info */}
           {paymentMethod !== 'debt' && (
             <div className={`mb-4 p-3 ${t.bgCard} border ${t.border} rounded-lg`}>
-              <p className={`text-xs ${t.textMuted} mb-1`}>Оплата будет списана:</p>
+              <p className={`text-xs ${t.textMuted} mb-1`}>💰 Кредиторка поставщику (с НДС):</p>
               <p className={`text-sm font-mono ${t.text}`}>
-                {paymentMethod === 'cash' ? '💵 Касса' : '🏦 Расчетный счет'} -{' '}
-                {paymentCurrency === 'USD'
-                  ? `$${totals.totalInvoiceValue.toFixed(2)}`
-                  : `${(totals.totalInvoiceValue * settings.defaultExchangeRate).toLocaleString()} сўм`}
+                {paymentMethod === 'cash' ? '💵 Касса' : paymentMethod === 'card' ? '💳 Карта' : '🏦 Р/С'} -{' '}
+                {procurementType === 'local' 
+                  ? `${totals.totalInvoiceValueUZS?.toLocaleString() || 0} сум`
+                  : paymentCurrency === 'USD'
+                    ? `$${totals.totalInvoiceValue.toFixed(2)}`
+                    : `${(totals.totalInvoiceValue * settings.defaultExchangeRate).toLocaleString()} сум`}
               </p>
             </div>
           )}
@@ -470,15 +496,19 @@ export const NewPurchaseView: React.FC<NewPurchaseViewProps> = ({
           {paymentMethod === 'debt' && (
             <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
               <p className="text-xs text-red-400 mb-1">⚠️ Закупка будет оформлена в долг</p>
-              <p className="text-sm font-mono text-red-300">Долг: ${totals.totalInvoiceValue.toFixed(2)} USD</p>
+              <p className="text-sm font-mono text-red-300">
+                Долг: {procurementType === 'local' 
+                  ? `${totals.totalInvoiceValueUZS?.toLocaleString() || 0} сум`
+                  : `$${totals.totalInvoiceValue.toFixed(2)}`}
+              </p>
             </div>
           )}
 
           <div className="flex items-center gap-4 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg mb-4">
             <AlertTriangle className="text-amber-500 shrink-0" size={20} />
             <p className={`text-xs ${t.textMuted}`}>
-              При проведении документа остатки товаров увеличатся, а их учетная цена (Cost Price) будет
-              пересчитана по методу <strong>средневзвешенной</strong> стоимости.
+              При проведении: остатки ТМЦ увеличатся на себестоимость <strong>без НДС</strong>. 
+              Кредиторка = сумма <strong>с НДС</strong>. Cost Price рассчитывается по <strong>средневзвешенной</strong>.
             </p>
           </div>
 

@@ -29,9 +29,12 @@ export type PaymentMethod = 'cash' | 'bank' | 'card' | 'debt' | 'mixed';
 export type PaymentCurrency = 'USD' | 'UZS';
 
 export interface Totals {
-  totalInvoiceValue: number;
+  totalInvoiceValue: number; // USD (legacy)
+  totalInvoiceValueUZS: number; // UZS с НДС - для кредиторки
+  totalVatAmountUZS: number; // Сумма НДС в UZS
+  totalWithoutVatUZS: number; // Сумма без НДС в UZS
   totalOverheads: number;
-  totalLandedValue: number;
+  totalLandedValue: number; // USD без НДС - для ТМЦ
   itemsWithLandedCost: PurchaseItem[];
 }
 

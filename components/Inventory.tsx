@@ -558,7 +558,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
 
                   {/* Prices Row */}
                   <div className="space-y-1">
-                    <label className={`text-xs font-medium ${t.textMuted}`}>Себестоимость (USD)</label>
+                    <label className={`text-xs font-medium ${t.textMuted}`}>Себестоимость (сум)</label>
                     <div className="relative">
                       <TrendingUp className={`absolute left-2 top-2.5 ${t.textMuted}`} size={14} />
                       <input
@@ -573,17 +573,14 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
                   </div>
 
                   <div className="space-y-1">
-                    <label className={`text-xs font-medium ${t.textMuted}`}>Цена продажи (USD)</label>
-                    <div className="relative">
-                      <DollarSign className={`absolute left-2 top-2.5 ${t.textMuted}`} size={14} />
-                      <input
-                        type="number"
-                        className={`w-full ${t.bgInput} border ${t.borderInput} rounded-lg pl-7 pr-3 py-2 ${t.text} outline-none`}
-                        placeholder="0.00"
-                        value={formData.pricePerUnit}
-                        onChange={e => setFormData({ ...formData, pricePerUnit: Number(e.target.value) })}
-                      />
-                    </div>
+                    <label className={`text-xs font-medium ${t.textMuted}`}>Цена продажи (сум)</label>
+                    <input
+                      type="number"
+                      className={`w-full ${t.bgInput} border ${t.borderInput} rounded-lg px-3 py-2 ${t.text} outline-none`}
+                      placeholder="0"
+                      value={formData.pricePerUnit}
+                      onChange={e => setFormData({ ...formData, pricePerUnit: Number(e.target.value) })}
+                    />
                   </div>
                 </div>
               </div>
