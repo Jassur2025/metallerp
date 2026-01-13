@@ -18,6 +18,17 @@ export enum ProductType {
   OTHER = 'Прочее'
 }
 
+// Типы складов
+export enum WarehouseType {
+  MAIN = 'main',      // Основной склад
+  CLOUD = 'cloud'     // Облачный склад
+}
+
+export const WarehouseLabels: Record<WarehouseType, string> = {
+  [WarehouseType.MAIN]: 'Основной склад',
+  [WarehouseType.CLOUD]: 'Облачный склад'
+};
+
 export enum Unit {
   METER = 'м',
   TON = 'т',
@@ -104,6 +115,7 @@ export interface Product extends Versionable {
   costPrice: number; // Base currency (USD) - Weighted Average Cost
   minStockLevel: number;
   origin?: 'import' | 'local'; // New field: Origin of the product
+  warehouse?: WarehouseType; // Склад: Основной или Облачный
   // _version and updatedAt inherited from Versionable
 }
 
@@ -221,6 +233,7 @@ export interface PurchaseItem {
   landedCost: number; // Финальная себестоимость за ед. (USD) - БЕЗ НДС
   totalLineCost: number; // quantity * landedCost (USD)
   totalLineCostUZS: number; // quantity * invoicePrice (UZS) - С НДС для кредиторки
+  warehouse?: WarehouseType; // Склад для этой позиции
 }
 
 export interface Purchase extends Versionable {
@@ -249,6 +262,9 @@ export interface Purchase extends Versionable {
   paymentStatus: 'paid' | 'unpaid' | 'partial';
   amountPaid: number; // Amount actually paid (UZS) - теперь в сумах
   amountPaidUSD: number; // Amount paid converted to USD
+  
+  // Склад
+  warehouse?: WarehouseType; // Склад на который оприходован товар
   // _version and updatedAt inherited from Versionable
 }
 

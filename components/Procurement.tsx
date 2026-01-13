@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Product, Purchase, PurchaseItem, PurchaseOverheads, Transaction, WorkflowOrder, OrderItem, ProductType, Unit } from '../types';
+import { Product, Purchase, PurchaseItem, PurchaseOverheads, Transaction, WorkflowOrder, OrderItem, ProductType, Unit, WarehouseType } from '../types';
 import { IdGenerator } from '../utils/idGenerator';
 import { Plus, DollarSign, Wallet, CreditCard, Building2, Banknote, AlertTriangle } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
@@ -32,6 +32,9 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
     const [isSplitModalOpen, setIsSplitModalOpen] = useState(false);
     const [paymentCurrency, setPaymentCurrency] = useState<PaymentCurrency>('USD'); // Currency for cash/bank payments
     const [amountPaid, setAmountPaid] = useState<number>(0);
+
+    // Warehouse selection
+    const [selectedWarehouse, setSelectedWarehouse] = useState<WarehouseType>(WarehouseType.MAIN);
 
     // Cart logic
     const [selectedProductId, setSelectedProductId] = useState('');
@@ -449,7 +452,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
             date: new Date(date).toISOString(),
             supplierName,
             status: 'completed',
-            items: totals.itemsWithLandedCost,
+            items: totals.itemsWithLandedCost.map(item => ({ ...item, warehouse: selectedWarehouse })),
             overheads: procurementType === 'import' ? overheads : { logistics: 0, customsDuty: 0, importVat: 0, other: 0 },
             
             // Суммы в UZS (с НДС) - для кредиторки
@@ -466,7 +469,8 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
             paymentCurrency: paymentMethod === 'cash' ? paymentCurrency : 'UZS',
             paymentStatus: status as 'paid' | 'unpaid' | 'partial',
             amountPaid: paidUZS, // Теперь в UZS
-            amountPaidUSD: paidUSD
+            amountPaidUSD: paidUSD,
+            warehouse: selectedWarehouse
         };
 
         // 1. Save Purchase
@@ -520,34 +524,74 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
             setTransactions(updatedTransactions);
         }
 
-        // 3. Update Product Stock & Cost
+        // 3. Update Product Stock & Cost (с учётом склада)
         const nextProducts = [...products];
-        const existingById = new Map<string, Product>(products.map(p => [p.id, p]));
+        // Ключ: productId + warehouse для уникальной идентификации
+        const getProductKey = (productId: string, warehouse: WarehouseType) => `${productId}_${warehouse}`;
+        const existingByKey = new Map<string, { product: Product; index: number }>();
+        products.forEach((p, idx) => {
+            const key = getProductKey(p.id, p.warehouse || WarehouseType.MAIN);
+            existingByKey.set(key, { product: p, index: idx });
+        });
 
         totals.itemsWithLandedCost.forEach(item => {
-            const existing = existingById.get(item.productId);
-            if (existing) {
+            const itemWarehouse = selectedWarehouse;
+            const key = getProductKey(item.productId, itemWarehouse);
+            const existingEntry = existingByKey.get(key);
+            
+            // Также ищем товар с тем же ID но без привязки к складу (для обратной совместимости)
+            const existingWithoutWarehouse = products.find(p => p.id === item.productId && !p.warehouse);
+            
+            if (existingEntry) {
+                // Товар уже есть на этом складе - обновляем количество и средневзвешенную себестоимость
+                const existing = existingEntry.product;
                 const newQuantity = (existing.quantity || 0) + item.quantity;
                 const oldValue = (existing.quantity || 0) * (existing.costPrice || 0);
                 const newValue = item.quantity * (item.landedCost || 0);
                 const newCost = newQuantity > 0 ? (oldValue + newValue) / newQuantity : (existing.costPrice || 0);
 
-                const idx = nextProducts.findIndex(p => p.id === existing.id);
-                if (idx !== -1) nextProducts[idx] = { ...existing, quantity: newQuantity, costPrice: newCost };
+                const idx = existingEntry.index;
+                if (idx !== -1) nextProducts[idx] = { ...existing, quantity: newQuantity, costPrice: newCost, warehouse: itemWarehouse };
+            } else if (existingWithoutWarehouse) {
+                // Товар существует, но без склада - обновляем и добавляем склад
+                const idx = nextProducts.findIndex(p => p.id === item.productId && !p.warehouse);
+                if (idx !== -1) {
+                    const existing = nextProducts[idx];
+                    const newQuantity = (existing.quantity || 0) + item.quantity;
+                    const oldValue = (existing.quantity || 0) * (existing.costPrice || 0);
+                    const newValue = item.quantity * (item.landedCost || 0);
+                    const newCost = newQuantity > 0 ? (oldValue + newValue) / newQuantity : (existing.costPrice || 0);
+                    nextProducts[idx] = { ...existing, quantity: newQuantity, costPrice: newCost, warehouse: itemWarehouse };
+                }
             } else {
-                nextProducts.push({
-                    id: item.productId || IdGenerator.product(),
-                    name: item.productName || 'Новый товар',
-                    type: ProductType.OTHER,
-                    dimensions: '-',
-                    steelGrade: 'Ст3',
-                    quantity: item.quantity,
-                    unit: item.unit,
-                    pricePerUnit: item.invoicePrice || 0,
-                    costPrice: item.landedCost || item.invoicePrice || 0,
-                    minStockLevel: 0,
-                    origin: procurementType === 'import' ? 'import' : 'local'
-                });
+                // Товар не найден на этом складе - проверяем есть ли товар на другом складе
+                const existingOnOtherWarehouse = products.find(p => p.id === item.productId);
+                if (existingOnOtherWarehouse) {
+                    // Создаём новую запись для этого склада с теми же параметрами товара
+                    nextProducts.push({
+                        ...existingOnOtherWarehouse,
+                        id: IdGenerator.product(), // Новый ID для записи на новом складе
+                        quantity: item.quantity,
+                        costPrice: item.landedCost || item.invoicePrice || 0,
+                        warehouse: itemWarehouse
+                    });
+                } else {
+                    // Совсем новый товар
+                    nextProducts.push({
+                        id: item.productId || IdGenerator.product(),
+                        name: item.productName || 'Новый товар',
+                        type: ProductType.OTHER,
+                        dimensions: '-',
+                        steelGrade: 'Ст3',
+                        quantity: item.quantity,
+                        unit: item.unit,
+                        pricePerUnit: item.invoicePrice || 0,
+                        costPrice: item.landedCost || item.invoicePrice || 0,
+                        minStockLevel: 0,
+                        origin: procurementType === 'import' ? 'import' : 'local',
+                        warehouse: itemWarehouse
+                    });
+                }
             }
         });
 
@@ -837,6 +881,8 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                     setPaymentMethod={setPaymentMethod}
                     paymentCurrency={paymentCurrency}
                     setPaymentCurrency={setPaymentCurrency}
+                    selectedWarehouse={selectedWarehouse}
+                    setSelectedWarehouse={setSelectedWarehouse}
                     products={products}
                     selectedProductId={selectedProductId}
                     setSelectedProductId={setSelectedProductId}

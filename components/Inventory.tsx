@@ -1,11 +1,11 @@
 
 import React, { useState, useRef, useCallback, useMemo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Product, ProductType, Unit } from '../types';
+import { Product, ProductType, Unit, WarehouseType, WarehouseLabels } from '../types';
 import { geminiService } from '../services/geminiService';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
-import { Plus, Search, Loader2, BrainCircuit, Trash2, DollarSign, Pencil, TrendingUp, Lock } from 'lucide-react';
+import { Plus, Search, Loader2, BrainCircuit, Trash2, DollarSign, Pencil, TrendingUp, Lock, Warehouse, Building2, Cloud } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { IdGenerator } from '../utils/idGenerator';
 
@@ -26,6 +26,9 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
   const [showAddModal, setShowAddModal] = useState(false);
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [sortMode, setSortMode] = useState<'qty_desc' | 'qty_asc' | 'name_asc'>('qty_desc');
+  
+  // Warehouse filter: 'all' | 'main' | 'cloud'
+  const [warehouseFilter, setWarehouseFilter] = useState<'all' | WarehouseType>('all');
 
   // Refs for virtualization
   const tableParentRef = useRef<HTMLDivElement>(null);
@@ -149,10 +152,17 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
 
   // Memoized filtered and sorted products
   const sortedProducts = useMemo(() => {
-    const filtered = products.filter(p =>
-      p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      p.dimensions.includes(searchTerm)
-    );
+    const filtered = products.filter(p => {
+      // Search filter
+      const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        p.dimensions.includes(searchTerm);
+      
+      // Warehouse filter
+      const productWarehouse = p.warehouse || WarehouseType.MAIN; // Default to MAIN if not set
+      const matchesWarehouse = warehouseFilter === 'all' || productWarehouse === warehouseFilter;
+      
+      return matchesSearch && matchesWarehouse;
+    });
     
     return [...filtered].sort((a, b) => {
       if (sortMode === 'qty_desc') {
@@ -165,7 +175,24 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
       }
       return a.name.localeCompare(b.name);
     });
-  }, [products, searchTerm, sortMode]);
+  }, [products, searchTerm, sortMode, warehouseFilter]);
+
+  // Calculate totals for each warehouse
+  const warehouseTotals = useMemo(() => {
+    const mainTotal = products
+      .filter(p => (p.warehouse || WarehouseType.MAIN) === WarehouseType.MAIN)
+      .reduce((sum, p) => sum + ((p.quantity || 0) * (p.costPrice || 0)), 0);
+    
+    const cloudTotal = products
+      .filter(p => p.warehouse === WarehouseType.CLOUD)
+      .reduce((sum, p) => sum + ((p.quantity || 0) * (p.costPrice || 0)), 0);
+    
+    return {
+      main: mainTotal,
+      cloud: cloudTotal,
+      total: mainTotal + cloudTotal
+    };
+  }, [products]);
 
   // Virtualizers for desktop and mobile
   const tableVirtualizer = useVirtualizer({
@@ -190,6 +217,62 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
           <p className={`text-xs sm:text-sm ${t.textMuted}`}>Управление остатками труб и профиля (Цены в USD)</p>
         </div>
       </div>
+      
+      {/* Warehouse Tabs & Summary */}
+      <div className={`${t.bgCard} rounded-xl border ${t.border} p-4 ${t.shadow}`}>
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          {/* Warehouse Filter Buttons */}
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => setWarehouseFilter('all')}
+              className={`px-4 py-2 rounded-lg text-sm font-bold border transition-all flex items-center gap-2 ${warehouseFilter === 'all'
+                  ? 'bg-primary-500/20 border-primary-500 text-primary-400'
+                  : `${t.bg} ${t.border} ${t.textMuted} hover:${t.bgHover}`
+                }`}
+            >
+              <Warehouse size={16} />
+              Все склады
+            </button>
+            <button
+              onClick={() => setWarehouseFilter(WarehouseType.MAIN)}
+              className={`px-4 py-2 rounded-lg text-sm font-bold border transition-all flex items-center gap-2 ${warehouseFilter === WarehouseType.MAIN
+                  ? 'bg-cyan-500/20 border-cyan-500 text-cyan-400'
+                  : `${t.bg} ${t.border} ${t.textMuted} hover:${t.bgHover}`
+                }`}
+            >
+              <Building2 size={16} />
+              🏭 Основной склад
+            </button>
+            <button
+              onClick={() => setWarehouseFilter(WarehouseType.CLOUD)}
+              className={`px-4 py-2 rounded-lg text-sm font-bold border transition-all flex items-center gap-2 ${warehouseFilter === WarehouseType.CLOUD
+                  ? 'bg-violet-500/20 border-violet-500 text-violet-400'
+                  : `${t.bg} ${t.border} ${t.textMuted} hover:${t.bgHover}`
+                }`}
+            >
+              <Cloud size={16} />
+              ☁️ Облачный склад
+            </button>
+          </div>
+          
+          {/* Warehouse Totals */}
+          <div className="flex flex-wrap gap-3 text-sm">
+            <div className={`px-3 py-1.5 rounded-lg ${theme === 'dark' ? 'bg-cyan-500/10' : 'bg-cyan-50'} border border-cyan-500/20`}>
+              <span className={t.textMuted}>Основной: </span>
+              <span className="font-mono font-bold text-cyan-500">${warehouseTotals.main.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+            </div>
+            <div className={`px-3 py-1.5 rounded-lg ${theme === 'dark' ? 'bg-violet-500/10' : 'bg-violet-50'} border border-violet-500/20`}>
+              <span className={t.textMuted}>Облачный: </span>
+              <span className="font-mono font-bold text-violet-500">${warehouseTotals.cloud.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+            </div>
+            <div className={`px-3 py-1.5 rounded-lg ${theme === 'dark' ? 'bg-emerald-500/10' : 'bg-emerald-50'} border border-emerald-500/20`}>
+              <span className={t.textMuted}>Итого ТМЦ: </span>
+              <span className="font-mono font-bold text-emerald-500">${warehouseTotals.total.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {(user?.permissions?.canEditProducts !== false) && (
         <button
           onClick={openAddModal}
@@ -230,8 +313,9 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
         {/* Virtual Table - Desktop */}
         <div className={`hidden lg:block ${t.bgCard} rounded-xl border ${t.border} overflow-hidden ${t.shadow}`}>
           {/* Table Header */}
-          <div className={`${t.bgPanelAlt} text-xs uppercase tracking-wider ${t.textMuted} font-medium grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_1fr_100px]`}>
+          <div className={`${t.bgPanelAlt} text-xs uppercase tracking-wider ${t.textMuted} font-medium grid grid-cols-[2fr_80px_1fr_1fr_1fr_1fr_1fr_1fr_100px]`}>
             <div className="px-6 py-4">Наименование</div>
+            <div className="px-6 py-4">Склад</div>
             <div className="px-6 py-4">Тип</div>
             <div className="px-6 py-4">Размеры</div>
             <div className="px-6 py-4">Сталь</div>
@@ -261,10 +345,11 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
               >
                 {tableVirtualizer.getVirtualItems().map((virtualRow) => {
                   const product = sortedProducts[virtualRow.index];
+                  const productWarehouse = product.warehouse || WarehouseType.MAIN;
                   return (
                     <div
                       key={product.id}
-                      className={`absolute top-0 left-0 w-full grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_1fr_100px] items-center ${t.bgCardHover} transition-colors border-b ${t.border}`}
+                      className={`absolute top-0 left-0 w-full grid grid-cols-[2fr_80px_1fr_1fr_1fr_1fr_1fr_1fr_100px] items-center ${t.bgCardHover} transition-colors border-b ${t.border}`}
                       style={{
                         height: `${ROW_HEIGHT}px`,
                         transform: `translateY(${virtualRow.start}px)`,
@@ -277,6 +362,14 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
                             ИМПОРТ
                           </span>
                         )}
+                      </div>
+                      <div className="px-2">
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${productWarehouse === WarehouseType.CLOUD
+                            ? 'bg-violet-500/10 text-violet-400 border border-violet-500/20'
+                            : 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20'
+                          }`}>
+                          {productWarehouse === WarehouseType.CLOUD ? '☁️ Обл' : '🏭 Осн'}
+                        </span>
                       </div>
                       <div className="px-6">
                         <span className={`px-2 py-1 rounded-full text-xs font-medium border ${product.type === ProductType.PIPE ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
@@ -354,6 +447,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
                 >
                   {mobileVirtualizer.getVirtualItems().map((virtualRow) => {
                     const product = sortedProducts[virtualRow.index];
+                    const productWarehouse = product.warehouse || WarehouseType.MAIN;
                     return (
                       <div
                         key={product.id}
@@ -368,7 +462,15 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
                         <div className={`${t.bgCard} rounded-xl border ${t.border} p-4 space-y-3 ${t.shadow} h-full`}>
                           <div className="flex justify-between items-start">
                             <div className="flex-1 min-w-0">
-                              <h3 className={`font-medium ${t.text} text-sm sm:text-base truncate`}>{product.name}</h3>
+                              <div className="flex items-center gap-2 mb-1">
+                                <h3 className={`font-medium ${t.text} text-sm sm:text-base truncate`}>{product.name}</h3>
+                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold flex-shrink-0 ${productWarehouse === WarehouseType.CLOUD
+                                    ? 'bg-violet-500/10 text-violet-400 border border-violet-500/20'
+                                    : 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20'
+                                  }`}>
+                                  {productWarehouse === WarehouseType.CLOUD ? '☁️' : '🏭'}
+                                </span>
+                              </div>
                               {product.origin === 'import' && (
                                 <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-500/10 text-purple-400 border border-purple-500/20 mt-1">
                                   ИМПОРТ

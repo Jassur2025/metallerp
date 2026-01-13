@@ -9,8 +9,10 @@ import {
   Scale,
   Trash2,
   Truck,
+  Warehouse,
 } from 'lucide-react';
-import type { AppSettings, Product, PurchaseItem, PurchaseOverheads } from '../../types';
+import type { AppSettings, Product, PurchaseItem, PurchaseOverheads, WarehouseType } from '../../types';
+import { WarehouseLabels } from '../../types';
 import type { PaymentCurrency, PaymentMethod, ProcurementType, Totals } from './types';
 import { useTheme } from '../../contexts/ThemeContext';
 import { getThemeClasses } from '../../contexts/ThemeContext';
@@ -27,6 +29,10 @@ interface NewPurchaseViewProps {
   setPaymentMethod: (v: PaymentMethod) => void;
   paymentCurrency: PaymentCurrency;
   setPaymentCurrency: (v: PaymentCurrency) => void;
+
+  // Warehouse selection
+  selectedWarehouse: WarehouseType;
+  setSelectedWarehouse: (v: WarehouseType) => void;
 
   products: Product[];
   selectedProductId: string;
@@ -62,6 +68,8 @@ export const NewPurchaseView: React.FC<NewPurchaseViewProps> = ({
   setPaymentMethod,
   paymentCurrency,
   setPaymentCurrency,
+  selectedWarehouse,
+  setSelectedWarehouse,
   products,
   selectedProductId,
   setSelectedProductId,
@@ -113,6 +121,34 @@ export const NewPurchaseView: React.FC<NewPurchaseViewProps> = ({
               onChange={(e) => setDate(e.target.value)}
             />
           </div>
+          
+          {/* Warehouse Selection */}
+          <div className="space-y-2">
+            <label className={`text-xs font-medium ${t.textMuted} flex items-center gap-2`}>
+              <Warehouse size={14} /> Склад для оприходования
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => setSelectedWarehouse('main' as WarehouseType)}
+                className={`px-3 py-2 rounded-lg text-xs font-bold border transition-all ${selectedWarehouse === 'main'
+                    ? 'bg-cyan-500/20 border-cyan-500 text-cyan-400'
+                    : `${t.bg} ${t.border} ${t.textMuted}`
+                  }`}
+              >
+                🏭 {WarehouseLabels['main' as WarehouseType]}
+              </button>
+              <button
+                onClick={() => setSelectedWarehouse('cloud' as WarehouseType)}
+                className={`px-3 py-2 rounded-lg text-xs font-bold border transition-all ${selectedWarehouse === 'cloud'
+                    ? 'bg-violet-500/20 border-violet-500 text-violet-400'
+                    : `${t.bg} ${t.border} ${t.textMuted}`
+                  }`}
+              >
+                ☁️ {WarehouseLabels['cloud' as WarehouseType]}
+              </button>
+            </div>
+          </div>
+
           <div className="space-y-2">
             <label className={`text-xs font-medium ${t.textMuted}`}>Оплата</label>
             <div className="grid grid-cols-2 gap-2">

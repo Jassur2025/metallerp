@@ -1,8 +1,8 @@
 
 import React from 'react';
-import { Product, Order, Expense, FixedAsset, AppSettings, Transaction, Client, Purchase } from '../types';
+import { Product, Order, Expense, FixedAsset, AppSettings, Transaction, Client, Purchase, WarehouseType, WarehouseLabels } from '../types';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
-import { ShieldCheck, Wallet, Building2, Scale, Landmark, AlertTriangle, CheckCircle } from 'lucide-react';
+import { ShieldCheck, Wallet, Building2, Scale, Landmark, AlertTriangle, CheckCircle, Warehouse } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { getThemeClasses } from '../contexts/ThemeContext';
 import { calculateBaseTotals } from '../utils/finance';
@@ -34,7 +34,16 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fi
     // --- ASSETS (АКТИВЫ) ---
 
     // 1. Inventory Value (USD) - Stock on hand по СЕБЕСТОИМОСТИ (costPrice)
-    const inventoryValue = safeProducts.reduce((sum, p) => sum + ((p.quantity || 0) * (p.costPrice || 0)), 0);
+    // Рассчитываем по складам (без НДС, так как costPrice уже без НДС)
+    const inventoryByWarehouse = {
+        main: safeProducts
+            .filter(p => (p.warehouse || WarehouseType.MAIN) === WarehouseType.MAIN)
+            .reduce((sum, p) => sum + ((p.quantity || 0) * (p.costPrice || 0)), 0),
+        cloud: safeProducts
+            .filter(p => p.warehouse === WarehouseType.CLOUD)
+            .reduce((sum, p) => sum + ((p.quantity || 0) * (p.costPrice || 0)), 0)
+    };
+    const inventoryValue = inventoryByWarehouse.main + inventoryByWarehouse.cloud;
 
     // --- LIQUID ASSETS (Net Cash Positions) ---
     const num = (v: any): number => {
@@ -229,12 +238,29 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fi
                             <span className="font-mono text-sky-500">{formatCurrency(fixedAssetsValue)}</span>
                         </div>
 
-                        <div className={`flex justify-between items-center p-2 ${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-50'} rounded-lg border ${theme === 'dark' ? 'border-slate-700/50' : 'border-slate-200'}`}>
-                            <div className="flex items-center gap-3">
-                                <div className="w-2 h-8 bg-blue-500 rounded-full"></div>
-                                <span className={t.textMuted}>Товарные запасы</span>
+                        {/* Товарные запасы с разбивкой по складам */}
+                        <div className={`p-2 ${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-50'} rounded-lg border ${theme === 'dark' ? 'border-slate-700/50' : 'border-slate-200'}`}>
+                            <div className="flex justify-between items-center mb-2">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-2 h-8 bg-blue-500 rounded-full"></div>
+                                    <span className={t.textMuted}>Товарные запасы (ТМЦ)</span>
+                                </div>
+                                <span className="font-mono text-blue-500 font-bold">{formatCurrency(inventoryValue)}</span>
                             </div>
-                            <span className="font-mono text-blue-500">{formatCurrency(inventoryValue)}</span>
+                            <div className="ml-5 space-y-1">
+                                <div className="flex justify-between items-center text-xs">
+                                    <span className={`${t.textMuted} flex items-center gap-1`}>
+                                        <span className="text-cyan-400">🏭</span> Основной склад
+                                    </span>
+                                    <span className="font-mono text-cyan-400">{formatCurrency(inventoryByWarehouse.main)}</span>
+                                </div>
+                                <div className="flex justify-between items-center text-xs">
+                                    <span className={`${t.textMuted} flex items-center gap-1`}>
+                                        <span className="text-violet-400">☁️</span> Облачный склад
+                                    </span>
+                                    <span className="font-mono text-violet-400">{formatCurrency(inventoryByWarehouse.cloud)}</span>
+                                </div>
+                            </div>
                         </div>
 
                         <div className={`flex justify-between items-center p-2 ${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-50'} rounded-lg border ${theme === 'dark' ? 'border-slate-700/50' : 'border-slate-200'}`}>

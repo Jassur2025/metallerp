@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { ChevronDown, ChevronRight, History, Wallet, Edit, Save, X, Trash2 } from 'lucide-react';
-import type { Product, Purchase, Transaction, PurchaseItem } from '../../types';
+import { ChevronDown, ChevronRight, History, Wallet, Edit, Save, X, Trash2, Warehouse } from 'lucide-react';
+import type { Product, Purchase, Transaction, PurchaseItem, WarehouseType } from '../../types';
+import { WarehouseLabels } from '../../types';
 import { useTheme } from '../../contexts/ThemeContext';
 import { getThemeClasses } from '../../contexts/ThemeContext';
 
@@ -84,6 +85,7 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({
             <tr>
               <th className="px-6 py-4">Дата</th>
               <th className="px-6 py-4">Поставщик</th>
+              <th className="px-4 py-4 text-center">Склад</th>
               <th className="px-6 py-4 text-right">Сумма (Inv.)</th>
               <th className="px-6 py-4 text-center">Метод</th>
               <th className="px-6 py-4 text-center">Статус</th>
@@ -99,6 +101,7 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({
               .map((purchase) => {
                 const debt = purchase.totalInvoiceAmount - purchase.amountPaid;
                 const isExpanded = expandedPurchaseIds.has(purchase.id);
+                const purchaseWarehouse = purchase.warehouse || 'main';
                 return (
                   <React.Fragment key={purchase.id}>
                     <tr
@@ -118,6 +121,14 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({
                       <td className={`px-6 py-4 font-medium ${t.text}`}>
                         {purchase.supplierName}
                         <div className={`text-xs ${t.textMuted}`}>{purchase.items?.length || 0} поз.</div>
+                      </td>
+                      <td className="px-4 py-4 text-center">
+                        <span className={`px-2 py-1 rounded text-[10px] font-bold ${purchaseWarehouse === 'cloud'
+                            ? 'bg-violet-500/20 text-violet-400 border border-violet-500/20'
+                            : 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/20'
+                          }`}>
+                          {purchaseWarehouse === 'cloud' ? '☁️ Облачный' : '🏭 Основной'}
+                        </span>
                       </td>
                       <td className={`px-6 py-4 text-right font-mono ${t.textMuted}`}>
                         ${purchase.totalInvoiceAmount.toLocaleString()}
@@ -173,7 +184,7 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({
                     {/* Expanded details row */}
                     {isExpanded && (
                       <tr className={t.bg}>
-                        <td colSpan={8} className="px-6 py-4">
+                        <td colSpan={9} className="px-6 py-4">
                           <div className="space-y-4">
                             {/* Payment details for Mixed */}
                             {purchase.paymentMethod === 'mixed' && (
