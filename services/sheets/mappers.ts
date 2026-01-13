@@ -16,6 +16,7 @@ import {
   Unit,
   UserRole,
   WorkflowOrder,
+  WarehouseType,
 } from '../../types';
 import { asNumber, asOptionalNumber, asOptionalString, asString, parseJson, pick, type Row } from './parsers';
 
@@ -64,6 +65,8 @@ const JOURNAL_RELATED_TYPES: readonly NonNullable<JournalEvent['relatedType']>[]
   'transaction',
 ] as const;
 
+const WAREHOUSE_TYPES = Object.values(WarehouseType);
+
 export function mapRowToProduct(row: Row): Product {
   return {
     id: asString(row, 0),
@@ -77,8 +80,9 @@ export function mapRowToProduct(row: Row): Product {
     costPrice: asNumber(row, 8, 0),
     minStockLevel: asNumber(row, 9, 0),
     origin: pick(asString(row, 10, 'local'), ['import', 'local'] as const, 'local'),
-    updatedAt: asOptionalString(row, 11),
-    _version: asOptionalNumber(row, 12),
+    warehouse: pick(asString(row, 11, 'main'), WAREHOUSE_TYPES, WarehouseType.MAIN),
+    updatedAt: asOptionalString(row, 12),
+    _version: asOptionalNumber(row, 13),
   };
 }
 
@@ -95,6 +99,7 @@ export function mapProductToRow(p: Product): unknown[] {
     p.costPrice,
     p.minStockLevel,
     p.origin || 'local',
+    p.warehouse || 'main',
     p.updatedAt || '',
     p._version ?? 1,
   ];
@@ -293,11 +298,6 @@ export function mapRowToPurchase(row: Row): Purchase {
   const paymentStatus = pick(asString(row, 9), PAYMENT_STATUSES, 'paid');
 
   // If status is 'unpaid', force amountPaid to 0 regardless of what's in the column
-  // If status is 'paid', we trust the column or default to totalInvoiceAmount if missing (Wait, previously I set default to 0. 
-  //   If it is 'paid' but amountPaid column is 0/empty, we should probably set it to totalInvoiceAmount? 
-  //   Actually, let's Stick to reading the column. If it's 0 and status is Paid, that's a data error)
-  //   User issue is specifically Unpaid showing as Paid.
-
   let amountPaid = asNumber(row, 10, 0);
   if (paymentStatus === 'unpaid') {
     amountPaid = 0;
@@ -312,11 +312,19 @@ export function mapRowToPurchase(row: Row): Purchase {
     overheads,
     totalInvoiceAmount: asNumber(row, 6, 0),
     totalLandedAmount: asNumber(row, 7, 0),
-    paymentMethod: pick(asString(row, 8), ['cash', 'bank', 'debt'] as const, 'cash'),
+    paymentMethod: pick(asString(row, 8), ['cash', 'bank', 'card', 'debt', 'mixed'] as const, 'cash'),
     paymentStatus,
     amountPaid,
     updatedAt: asOptionalString(row, 11),
     _version: asOptionalNumber(row, 12),
+    // New fields
+    exchangeRate: asNumber(row, 13, 12800),
+    paymentCurrency: pick(asString(row, 14, 'UZS'), CURRENCIES, 'UZS'),
+    amountPaidUSD: asNumber(row, 15, 0),
+    totalInvoiceAmountUZS: asNumber(row, 16, 0),
+    totalVatAmountUZS: asNumber(row, 17, 0),
+    totalWithoutVatUZS: asNumber(row, 18, 0),
+    warehouse: pick(asString(row, 19, 'main'), WAREHOUSE_TYPES, WarehouseType.MAIN),
   };
 }
 
@@ -335,6 +343,14 @@ export function mapPurchaseToRow(p: Purchase): unknown[] {
     p.amountPaid,
     p.updatedAt || '',
     p._version ?? 1,
+    // New fields
+    p.exchangeRate || 12800,
+    p.paymentCurrency || 'UZS',
+    p.amountPaidUSD || 0,
+    p.totalInvoiceAmountUZS || 0,
+    p.totalVatAmountUZS || 0,
+    p.totalWithoutVatUZS || 0,
+    p.warehouse || 'main',
   ];
 }
 

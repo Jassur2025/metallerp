@@ -264,33 +264,33 @@ export const sheetsService = {
       mapWorkflowOrderToRow
     ),
 
-  // Purchases
+  // Purchases (A-T: id, date, supplier, items, totalAmount, status, notes, paymentMethod, paidAmount, invoiceNumber, currency, createdAt, updatedAt, exchangeRate, paymentCurrency, amountPaidUSD, totalInvoiceAmountUZS, totalVatAmountUZS, totalWithoutVatUZS, warehouse)
   getPurchases: (accessToken: string, useCache: boolean = true) =>
-    getAll<Purchase>('purchases', accessToken, 'Purchases!A2:M', mapRowToPurchase, useCache),
+    getAll<Purchase>('purchases', accessToken, 'Purchases!A2:T', mapRowToPurchase, useCache),
 
   saveAllPurchases: (accessToken: string, purchases: Purchase[]) =>
     saveAllWithMerge<Purchase>(
       'purchases',
       accessToken,
-      'Purchases!A2:M',
-      'Purchases!A2:M',
-      'Purchases!A2:M',
+      'Purchases!A2:T',
+      'Purchases!A2:T',
+      'Purchases!A2:T',
       purchases,
       mapRowToPurchase,
       mapPurchaseToRow
     ),
 
-  // Products
+  // Products (A-N: id, name, type, dimensions, steelGrade, quantity, unit, pricePerUnit, costPrice, minStockLevel, origin, warehouse, updatedAt, _version)
   getProducts: (accessToken: string, useCache: boolean = true) =>
-    getAll<Product>('products', accessToken, 'Products!A2:M', mapRowToProduct, useCache),
+    getAll<Product>('products', accessToken, 'Products!A2:N', mapRowToProduct, useCache),
 
   saveAllProducts: (accessToken: string, products: Product[]) =>
     saveAllWithMerge<Product>(
       'products',
       accessToken,
-      'Products!A2:M',
-      'Products!A2:M',
-      'Products!A2:M',
+      'Products!A2:N',
+      'Products!A2:N',
+      'Products!A2:N',
       products,
       mapRowToProduct,
       mapProductToRow
@@ -434,12 +434,12 @@ export const sheetsService = {
 
     const ranges = [
       'Orders!A2:S',
-      'Products!A2:M',
+      'Products!A2:N',
       'Expenses!A2:I',
       'Clients!A2:R',
       'Transactions!A2:K',
       'FixedAssets!A2:K',
-      'Purchases!A2:M',
+      'Purchases!A2:T',
       'WorkflowOrders!A2:Y',
       'Staff!A2:P',
       'Journal!A2:M',
