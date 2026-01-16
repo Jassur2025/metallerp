@@ -124,6 +124,114 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, onSaveOrders,
     };
 
     // Получить непогашенные заказы клиента для погашения
+    // Тип для истории платежей
+    type PaymentRecord = {
+        date: string;
+        amount: number;
+        amountUSD: number;
+        currency: string;
+        method: string;
+    };
+    
+    const getOrderPaidUSD = (order: any) => {
+        if (typeof order.amountPaidUSD === 'number') return order.amountPaidUSD;
+        if (order.paymentCurrency === 'USD') return order.amountPaid || 0;
+        // Fallback: best effort if currency unknown
+        return order.amountPaid || 0;
+    };
+
+    const hasOpenBalance = (order: any) => {
+        const paidUSD = getOrderPaidUSD(order);
+        return ((order.totalAmount || 0) - paidUSD) > 0.01;
+    };
+
+    const isDebtOrder = (order: any) => {
+        const status = order.paymentStatus;
+        return order.paymentMethod === 'debt' || status === 'unpaid' || status === 'partial' || hasOpenBalance(order);
+    };
+
+    // Функция для расчёта актуального долга клиента из заказов и транзакций
+    const calculateClientDebt = (client: Client): number => {
+        const clientId = client.id;
+        const clientName = (client.name || '').toLowerCase().trim();
+        const companyName = (client.companyName || '').toLowerCase().trim();
+        
+        let totalDebt = 0;
+        let totalRepaid = 0;
+        
+        // Найти ВСЕ заказы клиента которые БЫЛИ в долг
+        // Используем ту же логику что и в getClientDebtHistory
+        orders.forEach(order => {
+            const orderClientName = (order.customerName || '').toLowerCase().trim();
+            const matchesClient = 
+                order.clientId === clientId || 
+                orderClientName === clientName ||
+                (clientName && orderClientName.includes(clientName)) ||
+                (clientName && clientName.includes(orderClientName)) ||
+                (companyName && orderClientName.includes(companyName)) ||
+                (companyName && companyName.includes(orderClientName));
+            
+            // Заказ был в долг: paymentMethod === 'debt' ИЛИ статус unpaid/partial ИЛИ totalAmount > amountPaid
+            const wasDebtOrder = order.paymentMethod === 'debt' || 
+                                 order.paymentStatus === 'unpaid' || 
+                                 order.paymentStatus === 'partial' ||
+                                 ((order.totalAmount || 0) > (order.amountPaid || 0) + 0.01);
+            
+            if (matchesClient && wasDebtOrder) {
+                const paidUSD = getOrderPaidUSD(order);
+                // Реальный долг = totalAmount минус то что оплачено в самом заказе (amountPaid)
+                const actualDebt = Math.max(0, (order.totalAmount || 0) - paidUSD);
+                totalDebt += actualDebt;
+            }
+        });
+
+        // Собираем ID заказов для поиска погашений
+        const clientOrderIds: string[] = [];
+        orders.forEach(order => {
+            const orderClientName = (order.customerName || '').toLowerCase().trim();
+            const matchesClient = 
+                order.clientId === clientId || 
+                orderClientName === clientName ||
+                (clientName && orderClientName.includes(clientName)) ||
+                (companyName && orderClientName.includes(companyName));
+            if (matchesClient) {
+                clientOrderIds.push(order.id.toLowerCase());
+            }
+        });
+        
+        // Найти все транзакции погашений для этого клиента
+        transactions.forEach(tx => {
+            const txDescription = (tx.description || '').toLowerCase();
+            const relatedIdLower = (tx.relatedId || '').toLowerCase();
+            
+            const matchesClient = 
+                tx.relatedId === clientId ||
+                clientOrderIds.includes(relatedIdLower) ||
+                (clientName && txDescription.includes(clientName)) ||
+                (companyName && txDescription.includes(companyName));
+            
+            // Также проверяем связь с заказами клиента
+            const matchesClientOrder = clientOrderIds.some(orderId => 
+                relatedIdLower === orderId ||
+                txDescription.includes(orderId)
+            );
+            
+            if (matchesClient || matchesClientOrder) {
+                // Погашение долга - type income/client_payment/sale с "погашение" в описании
+                if ((tx.type === 'income' || tx.type === 'client_payment' || tx.type === 'sale') && 
+                    (txDescription.includes('погашение') || txDescription.includes('repayment'))) {
+                    let amountInUSD = tx.amount || 0;
+                    if (tx.currency === 'UZS' && tx.exchangeRate) {
+                        amountInUSD = (tx.amount || 0) / tx.exchangeRate;
+                    }
+                    totalRepaid += amountInUSD;
+                }
+            }
+        });
+        
+        return Math.max(0, totalDebt - totalRepaid);
+    };
+    
     const getUnpaidOrdersForClient = useMemo(() => {
         if (!selectedClientForRepayment) return [];
         
@@ -131,9 +239,19 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, onSaveOrders,
         const clientName = (selectedClientForRepayment.name || '').toLowerCase().trim();
         const companyName = (selectedClientForRepayment.companyName || '').toLowerCase().trim();
         
-        const unpaidOrders: { id: string; date: string; totalAmount: number; amountPaid: number; debtAmount: number; items: string }[] = [];
+        const unpaidOrders: { 
+            id: string; 
+            date: string; 
+            totalAmount: number; 
+            amountPaid: number; 
+            debtAmount: number; 
+            items: string;
+            reportNo?: number;
+            paymentDueDate?: string;
+            payments: PaymentRecord[];
+        }[] = [];
         
-        // Найти заказы в долг
+        // Найти заказы в долг (с paymentMethod === 'debt' или статусами unpaid/partial)
         orders.forEach(order => {
             const orderClientName = (order.customerName || '').toLowerCase().trim();
             const matchesClient = 
@@ -143,20 +261,39 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, onSaveOrders,
                 (clientName && clientName.includes(orderClientName)) ||
                 (companyName && orderClientName.includes(companyName));
             
-            if (matchesClient && order.paymentMethod === 'debt') {
+            // Заказ был в долг если paymentMethod === 'debt' или статус unpaid/partial
+            const wasDebtOrder = order.paymentMethod === 'debt' || 
+                                 order.paymentStatus === 'unpaid' || 
+                                 order.paymentStatus === 'partial';
+            
+            if (matchesClient && wasDebtOrder) {
                 // Рассчитать погашения из транзакций для этого заказа
+                // Погашения могут быть type: 'income', 'client_payment', 'sale'
                 const repayments = transactions.filter(t => {
                     const desc = (t.description || '').toLowerCase();
-                    const isRepayment = desc.includes('погашение');
-                    const matchesOrder = 
+                    const isRepaymentType = desc.includes('погашение') || t.type === 'client_payment';
+                    
+                    // ОБЯЗАТЕЛЬНО должна быть привязка к этому заказу
+                    const orderId = order.id.toLowerCase();
+                    const matchesThisOrder = 
                         t.relatedId === order.id ||
-                        t.relatedId?.toLowerCase() === order.id.toLowerCase() ||
-                        desc.includes(order.id.toLowerCase());
-                    return isRepayment && matchesOrder;
+                        t.relatedId?.toLowerCase() === orderId ||
+                        desc.includes(orderId);
+                    
+                    return isRepaymentType && matchesThisOrder;
                 });
                 
+                // Собираем историю платежей (поле может быть method или paymentMethod)
+                const payments: PaymentRecord[] = repayments.map(r => ({
+                    date: r.date,
+                    amount: r.amount || 0,
+                    amountUSD: r.currency === 'UZS' && r.exchangeRate ? (r.amount || 0) / r.exchangeRate : (r.amount || 0),
+                    currency: r.currency || 'USD',
+                    method: (r as any).method || r.paymentMethod || 'cash'
+                }));
+                
                 // Суммируем погашения в USD
-                let totalRepaidUSD = order.amountPaid || 0;
+                let totalRepaidUSD = getOrderPaidUSD(order);
                 repayments.forEach(r => {
                     if (r.currency === 'UZS' && r.exchangeRate) {
                         totalRepaidUSD += (r.amount || 0) / r.exchangeRate;
@@ -173,7 +310,10 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, onSaveOrders,
                         totalAmount: order.totalAmount || 0,
                         amountPaid: totalRepaidUSD,
                         debtAmount,
-                        items: (order.items || []).map(it => it.productName).slice(0, 2).join(', ') + (order.items && order.items.length > 2 ? '...' : '')
+                        items: (order.items || []).map(it => it.productName).slice(0, 2).join(', ') + (order.items && order.items.length > 2 ? '...' : ''),
+                        reportNo: order.reportNo,
+                        paymentDueDate: order.paymentDueDate,
+                        payments
                     });
                 }
             }
@@ -187,9 +327,11 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, onSaveOrders,
                 (clientName && txDescription.includes(clientName)) ||
                 (companyName && txDescription.includes(companyName));
             
-            if (matchesClient && txDescription.includes('долг по заказу')) {
-                // Извлечь ID заказа из описания
-                const orderIdMatch = txDescription.match(/ord-[a-z0-9]+/i);
+            // Также проверяем долг по обязательствам или "Долг по заказу"
+            if (matchesClient && (tx.type === 'debt_obligation' || txDescription.includes('долг по заказу'))) {
+                // Извлечь ID заказа из описания (если есть)
+                const orderIdMatch = txDescription.match(/ord-[a-z0-9-]+/i);
+                // Если нет ORD-..., используем ID транзакции как идентификатор долга
                 const orderId = orderIdMatch ? orderIdMatch[0].toUpperCase() : tx.id;
                 
                 // Проверить не добавлен ли уже этот заказ
@@ -197,15 +339,25 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, onSaveOrders,
                 if (!existingOrder) {
                     // Рассчитать сколько погашено по этому заказу
                     // Ищем по relatedId или по упоминанию ID заказа в описании
+                    // Погашения могут быть type: 'income', 'client_payment', 'sale'
                     const repayments = transactions.filter(t => {
                         const desc = (t.description || '').toLowerCase();
-                        const isRepayment = desc.includes('погашение');
+                        const isRepayment = desc.includes('погашение') || t.type === 'client_payment';
                         const matchesOrder = 
                             t.relatedId === orderId ||
                             t.relatedId?.toLowerCase() === orderId.toLowerCase() ||
                             desc.includes(orderId.toLowerCase());
                         return isRepayment && matchesOrder;
                     });
+                    
+                    // Собираем историю платежей из транзакций (поле method или paymentMethod)
+                    const payments: PaymentRecord[] = repayments.map(r => ({
+                        date: r.date,
+                        amount: r.amount || 0,
+                        amountUSD: r.currency === 'UZS' && r.exchangeRate ? (r.amount || 0) / r.exchangeRate : (r.amount || 0),
+                        currency: r.currency || 'USD',
+                        method: (r as any).method || r.paymentMethod || 'cash'
+                    }));
                     
                     // Суммируем в USD
                     let totalRepaidUSD = 0;
@@ -226,17 +378,78 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, onSaveOrders,
                             totalAmount: tx.amount || 0,
                             amountPaid: totalRepaidUSD,
                             debtAmount,
-                            items: tx.description || ''
+                            items: tx.description || '',
+                            payments
                         });
                     }
                 }
             }
         });
         
-        // Сортировать по дате
+        // Сортировать по дате (старые первые - для FIFO распределения)
         unpaidOrders.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
         
-        return unpaidOrders;
+        // Собираем ID всех заказов клиента
+        const allOrderIds = unpaidOrders.map(o => o.id.toLowerCase());
+        
+        // Найти погашения клиента БЕЗ привязки к конкретному заказу
+        // (когда relatedId = clientId, а не orderId)
+        const clientPaymentsWithoutOrder = transactions.filter(t => {
+            const desc = (t.description || '').toLowerCase();
+            const isRepayment = desc.includes('погашение') || t.type === 'client_payment';
+            const isForClient = t.relatedId === clientId || 
+                (clientName && desc.includes(clientName)) ||
+                (companyName && desc.includes(companyName));
+            
+            // Проверяем что это НЕ привязано к конкретному заказу
+            // relatedId начинается с ORD- = привязан к заказу
+            const relatedIdIsOrder = t.relatedId?.toUpperCase().startsWith('ORD-');
+            // Или в описании есть ссылка на конкретный заказ из списка
+            const descHasOrderRef = allOrderIds.some(orderId => desc.includes(orderId));
+            
+            return isRepayment && isForClient && !relatedIdIsOrder && !descHasOrderRef;
+        });
+        
+        // Суммируем неразмеченные погашения в USD
+        let unallocatedPaymentsUSD = 0;
+        clientPaymentsWithoutOrder.forEach(t => {
+            if (t.currency === 'UZS' && t.exchangeRate) {
+                unallocatedPaymentsUSD += (t.amount || 0) / t.exchangeRate;
+            } else {
+                unallocatedPaymentsUSD += (t.amount || 0);
+            }
+        });
+        
+        // Распределяем неразмеченные погашения по заказам (FIFO - старые первые)
+        if (unallocatedPaymentsUSD > 0) {
+            for (const order of unpaidOrders) {
+                if (unallocatedPaymentsUSD <= 0) break;
+                
+                const canPay = Math.min(unallocatedPaymentsUSD, order.debtAmount);
+                order.amountPaid += canPay;
+                order.debtAmount -= canPay;
+                unallocatedPaymentsUSD -= canPay;
+            }
+        }
+        
+        // Убираем полностью оплаченные заказы
+        const stillUnpaid = unpaidOrders.filter(o => o.debtAmount > 0.01);
+        
+        // Fallback: если заказы не нашлись, но по расчёту есть долг - создаём виртуальный чек
+        const calculatedDebt = selectedClientForRepayment ? calculateClientDebt(selectedClientForRepayment) : 0;
+        if (stillUnpaid.length === 0 && calculatedDebt > 0.01) {
+            stillUnpaid.push({
+                id: `DEBT-${clientId}`,
+                date: new Date().toISOString(),
+                totalAmount: calculatedDebt,
+                amountPaid: 0,
+                debtAmount: calculatedDebt,
+                items: 'Общий долг клиента',
+                payments: []
+            });
+        }
+        
+        return stillUnpaid;
     }, [selectedClientForRepayment, orders, transactions]);
 
     const handleOpenDebtHistoryModal = (client: Client) => {
@@ -262,11 +475,18 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, onSaveOrders,
             amountPaid: number;
             debtChange: number; // + добавляет долг, - уменьшает
             balance: number;
+            reportNo?: number;
+            paymentMethod?: string;
+            currency?: string;
+            exchangeRate?: number;
+            amountInUSD?: number;
+            paymentDueDate?: string;
         };
         
         const allHistory: HistoryItem[] = [];
         
-        // Найти все заказы в долг для этого клиента
+        // Найти все заказы в долг для этого клиента (включая полностью оплаченные)
+        // Показываем заказы которые БЫЛИ в долг (paymentMethod === 'debt' или paymentStatus !== 'paid')
         orders.forEach(order => {
             const orderClientName = (order.customerName || '').toLowerCase().trim();
             const matchesClient = 
@@ -277,25 +497,39 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, onSaveOrders,
                 (companyName && orderClientName.includes(companyName)) ||
                 (companyName && companyName.includes(orderClientName));
             
-            if (matchesClient && order.paymentMethod === 'debt') {
-                const debtAmount = (order.totalAmount || 0) - (order.amountPaid || 0);
+            // Заказ был в долг если: paymentMethod === 'debt' ИЛИ был partial/unpaid ИЛИ amountPaid < totalAmount
+            const wasDebtOrder = order.paymentMethod === 'debt' || 
+                                 order.paymentStatus === 'unpaid' || 
+                                 order.paymentStatus === 'partial' ||
+                                 ((order.totalAmount || 0) > (order.amountPaid || 0) + 0.01);
+            
+            if (matchesClient && wasDebtOrder) {
+                const paidUSD = getOrderPaidUSD(order);
+                // Реальный остаток долга по заказу = totalAmount - то что уже оплачено
+                const actualDebt = Math.max(0, (order.totalAmount || 0) - paidUSD);
+                
                 allHistory.push({
                     id: order.id,
                     date: order.date,
                     type: 'order',
-                    description: `Заказ #${order.id.slice(-6)}`,
+                    description: order.reportNo ? `Отчёт №${order.reportNo}` : `Заказ #${order.id.slice(-6)}`,
                     items: (order.items || []).map(it => ({
                         name: it.productName || 'Товар',
                         qty: it.quantity || 0,
                         price: it.priceAtSale || 0
                     })),
                     totalAmount: order.totalAmount || 0,
-                    amountPaid: order.amountPaid || 0,
-                    debtChange: debtAmount,
-                    balance: 0
+                    amountPaid: paidUSD,
+                    debtChange: actualDebt, // Реальный долг = сумма минус уже оплаченное
+                    balance: actualDebt, // Текущий остаток
+                    reportNo: order.reportNo,
+                    paymentDueDate: order.paymentDueDate
                 });
             }
         });
+        
+        // Собираем ID всех заказов этого клиента для поиска погашений
+        const clientOrderIds = allHistory.filter(h => h.type === 'order').map(h => h.id.toLowerCase());
         
         // Найти все транзакции связанные с этим клиентом
         transactions.forEach(tx => {
@@ -305,22 +539,55 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, onSaveOrders,
                 (clientName && txDescription.includes(clientName)) ||
                 (companyName && txDescription.includes(companyName));
             
-            if (matchesClient) {
-                // Долг по заказу - это создание долга (добавление)
-                if (txDescription.includes('долг по заказу') || txDescription.includes('debt for order')) {
+            // Также проверяем связь с заказами клиента
+            const matchesClientOrder = clientOrderIds.some(orderId => 
+                tx.relatedId?.toLowerCase() === orderId ||
+                txDescription.includes(orderId)
+            );
+            
+            if (matchesClient || matchesClientOrder) {
+                // Долг по заказу или ручное обязательство - это создание долга (добавление)
+                if (tx.type === 'debt_obligation' || txDescription.includes('долг по заказу') || txDescription.includes('debt for order')) {
+                    // Проверяем, не добавлен ли уже этот заказ (avoid double counting of orders)
+                    const alreadyExists = allHistory.some(h => 
+                        h.id === tx.id || 
+                        (tx.relatedId && h.id === tx.relatedId && h.type === 'order') ||
+                        (txDescription.includes(h.id.toLowerCase()) && h.type === 'order')
+                    );
+                    if (alreadyExists) return; // Пропускаем дубликаты
+                    
+                    // Найдём reportNo из связанного заказа (если есть)
+                    const relatedOrder = orders.find(o => 
+                        tx.description?.toLowerCase().includes(o.id.toLowerCase()) ||
+                        tx.relatedId === o.id
+                    );
+                    
                     allHistory.push({
                         id: tx.id,
                         date: tx.date,
-                        type: 'order',
-                        description: tx.description || 'Долг по заказу',
+                        type: 'order', // Treat as debt increase
+                        description: relatedOrder?.reportNo 
+                            ? `Отчёт №${relatedOrder.reportNo}` 
+                            : (tx.description || 'Начальный долг / Обязательство'),
                         totalAmount: tx.amount || 0,
                         amountPaid: 0,
                         debtChange: tx.amount || 0, // Добавляет долг
-                        balance: 0
+                        balance: 0,
+                        reportNo: relatedOrder?.reportNo,
+                        paymentDueDate: relatedOrder?.paymentDueDate
                     });
                 }
-                // Погашение долга - уменьшение долга
-                else if (tx.type === 'income' && txDescription.includes('погашение')) {
+                // Погашение долга - уменьшение долга (type может быть 'income', 'client_payment', 'sale')
+                else if ((tx.type === 'income' || tx.type === 'client_payment' || tx.type === 'sale') && (txDescription.includes('погашение') || txDescription.includes('repayment'))) {
+                    // Определяем сумму в USD
+                    let amountInUSD = tx.amount || 0;
+                    if (tx.currency === 'UZS' && tx.exchangeRate) {
+                        amountInUSD = (tx.amount || 0) / tx.exchangeRate;
+                    }
+                    
+                    // Поле может называться method или paymentMethod
+                    const payMethod = (tx as any).method || tx.paymentMethod;
+                    
                     allHistory.push({
                         id: tx.id,
                         date: tx.date,
@@ -328,8 +595,12 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, onSaveOrders,
                         description: tx.description || 'Погашение долга',
                         totalAmount: tx.amount || 0,
                         amountPaid: tx.amount || 0,
-                        debtChange: -(tx.amount || 0), // Уменьшает долг
-                        balance: 0
+                        debtChange: -amountInUSD, // Уменьшает долг в USD
+                        balance: 0,
+                        paymentMethod: payMethod,
+                        currency: tx.currency || 'USD',
+                        exchangeRate: tx.exchangeRate,
+                        amountInUSD
                     });
                 }
                 // Другие транзакции связанные с клиентом
@@ -384,7 +655,7 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, onSaveOrders,
         setIsModalOpen(false);
     };
 
-    const handleRepayDebt = () => {
+    const handleRepayDebt = async () => {
         if (!selectedClientForRepayment) return;
 
         let amountInUSD = 0;
@@ -485,7 +756,7 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, onSaveOrders,
         const updatedTransactions = [...transactions, ...newTransactions];
         setTransactions(updatedTransactions);
         if (onSaveTransactions) {
-            onSaveTransactions(updatedTransactions);
+            await onSaveTransactions(updatedTransactions);
         }
 
         // 2. Update Order amountPaid if specific order was selected
@@ -494,24 +765,30 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, onSaveOrders,
                 if (order.id === selectedOrderForRepayment) {
                     const newAmountPaid = (order.amountPaid || 0) + amountInUSD;
                     const newDebt = Math.max(0, (order.totalAmount || 0) - newAmountPaid);
+                    const isPaidOff = newDebt < 0.01;
                     return {
                         ...order,
                         amountPaid: newAmountPaid,
-                        // Если долг полностью погашен, можно изменить paymentMethod
-                        paymentMethod: newDebt < 0.01 ? 'paid' : order.paymentMethod
+                        // Обновляем статус оплаты
+                        paymentStatus: isPaidOff ? 'paid' : 'partial',
+                        // Если полностью оплачено - меняем метод (опционально)
+                        paymentMethod: isPaidOff ? (order.paymentMethod === 'debt' ? 'cash' : order.paymentMethod) : order.paymentMethod
                     };
                 }
                 return order;
             });
-            onSaveOrders(updatedOrders);
+            await onSaveOrders(updatedOrders);
         }
 
-        // 3. Update Client Debt
+        // 3. Пересчитываем долг клиента динамически
+        // Вместо простого вычитания - считаем заново из всех заказов
+        const recalculatedDebt = calculateClientDebt(selectedClientForRepayment) - amountInUSD;
+        
         const updatedClients = clients.map(c => {
             if (c.id === selectedClientForRepayment.id) {
                 return {
                     ...c,
-                    totalDebt: Math.max(0, (c.totalDebt || 0) - amountInUSD)
+                    totalDebt: Math.max(0, recalculatedDebt)
                 };
             }
             return c;
@@ -1001,8 +1278,8 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, onSaveOrders,
                                         </div>
                                         <div>
                                             <p className={`text-xs ${t.textMuted} uppercase`}>Долг</p>
-                                            <p className={`font-mono font-bold ${(client.totalDebt || 0) > 0 ? 'text-red-500' : t.textMuted}`}>
-                                                ${(client.totalDebt || 0).toLocaleString()}
+                                            <p className={`font-mono font-bold ${calculateClientDebt(client) > 0 ? 'text-red-500' : t.textMuted}`}>
+                                                ${calculateClientDebt(client).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                                             </p>
                                         </div>
                                     </div>
@@ -1017,7 +1294,7 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, onSaveOrders,
                                         </button>
                                         <button
                                             onClick={() => handleOpenRepayModal(client)}
-                                            disabled={(client.totalDebt || 0) <= 0}
+                                            disabled={calculateClientDebt(client) <= 0}
                                             className={`flex-1 ${theme === 'dark' ? 'bg-slate-700' : 'bg-slate-200 text-slate-700'} hover:bg-emerald-600 hover:text-white disabled:opacity-50 disabled:hover:bg-slate-700 text-white py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2`}
                                         >
                                             <Wallet size={16} /> Погасить долг
@@ -1256,7 +1533,7 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, onSaveOrders,
                                 <div className="mt-3 flex justify-between items-end">
                                     <span className={`text-sm ${t.textMuted}`}>Общий долг:</span>
                                     <span className="text-xl font-mono font-bold text-red-500">
-                                        ${selectedClientForRepayment.totalDebt?.toLocaleString()}
+                                        ${calculateClientDebt(selectedClientForRepayment).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                                     </span>
                                 </div>
                             </div>
@@ -1265,7 +1542,7 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, onSaveOrders,
                             {getUnpaidOrdersForClient.length > 0 && (
                                 <div className="space-y-2">
                                     <label className={`text-sm font-medium ${t.textMuted}`}>Выберите чек для погашения</label>
-                                    <div className={`max-h-48 overflow-y-auto space-y-2 ${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-50'} p-2 rounded-lg border ${t.border}`}>
+                                    <div className={`max-h-64 overflow-y-auto space-y-2 ${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-50'} p-2 rounded-lg border ${t.border}`}>
                                         {getUnpaidOrdersForClient.map(order => (
                                             <div
                                                 key={order.id}
@@ -1285,8 +1562,15 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, onSaveOrders,
                                                     <div>
                                                         <div className={`text-xs ${t.textMuted}`}>
                                                             {new Date(order.date).toLocaleDateString('ru-RU')}
+                                                            {order.paymentDueDate && (
+                                                                <span className="ml-2 text-amber-500">
+                                                                    • До: {new Date(order.paymentDueDate).toLocaleDateString('ru-RU')}
+                                                                </span>
+                                                            )}
                                                         </div>
-                                                        <div className={`font-mono text-xs ${t.text}`}>#{order.id.slice(-10)}</div>
+                                                        <div className={`font-mono text-sm font-bold ${t.text}`}>
+                                                            Отчёт №{order.reportNo || order.id.slice(-4)}
+                                                        </div>
                                                         <div className={`text-xs ${t.textMuted} truncate max-w-[180px]`}>{order.items}</div>
                                                     </div>
                                                     <div className="text-right">
@@ -1294,14 +1578,43 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, onSaveOrders,
                                                         <div className="text-sm font-mono font-bold text-red-500">
                                                             Долг: ${order.debtAmount.toLocaleString()}
                                                         </div>
+                                                        {order.amountPaid > 0 && (
+                                                            <div className={`text-xs ${t.success}`}>
+                                                                Оплачено: ${order.amountPaid.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 </div>
+                                                {/* История платежей */}
+                                                {order.payments && order.payments.length > 0 && (
+                                                    <div className={`mt-2 pt-2 border-t ${t.border}`}>
+                                                        <div className={`text-xs ${t.textMuted} mb-1`}>История оплат:</div>
+                                                        <div className="space-y-1">
+                                                            {order.payments.map((payment, idx) => (
+                                                                <div key={idx} className={`flex justify-between text-xs ${t.text}`}>
+                                                                    <span>
+                                                                        {new Date(payment.date).toLocaleDateString('ru-RU')} • 
+                                                                        {payment.method === 'cash' ? ' 💵 Нал' : 
+                                                                         payment.method === 'card' ? ' 💳 Карта' : 
+                                                                         payment.method === 'bank' ? ' 🏦 Банк' : ' Микс'}
+                                                                    </span>
+                                                                    <span className={t.success}>
+                                                                        {payment.currency === 'UZS' 
+                                                                            ? `${payment.amount.toLocaleString()} сум ($${payment.amountUSD.toLocaleString(undefined, { maximumFractionDigits: 2 })})`
+                                                                            : `$${payment.amount.toLocaleString()}`
+                                                                        }
+                                                                    </span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
                                         ))}
                                     </div>
                                     {selectedOrderForRepayment && (
                                         <div className="text-xs text-emerald-500">
-                                            ✓ Выбран чек #{selectedOrderForRepayment.slice(-10)} — долг ${getUnpaidOrdersForClient.find(o => o.id === selectedOrderForRepayment)?.debtAmount.toLocaleString()}
+                                            ✓ Выбран: Отчёт №{getUnpaidOrdersForClient.find(o => o.id === selectedOrderForRepayment)?.reportNo || selectedOrderForRepayment.slice(-4)} — долг ${getUnpaidOrdersForClient.find(o => o.id === selectedOrderForRepayment)?.debtAmount.toLocaleString()}
                                         </div>
                                     )}
                                 </div>
@@ -1628,7 +1941,13 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, onSaveOrders,
             )}
 
             {/* Debt History Modal */}
-            {isDebtHistoryModalOpen && selectedClientForHistory && (
+            {isDebtHistoryModalOpen && selectedClientForHistory && (() => {
+                // Вычисляем текущий долг из истории
+                const totalDebtFromHistory = getClientDebtHistory.filter(h => h.debtChange > 0).reduce((s, h) => s + h.debtChange, 0);
+                const totalRepaidFromHistory = Math.abs(getClientDebtHistory.filter(h => h.debtChange < 0).reduce((s, h) => s + h.debtChange, 0));
+                const currentDebtFromHistory = Math.max(0, totalDebtFromHistory - totalRepaidFromHistory);
+                
+                return (
                 <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
                     <div className={`${t.bgCard} rounded-2xl w-full max-w-4xl border ${t.border} shadow-2xl animate-scale-in max-h-[90vh] overflow-hidden flex flex-col`}>
                         <div className={`p-6 border-b ${t.border} flex justify-between items-center flex-shrink-0`}>
@@ -1643,8 +1962,8 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, onSaveOrders,
                             </div>
                             <div className="text-right mr-4">
                                 <p className={`text-xs ${t.textMuted}`}>Текущий долг</p>
-                                <p className={`text-2xl font-mono font-bold ${(selectedClientForHistory.totalDebt || 0) > 0 ? 'text-red-500' : 'text-emerald-500'}`}>
-                                    ${(selectedClientForHistory.totalDebt || 0).toLocaleString()}
+                                <p className={`text-2xl font-mono font-bold ${currentDebtFromHistory > 0 ? 'text-red-500' : 'text-emerald-500'}`}>
+                                    ${currentDebtFromHistory.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                                 </p>
                             </div>
                             <button onClick={() => setIsDebtHistoryModalOpen(false)} className={`${t.textMuted} hover:${t.text}`}>
@@ -1669,34 +1988,49 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, onSaveOrders,
                                 <table className="w-full text-sm">
                                     <thead className={`${t.bg} sticky top-0`}>
                                         <tr className={`border-b ${t.border}`}>
-                                            <th className={`px-4 py-3 text-left ${t.textMuted} font-medium`}>Дата</th>
-                                            <th className={`px-4 py-3 text-left ${t.textMuted} font-medium`}>Тип</th>
-                                            <th className={`px-4 py-3 text-left ${t.textMuted} font-medium`}>Описание</th>
-                                            <th className={`px-4 py-3 text-right ${t.textMuted} font-medium`}>Сумма</th>
-                                            <th className={`px-4 py-3 text-right ${t.textMuted} font-medium`}>Изменение долга</th>
-                                            <th className={`px-4 py-3 text-right ${t.textMuted} font-medium`}>Баланс</th>
+                                            <th className={`px-3 py-3 text-left ${t.textMuted} font-medium`}>Дата</th>
+                                            <th className={`px-3 py-3 text-left ${t.textMuted} font-medium`}>Операция</th>
+                                            <th className={`px-3 py-3 text-left ${t.textMuted} font-medium`}>Описание</th>
+                                            <th className={`px-3 py-3 text-center ${t.textMuted} font-medium`}>Способ оплаты</th>
+                                            <th className={`px-3 py-3 text-right ${t.textMuted} font-medium`}>Сумма</th>
+                                            <th className={`px-3 py-3 text-right ${t.textMuted} font-medium`}>Долг ±</th>
+                                            <th className={`px-3 py-3 text-right ${t.textMuted} font-medium`}>Остаток</th>
                                         </tr>
                                     </thead>
                                     <tbody className={`divide-y ${t.divide}`}>
                                         {getClientDebtHistory.map((item) => (
                                             <tr key={item.id} className={`hover:${t.bgHover} ${item.type === 'repayment' ? 'bg-emerald-500/5' : item.type === 'order' ? 'bg-red-500/5' : ''}`}>
-                                                <td className={`px-4 py-3 ${t.textMuted} whitespace-nowrap`}>
-                                                    {new Date(item.date).toLocaleDateString('ru-RU')}
+                                                <td className={`px-3 py-3 ${t.textMuted} whitespace-nowrap`}>
+                                                    <div>{new Date(item.date).toLocaleDateString('ru-RU')}</div>
+                                                    {item.paymentDueDate && (
+                                                        <div className="text-xs text-amber-500">
+                                                            До: {new Date(item.paymentDueDate).toLocaleDateString('ru-RU')}
+                                                        </div>
+                                                    )}
                                                 </td>
-                                                <td className="px-4 py-3">
+                                                <td className="px-3 py-3">
                                                     <span className={`px-2 py-1 rounded text-xs font-bold ${
                                                         item.type === 'order' ? 'bg-red-500/20 text-red-500' :
                                                         item.type === 'repayment' ? 'bg-emerald-500/20 text-emerald-500' :
                                                         'bg-blue-500/20 text-blue-500'
                                                     }`}>
-                                                        {item.type === 'order' ? '📦 Заказ' : 
-                                                         item.type === 'repayment' ? '💰 Оплата' : 
+                                                        {item.type === 'order' ? '📦 Долг' : 
+                                                         item.type === 'repayment' ? '✅ Оплачено' : 
                                                          '📋 Транзакция'}
                                                     </span>
                                                 </td>
-                                                <td className={`px-4 py-3 ${t.text}`}>
+                                                <td className={`px-3 py-3 ${t.text}`}>
                                                     <div className="max-w-xs">
-                                                        <div className="font-medium">{item.description}</div>
+                                                        <div className="font-medium">
+                                                            {item.reportNo 
+                                                                ? `Отчёт №${item.reportNo}` 
+                                                                : item.type === 'order' && item.description.includes('ORD-')
+                                                                    ? `Заказ #${item.description.match(/ORD-[a-z0-9]+/i)?.[0]?.slice(-6) || item.id.slice(-6)}`
+                                                                    : item.type === 'repayment'
+                                                                        ? 'Погашение долга'
+                                                                        : item.description
+                                                            }
+                                                        </div>
                                                         {item.items && item.items.length > 0 && (
                                                             <div className={`text-xs ${t.textMuted} mt-1`}>
                                                                 {item.items.slice(0, 2).map((it, idx) => (
@@ -1707,14 +2041,51 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, onSaveOrders,
                                                         )}
                                                     </div>
                                                 </td>
-                                                <td className={`px-4 py-3 text-right font-mono ${t.text}`}>
-                                                    ${item.totalAmount.toLocaleString()}
+                                                <td className={`px-3 py-3 text-center`}>
+                                                    {item.type === 'repayment' ? (
+                                                        <div className="flex flex-col items-center gap-1">
+                                                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                                                                item.paymentMethod === 'cash' ? 'bg-green-500/20 text-green-500' :
+                                                                item.paymentMethod === 'card' ? 'bg-blue-500/20 text-blue-500' :
+                                                                item.paymentMethod === 'bank' ? 'bg-purple-500/20 text-purple-500' :
+                                                                item.paymentMethod === 'mixed' ? 'bg-amber-500/20 text-amber-500' :
+                                                                `${t.bgCard} ${t.textMuted}`
+                                                            }`}>
+                                                                {item.paymentMethod === 'cash' ? '💵 Наличные' :
+                                                                 item.paymentMethod === 'card' ? '💳 Карта' :
+                                                                 item.paymentMethod === 'bank' ? '🏦 Р/С (Банк)' :
+                                                                 item.paymentMethod === 'mixed' ? '🔀 Микс' :
+                                                                 '—'}
+                                                            </span>
+                                                            <span className={`text-xs ${t.textMuted}`}>
+                                                                {item.currency === 'UZS' ? '🇺🇿 Сум' : '🇺🇸 USD'}
+                                                            </span>
+                                                        </div>
+                                                    ) : (
+                                                        <span className={`text-xs ${t.textMuted}`}>—</span>
+                                                    )}
                                                 </td>
-                                                <td className={`px-4 py-3 text-right font-mono font-bold ${item.debtChange > 0 ? 'text-red-500' : 'text-emerald-500'}`}>
-                                                    {item.debtChange > 0 ? '+' : ''}{item.debtChange < 0 ? '-' : ''}${Math.abs(item.debtChange).toLocaleString()}
+                                                <td className={`px-3 py-3 text-right font-mono ${t.text}`}>
+                                                    <div>
+                                                        {item.currency === 'UZS' ? (
+                                                            <>
+                                                                <div>{item.totalAmount.toLocaleString()} сум</div>
+                                                                {item.amountInUSD && (
+                                                                    <div className={`text-xs ${t.textMuted}`}>
+                                                                        ≈ ${item.amountInUSD.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                                                    </div>
+                                                                )}
+                                                            </>
+                                                        ) : (
+                                                            <div>${item.totalAmount.toLocaleString()}</div>
+                                                        )}
+                                                    </div>
                                                 </td>
-                                                <td className={`px-4 py-3 text-right font-mono ${item.balance > 0 ? 'text-amber-500' : t.textMuted}`}>
-                                                    ${item.balance.toLocaleString()}
+                                                <td className={`px-3 py-3 text-right font-mono font-bold ${item.debtChange > 0 ? 'text-red-500' : 'text-emerald-500'}`}>
+                                                    {item.debtChange > 0 ? '+' : ''}${item.debtChange.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                                </td>
+                                                <td className={`px-3 py-3 text-right font-mono font-bold ${item.balance > 0 ? 'text-amber-500' : 'text-emerald-500'}`}>
+                                                    ${item.balance.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                                                 </td>
                                             </tr>
                                         ))}
@@ -1727,17 +2098,20 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, onSaveOrders,
                             <div className={`text-sm ${t.textMuted}`}>
                                 Записей: {getClientDebtHistory.length}
                                 {getClientDebtHistory.length > 0 && (() => {
+                                    // Сумма всех долгов (положительные debtChange) - это реальный остаток долга от заказов
                                     const totalDebtAdded = getClientDebtHistory.filter(h => h.debtChange > 0).reduce((s, h) => s + h.debtChange, 0);
-                                    const totalRepaid = totalDebtAdded - (selectedClientForHistory?.totalDebt || 0);
-                                    const currentDebt = selectedClientForHistory?.totalDebt || 0;
+                                    // Сумма всех погашений (отрицательные debtChange)
+                                    const totalRepaid = Math.abs(getClientDebtHistory.filter(h => h.debtChange < 0).reduce((s, h) => s + h.debtChange, 0));
+                                    // Текущий долг = сумма долгов минус погашения
+                                    const calculatedDebt = Math.max(0, totalDebtAdded - totalRepaid);
                                     return (
                                         <>
                                             <span className="mx-2">|</span>
-                                            Сумма чеков: <span className={`font-mono ${t.text}`}>${totalDebtAdded.toLocaleString()}</span>
+                                            Сумма долга: <span className={`font-mono ${t.text}`}>${totalDebtAdded.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
                                             <span className="mx-2">|</span>
-                                            Погашено: <span className="text-emerald-500 font-mono">${Math.max(0, totalRepaid).toLocaleString()}</span>
+                                            Погашено: <span className="text-emerald-500 font-mono">${totalRepaid.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
                                             <span className="mx-2">|</span>
-                                            Остаток долга: <span className="text-red-500 font-mono font-bold">${currentDebt.toLocaleString()}</span>
+                                            Остаток долга: <span className={`font-mono font-bold ${calculatedDebt > 0 ? 'text-red-500' : 'text-emerald-500'}`}>${calculatedDebt.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
                                         </>
                                     );
                                 })()}
@@ -1751,7 +2125,8 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, onSaveOrders,
                         </div>
                     </div>
                 </div>
-            )}
+                );
+            })()}
         </div>
     );
 };

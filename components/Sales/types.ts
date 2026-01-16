@@ -6,6 +6,7 @@ export interface SalesProps {
   orders: Order[];
   setOrders: (o: Order[]) => void;
   settings: AppSettings;
+  setSettings?: (s: AppSettings) => void;
   expenses: Expense[];
   setExpenses: (e: Expense[]) => void;
   employees: Employee[];

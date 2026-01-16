@@ -298,15 +298,15 @@ export const sheetsService = {
 
   // Orders
   getOrders: (accessToken: string, useCache: boolean = true) =>
-    getAll<Order>('orders', accessToken, 'Orders!A2:S', mapRowToOrder, useCache),
+    getAll<Order>('orders', accessToken, 'Orders!A2:U', mapRowToOrder, useCache),
 
   saveAllOrders: (accessToken: string, orders: Order[]) =>
     saveAllWithMerge<Order>(
       'orders',
       accessToken,
-      'Orders!A2:S',
-      'Orders!A2:S',
-      'Orders!A2:S',
+      'Orders!A2:U',
+      'Orders!A2:U',
+      'Orders!A2:U',
       orders,
       mapRowToOrder,
       mapOrderToRow
@@ -433,7 +433,7 @@ export const sheetsService = {
     if (!spreadsheetId) throw new Error('Spreadsheet ID not set');
 
     const ranges = [
-      'Orders!A2:S',
+      'Orders!A2:U',
       'Products!A2:N',
       'Expenses!A2:I',
       'Clients!A2:R',

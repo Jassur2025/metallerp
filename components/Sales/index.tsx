@@ -28,7 +28,7 @@ const isDev = import.meta.env.DEV;
 const errorDev = (...args: unknown[]) => { if (isDev) console.error(...args); };
 
 export const Sales: React.FC<SalesProps> = ({
-  products, setProducts, orders, setOrders, settings, expenses, setExpenses,
+  products, setProducts, orders, setOrders, settings, setSettings, expenses, setExpenses,
   employees, onNavigateToStaff, clients, onSaveClients, transactions, setTransactions,
   workflowOrders, onSaveWorkflowOrders, currentUserEmail, onNavigateToProcurement,
   onSaveOrders, onSaveTransactions, onSaveProducts, onSaveExpenses, onAddJournalEvent
@@ -38,6 +38,14 @@ export const Sales: React.FC<SalesProps> = ({
   const { theme } = useTheme();
   const t = getThemeClasses(theme);
 
+  // Helper to get next report number and update settings
+  const getNextReportNo = (): number => {
+    const currentNo = settings.nextReportNo ?? 1;
+    if (setSettings) {
+      setSettings({ ...settings, nextReportNo: currentNo + 1 });
+    }
+    return currentNo;
+  };
 
   const currentEmployee = React.useMemo(
     () => employees.find(e => e.email?.toLowerCase() === (currentUserEmail || '').toLowerCase()),
@@ -70,6 +78,7 @@ export const Sales: React.FC<SalesProps> = ({
   const [paymentCurrency, setPaymentCurrency] = useState<Currency>('USD');
   const [discountPercent, setDiscountPercent] = useState<number>(0);
   const [manualTotal, setManualTotal] = useState<number | null>(null);
+  const [debtDueDate, setDebtDueDate] = useState<string>(''); // Payment due date for debt orders
 
   // Expense State
   const [expenseDesc, setExpenseDesc] = useState('');
@@ -216,8 +225,12 @@ export const Sales: React.FC<SalesProps> = ({
     // User requested "Partially this, partially that". "Mixed" is safest bucket.
     const paymentMethod: PaymentMethod = 'mixed';
 
+    // Generate report number for workflow orders
+    const reportNo = getNextReportNo();
+
     const newOrder: Order = {
       id: IdGenerator.order(),
+      reportNo, // Sequential report number
       date: new Date().toISOString(),
       customerName: wf.customerName,
       sellerId: wf.sellerId, // Employee ID for KPI
@@ -539,13 +552,24 @@ export const Sales: React.FC<SalesProps> = ({
     // Find seller employee by name for KPI
     const sellerEmployee = employees.find(e => e.name?.toLowerCase() === (sellerName || '').toLowerCase());
 
+    // Generate report number for this order
+    const reportNo = getNextReportNo();
+
+    // Determine payment due date: if debt or partial, require due date
+    const hasDebt = paymentStatus === 'unpaid' || paymentStatus === 'partial';
+    const paymentDueDate = hasDebt && debtDueDate ? debtDueDate : undefined;
+
     const newOrder: Order = {
-      id: IdGenerator.order(), date: new Date().toISOString(), customerName,
+      id: IdGenerator.order(), 
+      reportNo, // Add sequential report number
+      date: new Date().toISOString(), 
+      customerName,
       sellerId: sellerEmployee?.id || currentEmployee?.id, // Employee ID for KPI
       sellerName: sellerName || currentEmployee?.name || 'Администратор',
       items: [...cart], subtotalAmount: subtotalUSD, vatRateSnapshot: settings.vatRate, vatAmount: vatAmountUSD,
       totalAmount: totalAmountUSD, exchangeRate, totalAmountUZS, status: 'completed', paymentMethod: method, paymentStatus, amountPaid: totalPaidUSD,
-      paymentCurrency: method === 'cash' ? (paymentCurrency || 'USD') : 'USD' // Fallback
+      paymentCurrency: method === 'cash' ? (paymentCurrency || 'USD') : 'USD', // Fallback
+      paymentDueDate, // Payment deadline for debts
     };
 
     // Update products
@@ -619,6 +643,7 @@ export const Sales: React.FC<SalesProps> = ({
     setPaymentMethod('cash');
     setDiscountPercent(0);
     setManualTotal(null);
+    setDebtDueDate(''); // Clear debt due date
     setLastOrder(newOrder);
     setSalesPaymentModalOpen(false); // Close if open
     setSelectedOrderForReceipt(newOrder);
@@ -628,7 +653,7 @@ export const Sales: React.FC<SalesProps> = ({
     await onAddJournalEvent?.({
       id: IdGenerator.journalEvent(), date: new Date().toISOString(), type: 'employee_action',
       employeeName: sellerName || 'Администратор', action: 'Создан заказ',
-      description: `Продажа на сумму ${totalAmountUZS.toLocaleString()} сўм ($${totalAmountUSD.toFixed(2)}) клиенту ${customerName}.`,
+      description: `Отчёт №${newOrder.reportNo}. Продажа на сумму ${totalAmountUZS.toLocaleString()} сўм ($${totalAmountUSD.toFixed(2)}) клиенту ${customerName}.`,
       module: 'sales', relatedType: 'order', relatedId: newOrder.id,
       receiptDetails: { orderId: newOrder.id, customerName, totalAmount: totalAmountUSD, itemsCount: cart.length, paymentMethod, operation: 'created' }
     });
@@ -1177,6 +1202,9 @@ export const Sales: React.FC<SalesProps> = ({
               }
             }}
             originalTotalUSD={originalTotalUSD}
+            // Debt Due Date
+            debtDueDate={debtDueDate}
+            onDebtDueDateChange={setDebtDueDate}
           />)}
       </div>
 

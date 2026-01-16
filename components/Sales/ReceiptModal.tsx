@@ -62,7 +62,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps & {
             <h3 className="text-xl font-bold text-gray-900 flex items-center gap-2">
               <FileText className="text-blue-600" /> Чек продажи
             </h3>
-            <p className="text-sm text-gray-600 mt-1">Заказ #{order.id}</p>
+            <p className="text-sm text-gray-600 mt-1">Отчёт №{order.reportNo || order.id.slice(-6)}</p>
           </div>
           <button
             onClick={onClose}
@@ -76,13 +76,13 @@ export const ReceiptModal: React.FC<ReceiptModalProps & {
           <div id="receipt-preview" className="bg-white text-black space-y-4">
             <div className="text-center border-b-2 border-gray-300 pb-4">
               <h2 className="text-2xl font-bold text-gray-900">METAL ERP</h2>
-              <p className="text-sm text-gray-600 mt-1">Чек продажи</p>
+              <p className="text-sm text-gray-600 mt-1">Отчёт о продаже</p>
             </div>
 
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
-                <span className="text-gray-600">Заказ:</span>
-                <span className="font-semibold">{order.id}</span>
+                <span className="text-gray-600">Отчёт №:</span>
+                <span className="font-semibold">{order.reportNo || order.id.slice(-6)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">Дата:</span>
@@ -156,6 +156,12 @@ export const ReceiptModal: React.FC<ReceiptModalProps & {
                     order.paymentStatus === 'unpaid' ? 'Не оплачено' : 'Частично оплачено'}
                 </span>
               </div>
+              {order.paymentDueDate && (order.paymentStatus === 'unpaid' || order.paymentStatus === 'partial') && (
+                <div className="flex justify-between text-red-600">
+                  <span>Срок оплаты:</span>
+                  <span className="font-medium">{new Date(order.paymentDueDate).toLocaleDateString('ru-RU')}</span>
+                </div>
+              )}
             </div>
 
             <div className="text-center pt-4 border-t border-dashed border-gray-300 text-xs text-gray-500">

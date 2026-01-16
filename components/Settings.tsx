@@ -496,9 +496,51 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
                         </div>
                     </div>
 
+                    <div className={`border-t ${t.border} my-6`}></div>
 
+                    {/* Report Number Settings */}
+                    <div className="space-y-6">
+                        <h3 className={`text-xl font-bold ${t.text} border-l-4 border-amber-500 pl-4 flex items-center gap-2`}>
+                            <Receipt size={24} className="text-amber-500" />
+                            Нумерация Отчётов
+                        </h3>
+                        <p className={`text-sm ${t.textMuted}`}>Последовательная нумерация отчётов о продаже.</p>
 
-
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="space-y-2">
+                                <label className={`block text-sm font-medium ${t.textMuted}`}>
+                                    Текущий номер отчёта
+                                </label>
+                                <p className={`text-xs ${t.textMuted} mb-2`}>
+                                    Следующий созданный отчёт получит этот номер.
+                                </p>
+                                <div className="relative">
+                                    <input
+                                        type="number"
+                                        className={`w-full ${t.input} border ${t.border} rounded-lg px-4 py-3 ${t.text} focus:ring-2 focus:ring-amber-500 outline-none`}
+                                        value={formData.nextReportNo ?? 1}
+                                        onChange={(e) => setFormData({ ...formData, nextReportNo: Math.max(1, Number(e.target.value)) })}
+                                        min={1}
+                                    />
+                                </div>
+                            </div>
+                            <div className="space-y-2 flex flex-col justify-end">
+                                <button
+                                    onClick={() => {
+                                        if (confirm('Вы уверены, что хотите сбросить нумерацию отчётов до 1?')) {
+                                            setFormData({ ...formData, nextReportNo: 1 });
+                                            setMessage('Нумерация отчётов сброшена до 1');
+                                            setTimeout(() => setMessage(null), 3000);
+                                        }
+                                    }}
+                                    className="bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/30 px-6 py-3 rounded-lg font-medium transition-all flex items-center justify-center gap-2"
+                                >
+                                    <RefreshCw size={18} />
+                                    Обнулить нумерацию
+                                </button>
+                            </div>
+                        </div>
+                    </div>
 
                     <div className={`border-t ${t.border} my-6`}></div>
 

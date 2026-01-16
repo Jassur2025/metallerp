@@ -126,6 +126,8 @@ export function mapRowToOrder(row: Row): Order {
     updatedAt: asOptionalString(row, 16),
     sellerId: asOptionalString(row, 17),
     _version: asOptionalNumber(row, 18),
+    reportNo: asOptionalNumber(row, 19),
+    paymentDueDate: asOptionalString(row, 20),
   };
 }
 
@@ -150,6 +152,8 @@ export function mapOrderToRow(o: Order): unknown[] {
     o.updatedAt || '',
     o.sellerId || '',
     o._version ?? 1,
+    o.reportNo ?? '',
+    o.paymentDueDate || '',
   ];
 }
 

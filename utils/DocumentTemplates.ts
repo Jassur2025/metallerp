@@ -23,12 +23,15 @@ export const generateInvoicePDF = async (order: Order, settings: AppSettings) =>
     // Calculate totals
     const totalAmount = order.totalAmountUZS;
     const items = order.items;
+    
+    // Report number - use sequential number if available, otherwise fallback to last 6 chars of ID
+    const reportNo = order.reportNo || order.id.slice(-6);
 
     const htmlContent = `
     <div id="invoice-node" style="width: 800px; padding: 40px; background: white; color: black; font-family: 'Arial', sans-serif;">
         <div style="display: flex; justify-content: space-between; margin-bottom: 20px;">
             <div>
-                <h1 style="margin: 0; font-size: 24px; font-weight: bold;">СЧЕТ НА ОПЛАТУ № ${order.id.slice(-6)}</h1>
+                <h1 style="margin: 0; font-size: 24px; font-weight: bold;">СЧЕТ НА ОПЛАТУ № ${reportNo}</h1>
                 <p style="margin: 5px 0;">от ${dateStr}</p>
             </div>
             <div style="text-align: right;">
@@ -104,7 +107,7 @@ export const generateInvoicePDF = async (order: Order, settings: AppSettings) =>
     </div>
     `;
 
-    await generateAndSavePDF(htmlContent, `Invoice_${order.id}.pdf`);
+    await generateAndSavePDF(htmlContent, `Otchet_${reportNo}.pdf`);
 };
 
 export const generateWaybillPDF = async (order: Order, settings: AppSettings) => {
@@ -112,6 +115,9 @@ export const generateWaybillPDF = async (order: Order, settings: AppSettings) =>
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const company = (settings.companyDetails || {}) as any;
     const items = order.items;
+    
+    // Report number - use sequential number if available, otherwise fallback to last 6 chars of ID
+    const reportNo = order.reportNo || order.id.slice(-6);
 
     const htmlContent = `
     <div id="waybill-node" style="width: 800px; padding: 40px; background: white; color: black; font-family: 'Arial', sans-serif;">
@@ -119,7 +125,7 @@ export const generateWaybillPDF = async (order: Order, settings: AppSettings) =>
             Типовая форма № ТОРГ-12
         </div>
         
-        <h2 style="text-align: center; margin-bottom: 10px;">ТОВАРНАЯ НАКЛАДНАЯ № ${order.id.slice(-6)}</h2>
+        <h2 style="text-align: center; margin-bottom: 10px;">ТОВАРНАЯ НАКЛАДНАЯ № ${reportNo}</h2>
         <p style="text-align: center; margin-bottom: 20px;">от ${dateStr}</p>
 
         <div style="margin-bottom: 20px; font-size: 12px; line-height: 1.6;">
@@ -134,7 +140,7 @@ export const generateWaybillPDF = async (order: Order, settings: AppSettings) =>
                 </tr>
                  <tr>
                     <td style="vertical-align: top;">Основание:</td>
-                    <td style="border-bottom: 1px solid #ccc;">Договор / Заказ № ${order.id}</td>
+                    <td style="border-bottom: 1px solid #ccc;">Отчёт № ${reportNo}</td>
                 </tr>
             </table>
         </div>
@@ -192,7 +198,7 @@ export const generateWaybillPDF = async (order: Order, settings: AppSettings) =>
     </div>
     `;
 
-    await generateAndSavePDF(htmlContent, `Waybill_${order.id}.pdf`);
+    await generateAndSavePDF(htmlContent, `Nakladnaya_${reportNo}.pdf`);
 };
 
 async function generateAndSavePDF(html: string, filename: string) {

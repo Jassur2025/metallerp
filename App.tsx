@@ -104,6 +104,7 @@ const defaultSettings: AppSettings = {
   vatRate: 12,
   defaultExchangeRate: 12800,
   expenseCategories: DEFAULT_EXPENSE_CATEGORIES,
+  nextReportNo: 1, // Start from 1
   modules: {
     dashboard: true,
     inventory: true,
@@ -234,22 +235,80 @@ const AppContent: React.FC = () => {
   }, [isSidebarOpen]);
 
   // Recalculate client debt based on transactions
-  const recalculateClientDebts = (clients: Client[], transactions: Transaction[]): Client[] => {
+  const recalculateClientDebts = (clients: Client[], transactions: Transaction[], orders: Order[]): Client[] => {
     return clients.map(client => {
       let calculatedDebt = 0;
+      const clientName = (client.name || '').toLowerCase().trim();
+      const companyName = (client.companyName || '').toLowerCase().trim();
 
-      // Sum all debt_obligation transactions for this client
-      const debtTransactions = transactions.filter(t =>
-        t.type === 'debt_obligation' && t.relatedId === client.id
-      );
-      debtTransactions.forEach(t => {
-        calculatedDebt += t.amount; // debt_obligation always in USD
+      // Найти ВСЕ заказы клиента, которые имеют неоплаченный остаток
+      // (debt, unpaid, partial - любые заказы где есть остаток)
+      const clientOrders = orders.filter(o => {
+        const orderClientName = (o.customerName || '').toLowerCase().trim();
+        const matchesClient = o.clientId === client.id || 
+                orderClientName === clientName ||
+                (clientName && orderClientName.includes(clientName)) ||
+                (clientName && clientName.includes(orderClientName)) ||
+                (companyName && orderClientName.includes(companyName)) ||
+                (companyName && companyName.includes(orderClientName));
+        
+        // Заказ в долг если: явно debt/unpaid/partial ИЛИ есть остаток (totalAmount > amountPaid)
+        const hasUnpaidBalance = ((o.totalAmount || 0) - (o.amountPaid || 0)) > 0.01;
+        const isDebtPayment = o.paymentMethod === 'debt' || 
+                              o.paymentStatus === 'unpaid' || 
+                              o.paymentStatus === 'partial';
+        
+        return matchesClient && (isDebtPayment || hasUnpaidBalance);
+      });
+      const clientOrderIds = clientOrders.map(o => o.id.toLowerCase());
+
+      // Считаем долг ИЗ ЗАКАЗОВ (только неоплаченную часть!)
+      clientOrders.forEach(order => {
+        // Долг = общая сумма - уже оплачено (amountPaid в USD)
+        const paidUSD = order.amountPaid || 0;
+        const openAmount = (order.totalAmount || 0) - paidUSD;
+        calculatedDebt += Math.max(0, openAmount);
       });
 
-      // Subtract all client_payment transactions for this client
-      const paymentTransactions = transactions.filter(t =>
-        t.type === 'client_payment' && t.relatedId === client.id
-      );
+      // Также добавляем долг из транзакций debt_obligation (для старых данных)
+      // НО только если они НЕ связаны с заказами которые уже посчитаны
+      const debtTransactions = transactions.filter(t => {
+        if (t.type !== 'debt_obligation') return false;
+        const desc = (t.description || '').toLowerCase();
+        const matchesClient = t.relatedId === client.id ||
+          (clientName && desc.includes(clientName)) ||
+          (companyName && desc.includes(companyName));
+        // Исключаем если это долг по заказу который уже посчитан
+        const relatedToExistingOrder = clientOrderIds.some(orderId => 
+          desc.includes(orderId) || t.relatedId?.toLowerCase() === orderId
+        );
+        return matchesClient && !relatedToExistingOrder;
+      });
+      debtTransactions.forEach(t => {
+        calculatedDebt += t.amount;
+      });
+
+      // Вычитаем погашения (client_payment) ТОЛЬКО для debt_obligation транзакций
+      // Погашения для заказов уже учтены в amountPaid заказа!
+      // Ищем погашения которые относятся к клиенту напрямую (не к заказу)
+      const debtTxIds = debtTransactions.map(t => t.id.toLowerCase());
+      const paymentTransactions = transactions.filter(t => {
+        const desc = (t.description || '').toLowerCase();
+        const relatedIdLower = (t.relatedId || '').toLowerCase();
+        const isPayment = t.type === 'client_payment' || (t.type === 'income' && desc.includes('погашение'));
+        
+        // Погашение относится к клиенту напрямую (relatedId = clientId)
+        // и НЕ к конкретному заказу (иначе amountPaid заказа уже учтено)
+        const isForClientDirectly = t.relatedId === client.id;
+        const isForDebtObligation = debtTxIds.includes(relatedIdLower);
+        const isForKnownOrder = clientOrderIds.includes(relatedIdLower);
+        
+        // Учитываем только если:
+        // 1. Связано с клиентом напрямую
+        // 2. ИЛИ связано с debt_obligation транзакцией
+        // 3. И НЕ связано с заказом (заказы используют amountPaid)
+        return isPayment && (isForClientDirectly || isForDebtObligation) && !isForKnownOrder;
+      });
       paymentTransactions.forEach(t => {
         // Convert to USD if needed
         let amountUSD = t.amount;
@@ -261,7 +320,7 @@ const AppContent: React.FC = () => {
 
       // Also check for client returns that reduce debt
       const returnTransactions = transactions.filter(t =>
-        t.type === 'client_return' && t.method === 'debt' && t.relatedId === client.id
+        t.type === 'client_return' && (t as any).method === 'debt' && t.relatedId === client.id
       );
       returnTransactions.forEach(t => {
         let amountUSD = t.amount;
@@ -405,8 +464,9 @@ const AppContent: React.FC = () => {
       const finalJournalEvents = getResult(loadedJournalEvents, currentData.journalEvents, 'JournalEvents');
       const finalWorkflowOrders = getResult(loadedWorkflowOrders, currentData.workflowOrders, 'WorkflowOrders');
 
-      // Recalculate client debts based on transactions to ensure accuracy
-      const clientsWithRecalculatedDebts = recalculateClientDebts(finalClients, finalTransactions);
+      // ВАЖНО: Пересчитываем долги клиентов на основе заказов и транзакций
+      // Это гарантирует корректность данных после загрузки из Google Sheets
+      const clientsWithRecalculatedDebts = recalculateClientDebts(finalClients, finalTransactions, finalOrders);
 
       // Обновляем состояние только если есть изменения
       setProducts(finalProducts);
@@ -419,6 +479,17 @@ const AppContent: React.FC = () => {
       setPurchases(finalPurchases);
       setJournalEvents(finalJournalEvents);
       setWorkflowOrders(finalWorkflowOrders);
+      
+      // Сохраняем пересчитанные долги в Google Sheets (если они изменились)
+      const debtsChanged = clientsWithRecalculatedDebts.some((c, i) => 
+        c.totalDebt !== finalClients[i]?.totalDebt
+      );
+      if (debtsChanged && clientsWithRecalculatedDebts.length > 0) {
+        logDev('📊 Долги клиентов пересчитаны, сохраняем...');
+        saveClientsHandler(clientsWithRecalculatedDebts).catch(err => 
+          warnDev('⚠️ Не удалось сохранить пересчитанные долги:', err)
+        );
+      }
 
       // Проверяем, были ли ошибки при загрузке
       const hasErrors = [
@@ -428,15 +499,6 @@ const AppContent: React.FC = () => {
 
       if (hasErrors) {
         toast.warning('Некоторые данные не удалось загрузить. Используются локальные данные.');
-      }
-
-      // If debts were recalculated and differ from saved values, save updated clients
-      const debtsChanged = clientsWithRecalculatedDebts.some((client, index) =>
-        Math.abs((client.totalDebt || 0) - (finalClients[index]?.totalDebt || 0)) > 0.01
-      );
-      if (debtsChanged) {
-        logDev('🔄 Долги клиентов пересчитаны на основе транзакций, сохраняем обновленные данные...');
-        await sheetsService.saveAllClients(accessToken, clientsWithRecalculatedDebts);
       }
     } catch (err: unknown) {
       errorDev('❌ Критическая ошибка при загрузке данных:', err);
@@ -707,6 +769,7 @@ const AppContent: React.FC = () => {
           orders={orders}
           setOrders={setOrders}
           settings={settings}
+          setSettings={setSettings}
           expenses={expenses}
           setExpenses={setExpenses}
           employees={employees}

@@ -64,6 +64,7 @@ export interface AppSettings {
   telegramBotToken?: string;
   telegramChatId?: string;
   expenseCategories?: ExpenseCategory[];
+  nextReportNo?: number; // Counter for report numbers
   modules?: {
     dashboard: boolean;
     inventory: boolean;
@@ -132,6 +133,7 @@ export interface OrderItem {
 
 export interface Order extends Versionable {
   id: string;
+  reportNo?: number; // Sequential report number
   date: string;
   customerName: string;
   sellerId?: string; // Employee ID for KPI calculation
@@ -153,6 +155,7 @@ export interface Order extends Versionable {
   paymentStatus: 'paid' | 'unpaid' | 'partial';
   paymentCurrency?: 'USD' | 'UZS'; // New field for cash currency
   amountPaid: number; // Amount actually paid (USD)
+  paymentDueDate?: string; // Deadline for debt repayment
   // _version and updatedAt inherited from Versionable
 }
 

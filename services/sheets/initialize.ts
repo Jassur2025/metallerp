@@ -51,7 +51,7 @@ export async function initializeSheets(accessToken: string): Promise<void> {
   }
 
   try {
-    await fetchSheets(accessToken, 'Orders!A1:Q1', 'PUT', {
+    await fetchSheets(accessToken, 'Orders!A1:U1', 'PUT', {
       values: [[
         'ID',
         'Date',
@@ -70,6 +70,10 @@ export async function initializeSheets(accessToken: string): Promise<void> {
         'Amount Paid',
         'Payment Currency',
         'Updated At',
+        'Seller ID',
+        'Version',
+        'Report No',
+        'Payment Due Date',
       ]],
     });
   } catch (e) {

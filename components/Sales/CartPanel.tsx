@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ShoppingCart, Trash2, User, Plus, CheckCircle, FileText, Printer, Percent, Tag } from 'lucide-react';
+import { ShoppingCart, Trash2, User, Plus, CheckCircle, FileText, Printer, Percent, Tag, Calendar } from 'lucide-react';
 import { OrderItem, Client, Employee, Order, AppSettings } from '../../types';
 import { PaymentMethod, Currency, FlyingItem } from './types';
 import { useTheme, getThemeClasses } from '../../contexts/ThemeContext';
@@ -39,6 +39,9 @@ interface CartPanelProps {
   manualTotal?: number | null;
   onTotalChange?: (val: number) => void;
   originalTotalUSD?: number;
+  // Debt Due Date
+  debtDueDate?: string;
+  onDebtDueDateChange?: (val: string) => void;
 }
 
 export const CartPanel: React.FC<CartPanelProps> = ({
@@ -74,7 +77,9 @@ export const CartPanel: React.FC<CartPanelProps> = ({
   onDiscountChange,
   manualTotal,
   onTotalChange,
-  originalTotalUSD = 0
+  originalTotalUSD = 0,
+  debtDueDate = '',
+  onDebtDueDateChange
 }) => {
   const { theme } = useTheme();
   const t = getThemeClasses(theme);
@@ -274,6 +279,24 @@ export const CartPanel: React.FC<CartPanelProps> = ({
               >
                 В Долларах (USD)
               </button>
+            </div>
+          )}
+
+          {/* Due Date for Debt / Mixed Payment */}
+          {(paymentMethod === 'debt' || paymentMethod === 'mixed') && (
+            <div className="mt-2 animate-fade-in">
+              <label className={`flex items-center gap-1 text-xs ${t.textMuted} mb-1`}>
+                <Calendar size={12} />
+                Срок оплаты долга
+              </label>
+              <input
+                type="date"
+                value={debtDueDate}
+                onChange={(e) => onDebtDueDateChange?.(e.target.value)}
+                min={new Date().toISOString().split('T')[0]}
+                className={`w-full ${t.input} border ${t.border} rounded-lg px-3 py-2 text-sm ${t.text} focus:ring-2 focus:ring-red-500 outline-none`}
+                placeholder="Выберите дату"
+              />
             </div>
           )}
         </div>
