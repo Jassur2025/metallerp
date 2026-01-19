@@ -3,15 +3,18 @@ import { Client, Order, Transaction } from '../types';
 import { User } from 'firebase/auth';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
-import { Plus, Search, Phone, Mail, MapPin, Edit, Trash2, DollarSign, Wallet, History, ArrowDownLeft, BarChart3, TrendingUp, Calendar, CheckCircle, XCircle, AlertCircle, Smartphone } from 'lucide-react';
+import { Plus, Search, Phone, Mail, MapPin, Edit, Trash2, DollarSign, Wallet, History, ArrowDownLeft, BarChart3, TrendingUp, Calendar, CheckCircle, XCircle, AlertCircle, Smartphone, Database, Cloud, MessageSquare } from 'lucide-react';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid, PieChart, Pie, Cell } from 'recharts';
 import { checkAllPhones, formatPhoneForTablet, validateUzbekistanPhone } from '../utils/phoneFormatter';
 import { SUPER_ADMIN_EMAILS } from '../constants';
 import { IdGenerator } from '../utils/idGenerator';
+import { useClients } from '../hooks/useClients';
+import { transactionService } from '../services/transactionService';
+import { ClientNotesModal } from './Sales/ClientNotesModal';
 
 interface CRMProps {
-    clients: Client[];
-    onSave: (clients: Client[]) => void;
+    clients: Client[]; // Legacy prop (can be used for migration if needed, but we ignore it mostly)
+    onSave: (clients: Client[]) => void; // Legacy
     orders: Order[];
     onSaveOrders?: (orders: Order[]) => void;
     transactions: Transaction[];
@@ -22,10 +25,23 @@ interface CRMProps {
 
 type CRMView = 'clients' | 'repaymentStats';
 
-export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, onSaveOrders, transactions, setTransactions, onSaveTransactions, currentUser }) => {
+export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders, onSaveOrders, transactions, setTransactions, onSaveTransactions, currentUser }) => {
     const toast = useToast();
     const { theme } = useTheme();
     const t = getThemeClasses(theme);
+    
+    // Firebase Hook
+    const { 
+        clients, 
+        loading: clientsLoading, 
+        error: clientsError, 
+        addClient, 
+        updateClient, 
+        deleteClient,
+        refreshClients,
+        migrateFromSheets 
+    } = useClients({ realtime: true });
+
     const [activeView, setActiveView] = useState<CRMView>('clients');
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isRepayModalOpen, setIsRepayModalOpen] = useState(false);
@@ -41,6 +57,20 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, onSaveOrders,
     const [selectedClientForRepayment, setSelectedClientForRepayment] = useState<Client | null>(null);
     const [statsTimeRange, setStatsTimeRange] = useState<'week' | 'month' | 'year' | 'all'>('month');
     
+    // Notes Modal State
+    const [isNotesModalOpen, setIsNotesModalOpen] = useState(false);
+    const [selectedClientForNotes, setSelectedClientForNotes] = useState<Client | null>(null);
+
+    // Initial Migration Check (One-time, simplistic)
+    React.useEffect(() => {
+        if (!clientsLoading && clients.length === 0 && legacyClients && legacyClients.length > 0) {
+           // Optional: Silent auto-migration or just ignore. 
+           // User asked to remove migration button, so we won't nag.
+           // However, if the user explicitly wants to restore data, we can invoke migrateFromSheets(legacyClients)
+           // For now, we assume we start fresh or manual entry, unless requested.
+        }
+    }, [clientsLoading, clients.length, legacyClients]);
+
     // Check if current user is admin
     const isAdmin = currentUser?.email && (
         SUPER_ADMIN_EMAILS.includes(currentUser.email.toLowerCase()) ||
@@ -457,6 +487,11 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, onSaveOrders,
         setIsDebtHistoryModalOpen(true);
     };
 
+    const handleOpenNotesModal = (client: Client) => {
+        setSelectedClientForNotes(client);
+        setIsNotesModalOpen(true);
+    };
+
     // Получить полную историю долгов клиента - заказы в долг + транзакции
     const getClientDebtHistory = useMemo(() => {
         if (!selectedClientForHistory) return { orders: [], transactions: [], allHistory: [] };
@@ -630,127 +665,133 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, onSaveOrders,
         return getClientDebtHistory.filter(h => h.type === 'order').reduce((sum, h) => sum + h.debtChange, 0);
     }, [getClientDebtHistory]);
 
-    const handleSave = () => {
+    const handleSave = async () => {
         if (!formData.name || !formData.phone) {
             toast.warning('Имя и Телефон обязательны!');
             return;
         }
 
         if (editingClient) {
-            // Update
-            const updatedClients = clients.map(c =>
-                c.id === editingClient.id ? { ...c, ...formData } as Client : c
-            );
-            onSave(updatedClients);
+            await updateClient(editingClient.id, formData);
         } else {
-            // Create
-            const newClient: Client = {
-                id: IdGenerator.client(),
-                ...formData as Client,
-                totalPurchases: 0,
-                totalDebt: 0
-            };
-            onSave([...clients, newClient]);
+            await addClient(formData as Omit<Client, 'id'>);
         }
         setIsModalOpen(false);
+    };
+
+    const handleDelete = async (clientId: string) => {
+        if (!isAdmin) {
+             toast.error('Только администраторы могут удалять клиентов');
+             return;
+        }
+        if (!window.confirm('Вы уверены, что хотите удалить этого клиента?')) return;
+
+        await deleteClient(clientId);
     };
 
     const handleRepayDebt = async () => {
         if (!selectedClientForRepayment) return;
 
-        let amountInUSD = 0;
-        const newTransactions: Transaction[] = [];
-        // Используем полный ID заказа для правильного сопоставления при расчёте погашений
-        const orderRef = selectedOrderForRepayment ? ` (Чек ${selectedOrderForRepayment})` : '';
+        try {
+            const orderRef = selectedOrderForRepayment ? ` (Чек ${selectedOrderForRepayment})` : '';
+            const clientId = selectedClientForRepayment.id;
 
-        if (repaymentMethod === 'mixed') {
-            // Микс-оплата: создаём транзакции для каждого способа
-            if (mixCashUZS > 0) {
-                const usd = mixCashUZS / exchangeRate;
-                amountInUSD += usd;
-                newTransactions.push({
-                    id: IdGenerator.transaction(),
-                    date: new Date().toISOString(),
+            if (repaymentMethod === 'mixed') {
+                // Handle Mix Payment
+                if (mixCashUZS > 0) {
+                    await transactionService.createPayment({
+                        type: 'client_payment',
+                        amount: mixCashUZS,
+                        currency: 'UZS',
+                        exchangeRate: exchangeRate,
+                        method: 'cash',
+                        description: `Погашение долга (нал UZS): ${selectedClientForRepayment.name}${orderRef}`,
+                        relatedId: selectedOrderForRepayment || clientId
+                    } as any, clientId);
+                }
+                if (mixCashUSD > 0) {
+                    await transactionService.createPayment({
+                        type: 'client_payment',
+                        amount: mixCashUSD,
+                        currency: 'USD',
+                        method: 'cash',
+                        description: `Погашение долга (нал USD): ${selectedClientForRepayment.name}${orderRef}`,
+                        relatedId: selectedOrderForRepayment || clientId
+                    } as any, clientId);
+                }
+                if (mixCard > 0) {
+                     await transactionService.createPayment({
+                        type: 'client_payment',
+                        amount: mixCard,
+                        currency: 'UZS',
+                        exchangeRate: exchangeRate,
+                        method: 'card',
+                        description: `Погашение долга (карта): ${selectedClientForRepayment.name}${orderRef}`,
+                        relatedId: selectedOrderForRepayment || clientId
+                    } as any, clientId);
+                }
+                if (mixBank > 0) {
+                     await transactionService.createPayment({
+                        type: 'client_payment',
+                        amount: mixBank,
+                        currency: 'UZS',
+                        exchangeRate: exchangeRate,
+                        method: 'bank',
+                        description: `Погашение долга (перечисл.): ${selectedClientForRepayment.name}${orderRef}`,
+                        relatedId: selectedOrderForRepayment || clientId
+                    } as any, clientId);
+                }
+            } else {
+                // Single Payment
+                await transactionService.createPayment({
                     type: 'client_payment',
-                    amount: mixCashUZS,
-                    currency: 'UZS',
+                    amount: repaymentAmount,
+                    currency: repaymentCurrency,
                     exchangeRate: exchangeRate,
-                    method: 'cash',
-                    description: `Погашение долга (нал UZS): ${selectedClientForRepayment.name}${orderRef}`,
-                    relatedId: selectedOrderForRepayment || selectedClientForRepayment.id
-                });
-            }
-            if (mixCashUSD > 0) {
-                amountInUSD += mixCashUSD;
-                newTransactions.push({
-                    id: IdGenerator.transaction(),
-                    date: new Date().toISOString(),
-                    type: 'client_payment',
-                    amount: mixCashUSD,
-                    currency: 'USD',
-                    method: 'cash',
-                    description: `Погашение долга (нал USD): ${selectedClientForRepayment.name}${orderRef}`,
-                    relatedId: selectedOrderForRepayment || selectedClientForRepayment.id
-                });
-            }
-            if (mixCard > 0) {
-                const usd = mixCard / exchangeRate;
-                amountInUSD += usd;
-                newTransactions.push({
-                    id: IdGenerator.transaction(),
-                    date: new Date().toISOString(),
-                    type: 'client_payment',
-                    amount: mixCard,
-                    currency: 'UZS',
-                    exchangeRate: exchangeRate,
-                    method: 'card',
-                    description: `Погашение долга (карта): ${selectedClientForRepayment.name}${orderRef}`,
-                    relatedId: selectedOrderForRepayment || selectedClientForRepayment.id
-                });
-            }
-            if (mixBank > 0) {
-                const usd = mixBank / exchangeRate;
-                amountInUSD += usd;
-                newTransactions.push({
-                    id: IdGenerator.transaction(),
-                    date: new Date().toISOString(),
-                    type: 'client_payment',
-                    amount: mixBank,
-                    currency: 'UZS',
-                    exchangeRate: exchangeRate,
-                    method: 'bank',
-                    description: `Погашение долга (перечисление): ${selectedClientForRepayment.name}${orderRef}`,
-                    relatedId: selectedOrderForRepayment || selectedClientForRepayment.id
-                });
+                    method: repaymentMethod,
+                    description: `Погашение долга: ${selectedClientForRepayment.name}${orderRef}`,
+                    relatedId: selectedOrderForRepayment || clientId
+                } as any, clientId);
             }
 
-            if (newTransactions.length === 0) {
-                toast.warning('Введите сумму хотя бы одним способом');
-                return;
-            }
-        } else {
-            // Одиночный способ оплаты
-            if (repaymentAmount <= 0) {
-                toast.warning('Введите сумму погашения');
-                return;
-            }
-            amountInUSD = repaymentAmount;
-            if (repaymentCurrency === 'UZS' && exchangeRate > 0) {
-                amountInUSD = repaymentAmount / exchangeRate;
+            toast.success('Долг успешно погашен и баланс обновлен');
+            setIsRepayModalOpen(false);
+            
+            // Если выбран конкретный заказ - обновляем его статус
+            if (selectedOrderForRepayment && onSaveOrders) {
+                // Note: This only updates local/legacy orders. 
+                // We should eventually move orders to Firebase too.
+                // For now, let's keep it as is for visual consistency in the UI if orders are still local
+                const updatedOrders = orders.map(o => {
+                    if (o.id === selectedOrderForRepayment) {
+                        // Calculate how much paid in USD
+                        let paidAmount = 0;
+                        if (repaymentMethod === 'mixed') {
+                            paidAmount = (mixCashUZS / exchangeRate) + mixCashUSD + (mixCard / exchangeRate) + (mixBank / exchangeRate);
+                        } else {
+                            paidAmount = repaymentCurrency === 'UZS' ? repaymentAmount / exchangeRate : repaymentAmount;
+                        }
+                        
+                        // Add to existing paid amount
+                        const newAmountPaid = (o.amountPaid || 0) + paidAmount;
+                        const fullyPaid = newAmountPaid >= (o.totalAmount || 0) - 0.01;
+                        
+                        return {
+                            ...o,
+                            amountPaid: newAmountPaid,
+                            paymentStatus: fullyPaid ? 'paid' : 'partial'
+                        };
+                    }
+                    return o;
+                });
+                onSaveOrders(updatedOrders as Order[]); // Type cast if necessary
             }
 
-            newTransactions.push({
-                id: IdGenerator.transaction(),
-                date: new Date().toISOString(),
-                type: 'client_payment',
-                amount: repaymentAmount,
-                currency: repaymentCurrency,
-                exchangeRate: repaymentCurrency === 'UZS' ? exchangeRate : undefined,
-                method: repaymentMethod,
-                description: `Погашение долга: ${selectedClientForRepayment.name}${orderRef}`,
-                relatedId: selectedOrderForRepayment || selectedClientForRepayment.id
-            });
+        } catch (error: any) {
+            console.error('Payment error:', error);
+            toast.error('Ошибка при проведении платежа: ' + error.message);
         }
+    };
 
         // Сохраняем все транзакции
         const updatedTransactions = [...transactions, ...newTransactions];
@@ -1214,6 +1255,9 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, onSaveOrders,
                                         <button onClick={() => handleOpenModal(client)} className={`p-2 ${theme === 'dark' ? 'bg-slate-700 hover:bg-slate-600' : 'bg-slate-200 hover:bg-slate-300'} rounded-lg ${t.textMuted} hover:${t.text}`}>
                                             <Edit size={16} />
                                         </button>
+                                        <button onClick={() => handleDelete(client.id)} className={`p-2 ${theme === 'dark' ? 'bg-slate-700 hover:bg-red-900/40' : 'bg-slate-200 hover:bg-red-100'} rounded-lg ${t.textMuted} hover:text-red-500`}>
+                                            <Trash2 size={16} />
+                                        </button>
                                     </div>
 
                                     <div className="flex items-start gap-4 mb-4 mt-6">
@@ -1285,6 +1329,13 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, onSaveOrders,
                                     </div>
 
                                     <div className="mt-4 flex gap-2">
+                                        <button
+                                            onClick={() => handleOpenNotesModal(client)}
+                                            className={`px-3 ${theme === 'dark' ? 'bg-slate-700 hover:bg-slate-600' : 'bg-slate-200 hover:bg-slate-300 text-slate-700'} py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-1`}
+                                            title="Заметки"
+                                        >
+                                            <MessageSquare size={16} />
+                                        </button>
                                         <button
                                             onClick={() => handleOpenDebtHistoryModal(client)}
                                             className={`px-3 ${theme === 'dark' ? 'bg-slate-700 hover:bg-slate-600' : 'bg-slate-200 hover:bg-slate-300 text-slate-700'} py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-1`}
@@ -2127,6 +2178,13 @@ export const CRM: React.FC<CRMProps> = ({ clients, onSave, orders, onSaveOrders,
                 </div>
                 );
             })()}
+            {/* Client Notes Modal - Rendered conditionally */}
+            <ClientNotesModal
+                client={selectedClientForNotes}
+                isOpen={isNotesModalOpen}
+                onClose={() => setIsNotesModalOpen(false)}
+                currentUserName={currentUser?.email || 'Менеджер'}
+            />
         </div>
     );
 };

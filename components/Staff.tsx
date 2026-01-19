@@ -194,21 +194,6 @@ export const Staff: React.FC<StaffProps> = ({ employees: sheetsEmployees, onSave
                     </p>
                 </div>
                 <div className="flex gap-2">
-                    {sheetsEmployees.length > 0 && (
-                        <button
-                            onClick={handleMigrateFromSheets}
-                            disabled={isMigrating}
-                            className={`${theme === 'dark' ? 'bg-emerald-600/20 hover:bg-emerald-600/30 border-emerald-500/50' : 'bg-emerald-100 hover:bg-emerald-200 border-emerald-300'} border text-emerald-400 px-3 py-2 rounded-lg flex items-center gap-2 transition-colors text-sm`}
-                            title="Перенести сотрудников из Google Sheets в Firebase"
-                        >
-                            {isMigrating ? (
-                                <RefreshCw size={16} className="animate-spin" />
-                            ) : (
-                                <Upload size={16} />
-                            )}
-                            <span className="hidden sm:inline">Миграция ({sheetsEmployees.length})</span>
-                        </button>
-                    )}
                     <button
                         onClick={() => handleOpenModal()}
                         className="bg-purple-600 hover:bg-purple-500 text-white px-3 sm:px-4 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-lg shadow-purple-600/20 text-sm sm:text-base whitespace-nowrap"

@@ -7,6 +7,7 @@ import {
   getDocs, 
   getDoc, 
   setDoc, 
+  addDoc,
   updateDoc, 
   deleteDoc, 
   query, 
@@ -14,6 +15,7 @@ import {
   orderBy,
   onSnapshot,
   writeBatch,
+  runTransaction,
   Timestamp,
   enableIndexedDbPersistence
 } from "firebase/firestore";
@@ -57,6 +59,7 @@ export {
   getDocs, 
   getDoc, 
   setDoc, 
+  addDoc,
   updateDoc, 
   deleteDoc, 
   query, 
@@ -64,7 +67,9 @@ export {
   orderBy,
   onSnapshot,
   writeBatch,
-  Timestamp 
+  runTransaction,
+  Timestamp,
+  enableIndexedDbPersistence
 };
 
 // Устанавливаем persistence для мобильных устройств
