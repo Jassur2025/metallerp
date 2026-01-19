@@ -1,5 +1,22 @@
 import { initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider, browserLocalPersistence, setPersistence } from "firebase/auth";
+import { 
+  getFirestore, 
+  collection, 
+  doc, 
+  getDocs, 
+  getDoc, 
+  setDoc, 
+  updateDoc, 
+  deleteDoc, 
+  query, 
+  where, 
+  orderBy,
+  onSnapshot,
+  writeBatch,
+  Timestamp,
+  enableIndexedDbPersistence
+} from "firebase/firestore";
 
 // Get environment variables - use fallback if not set
 const getEnvVar = (key: string, fallback?: string): string => {
@@ -22,6 +39,33 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
+export const db = getFirestore(app);
+
+// Enable offline persistence for Firestore
+enableIndexedDbPersistence(db).catch((err) => {
+  if (err.code === 'failed-precondition') {
+    console.warn('Firestore persistence failed: Multiple tabs open');
+  } else if (err.code === 'unimplemented') {
+    console.warn('Firestore persistence not available in this browser');
+  }
+});
+
+// Export Firestore utilities
+export { 
+  collection, 
+  doc, 
+  getDocs, 
+  getDoc, 
+  setDoc, 
+  updateDoc, 
+  deleteDoc, 
+  query, 
+  where, 
+  orderBy,
+  onSnapshot,
+  writeBatch,
+  Timestamp 
+};
 
 // Устанавливаем persistence для мобильных устройств
 setPersistence(auth, browserLocalPersistence).catch((error) => {

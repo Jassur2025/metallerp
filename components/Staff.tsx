@@ -2,13 +2,14 @@ import React, { useState, useMemo } from 'react';
 import { Employee, UserRole } from '../types';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
-import { Plus, Search, Edit2, Phone, Mail, Briefcase, Calendar, DollarSign, User, Shield, CheckCircle, XCircle, Trash2 } from 'lucide-react';
+import { Plus, Search, Edit2, Phone, Mail, Briefcase, Calendar, DollarSign, User, Shield, CheckCircle, XCircle, Trash2, Database, RefreshCw, Upload, Cloud } from 'lucide-react';
 import { IdGenerator } from '../utils/idGenerator';
+import { useEmployees } from '../hooks/useEmployees';
 
 
 interface StaffProps {
-    employees: Employee[];
-    onSave: (employees: Employee[]) => Promise<void>;
+    employees: Employee[]; // From Google Sheets (for migration)
+    onSave: (employees: Employee[]) => Promise<void>; // Legacy save
 }
 
 const ROLE_COLORS: Record<UserRole, string> = {
@@ -27,15 +28,30 @@ const ROLE_LABELS: Record<UserRole, string> = {
     warehouse: 'Склад'
 };
 
-export const Staff: React.FC<StaffProps> = ({ employees, onSave }) => {
+export const Staff: React.FC<StaffProps> = ({ employees: sheetsEmployees, onSave }) => {
     const { theme } = useTheme();
     const t = getThemeClasses(theme);
     const toast = useToast();
+    
+    // Firebase real-time hook
+    const { 
+        employees, 
+        loading, 
+        error,
+        addEmployee, 
+        updateEmployee, 
+        deleteEmployee,
+        refreshEmployees,
+        migrateFromSheets,
+        stats 
+    } = useEmployees({ realtime: true });
+    
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [filterRole, setFilterRole] = useState<UserRole | 'all'>('all');
     const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive'>('all');
     const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
+    const [isMigrating, setIsMigrating] = useState(false);
 
     // Form State
     const [formData, setFormData] = useState<Partial<Employee>>({
@@ -90,31 +106,35 @@ export const Staff: React.FC<StaffProps> = ({ employees, onSave }) => {
             return;
         }
 
-        let updatedEmployees: Employee[];
         if (editingEmployee) {
-            // Update
-            updatedEmployees = employees.map(e =>
-                e.id === editingEmployee.id ? { ...e, ...formData } as Employee : e
-            );
+            // Update existing employee in Firebase
+            await updateEmployee(editingEmployee.id, formData);
         } else {
-            // Create
-            const newEmployee: Employee = {
-                id: IdGenerator.employee(),
-                ...formData as Employee
-            };
-            updatedEmployees = [...employees, newEmployee];
+            // Create new employee in Firebase
+            await addEmployee(formData as Omit<Employee, 'id'>);
         }
 
-        await onSave(updatedEmployees);
         setIsModalOpen(false);
     };
 
     const handleDelete = async (employeeId: string) => {
         if (!window.confirm('Вы уверены, что хотите удалить этого сотрудника?')) return;
+        
+        // Hard delete from Firebase
+        await deleteEmployee(employeeId, false);
+    };
 
-        const updatedEmployees = employees.filter(e => e.id !== employeeId);
-        await onSave(updatedEmployees);
-        toast.success('Сотрудник удален');
+    const handleMigrateFromSheets = async () => {
+        if (sheetsEmployees.length === 0) {
+            toast.info('Нет сотрудников в Google Sheets для миграции');
+            return;
+        }
+        
+        if (!window.confirm(`Перенести ${sheetsEmployees.length} сотрудников из Google Sheets в Firebase?`)) return;
+        
+        setIsMigrating(true);
+        await migrateFromSheets(sheetsEmployees);
+        setIsMigrating(false);
     };
 
 
@@ -130,36 +150,78 @@ export const Staff: React.FC<StaffProps> = ({ employees, onSave }) => {
         });
     }, [employees, searchTerm, filterRole, filterStatus]);
 
-    // Stats
-    const stats = useMemo(() => {
-        const total = employees.length;
-        const active = employees.filter(e => e.status === 'active').length;
-        const byRole = employees.reduce((acc, emp) => {
-            acc[emp.role] = (acc[emp.role] || 0) + 1;
-            return acc;
-        }, {} as Record<UserRole, number>);
-        return { total, active, byRole };
-    }, [employees]);
+    // Show loading state
+    if (loading) {
+        return (
+            <div className="h-full flex items-center justify-center">
+                <div className="text-center">
+                    <RefreshCw className="w-12 h-12 animate-spin text-purple-500 mx-auto mb-4" />
+                    <p className={t.textMuted}>Загрузка сотрудников из Firebase...</p>
+                </div>
+            </div>
+        );
+    }
+
+    // Show error state
+    if (error) {
+        return (
+            <div className="h-full flex items-center justify-center">
+                <div className={`text-center ${t.bgCard} p-8 rounded-xl border ${t.border}`}>
+                    <Database className="w-12 h-12 text-red-500 mx-auto mb-4" />
+                    <p className="text-red-400 mb-4">{error}</p>
+                    <button 
+                        onClick={refreshEmployees}
+                        className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg"
+                    >
+                        Попробовать снова
+                    </button>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="h-full overflow-y-auto overflow-x-hidden p-4 sm:p-6 space-y-4 sm:space-y-6 animate-fade-in pb-24 custom-scrollbar" style={{ WebkitOverflowScrolling: 'touch' }}>
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-0">
                 <div>
-                    <h2 className={`text-xl sm:text-2xl font-bold ${t.text}`}>Управление Сотрудниками</h2>
-                    <p className={`text-xs sm:text-sm ${t.textMuted}`}>Персонал и распределение ролей</p>
+                    <h2 className={`text-xl sm:text-2xl font-bold ${t.text} flex items-center gap-2`}>
+                        <Cloud className="text-purple-400" size={24} />
+                        Управление Сотрудниками
+                    </h2>
+                    <p className={`text-xs sm:text-sm ${t.textMuted} flex items-center gap-2`}>
+                        <Database size={14} className="text-emerald-400" />
+                        Firebase Database • Real-time синхронизация
+                    </p>
                 </div>
-                <button
-                    onClick={() => handleOpenModal()}
-                    className="bg-purple-600 hover:bg-purple-500 text-white px-3 sm:px-4 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-lg shadow-purple-600/20 text-sm sm:text-base whitespace-nowrap"
-                >
-                    <Plus size={18} />
-                    <span className="hidden sm:inline">Добавить сотрудника</span>
-                    <span className="sm:hidden">Добавить</span>
-                </button>
+                <div className="flex gap-2">
+                    {sheetsEmployees.length > 0 && (
+                        <button
+                            onClick={handleMigrateFromSheets}
+                            disabled={isMigrating}
+                            className={`${theme === 'dark' ? 'bg-emerald-600/20 hover:bg-emerald-600/30 border-emerald-500/50' : 'bg-emerald-100 hover:bg-emerald-200 border-emerald-300'} border text-emerald-400 px-3 py-2 rounded-lg flex items-center gap-2 transition-colors text-sm`}
+                            title="Перенести сотрудников из Google Sheets в Firebase"
+                        >
+                            {isMigrating ? (
+                                <RefreshCw size={16} className="animate-spin" />
+                            ) : (
+                                <Upload size={16} />
+                            )}
+                            <span className="hidden sm:inline">Миграция ({sheetsEmployees.length})</span>
+                        </button>
+                    )}
+                    <button
+                        onClick={() => handleOpenModal()}
+                        className="bg-purple-600 hover:bg-purple-500 text-white px-3 sm:px-4 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-lg shadow-purple-600/20 text-sm sm:text-base whitespace-nowrap"
+                    >
+                        <Plus size={18} />
+                        <span className="hidden sm:inline">Добавить сотрудника</span>
+                        <span className="sm:hidden">Добавить</span>
+                    </button>
+                </div>
             </div>
 
             {/* Stats Cards */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 sm:gap-4">
                 <div className={`${t.bgCard} p-4 rounded-xl border ${t.border}`}>
                     <p className={`${t.textMuted} text-sm`}>Всего сотрудников</p>
                     <p className={`text-2xl font-bold ${t.text} mt-1`}>{stats.total}</p>
@@ -167,6 +229,10 @@ export const Staff: React.FC<StaffProps> = ({ employees, onSave }) => {
                 <div className={`${t.bgCard} p-4 rounded-xl border ${t.border}`}>
                     <p className={`${t.textMuted} text-sm`}>Активных</p>
                     <p className="text-2xl font-bold text-emerald-400 mt-1">{stats.active}</p>
+                </div>
+                <div className={`${t.bgCard} p-4 rounded-xl border ${t.border}`}>
+                    <p className={`${t.textMuted} text-sm`}>Неактивных</p>
+                    <p className="text-2xl font-bold text-red-400 mt-1">{stats.inactive}</p>
                 </div>
                 <div className={`${t.bgCard} p-4 rounded-xl border ${t.border}`}>
                     <p className={`${t.textMuted} text-sm`}>Администраторов</p>
