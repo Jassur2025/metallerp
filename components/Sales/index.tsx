@@ -278,6 +278,12 @@ export const Sales: React.FC<SalesProps> = ({
       clientId = nextClients[idx].id;
     }
 
+    // Add clientId to order
+    const newOrderWithClient: Order = {
+      ...newOrder,
+      clientId
+    };
+
     // Update Client Debt
     // Add full amount to purchase history, add remaining debt
     // NOTE: If we record transactions for payments, we should add TOTAL amount to debt first, then reduce by payments? 
@@ -338,13 +344,13 @@ export const Sales: React.FC<SalesProps> = ({
     await onSaveTransactions?.(updatedTx);
     setTransactions(updatedTx);
 
-    const updatedOrders = [newOrder, ...orders];
+    const updatedOrders = [newOrderWithClient, ...orders];
     // CRITICAL: Save to Sheets FIRST, then update state
     await onSaveOrders?.(updatedOrders);
     setOrders(updatedOrders);
 
     const nextWorkflow = workflowOrders.map(o =>
-      o.id === wf.id ? { ...o, status: 'completed' as const, convertedToOrderId: newOrder.id, convertedAt: new Date().toISOString() } : o
+      o.id === wf.id ? { ...o, status: 'completed' as const, convertedToOrderId: newOrderWithClient.id, convertedAt: new Date().toISOString() } : o
     );
     await onSaveWorkflowOrders(nextWorkflow);
 
@@ -354,11 +360,11 @@ export const Sales: React.FC<SalesProps> = ({
       type: 'employee_action',
       employeeName: currentEmployee?.name || 'Кассир',
       action: 'Workflow подтвержден (Смешанная оплата)',
-      description: `Заказ ${newOrder.id}. Оплачено: $${totalPaidUSD.toFixed(2)}. Долг: $${remainingUSD.toFixed(2)}.`,
+      description: `Заказ ${newOrderWithClient.id}. Оплачено: $${totalPaidUSD.toFixed(2)}. Долг: $${remainingUSD.toFixed(2)}.`,
       module: 'sales',
       relatedType: 'workflow',
       relatedId: wf.id,
-      metadata: { convertedTo: newOrder.id }
+      metadata: { convertedTo: newOrderWithClient.id }
     });
 
     toast.success('Workflow подтвержден!');
@@ -595,6 +601,12 @@ export const Sales: React.FC<SalesProps> = ({
       clientId = currentClients[clientIndex].id;
     }
 
+    // Add clientId to order for proper linking
+    const newOrderWithClient = {
+      ...newOrder,
+      clientId
+    };
+
     // Update Client Debt (Purchase + Remaining Debt)
     // Add purchase to totalPurchases
     // Add remaining part to debt. (If paid fully, result is 0)
@@ -631,7 +643,7 @@ export const Sales: React.FC<SalesProps> = ({
     setTransactions(updatedTransactions);
 
     // Save order
-    const updatedOrders = [newOrder, ...orders];
+    const updatedOrders = [newOrderWithClient, ...orders];
     // CRITICAL: Save to Sheets FIRST, then update state
     await onSaveOrders?.(updatedOrders);
     setOrders(updatedOrders);
@@ -644,9 +656,9 @@ export const Sales: React.FC<SalesProps> = ({
     setDiscountPercent(0);
     setManualTotal(null);
     setDebtDueDate(''); // Clear debt due date
-    setLastOrder(newOrder);
+    setLastOrder(newOrderWithClient);
     setSalesPaymentModalOpen(false); // Close if open
-    setSelectedOrderForReceipt(newOrder);
+    setSelectedOrderForReceipt(newOrderWithClient);
     setTimeout(() => setShowReceiptModal(true), 300);
 
     // Journal

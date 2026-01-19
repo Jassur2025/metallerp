@@ -136,6 +136,7 @@ export interface Order extends Versionable {
   reportNo?: number; // Sequential report number
   date: string;
   customerName: string;
+  clientId?: string; // Link to Client for debt tracking
   sellerId?: string; // Employee ID for KPI calculation
   sellerName: string; // Added: Who made the sale
   items: OrderItem[];

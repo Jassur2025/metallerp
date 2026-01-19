@@ -9,13 +9,14 @@ import { checkAllPhones, formatPhoneForTablet, validateUzbekistanPhone } from '.
 import { SUPER_ADMIN_EMAILS } from '../constants';
 import { IdGenerator } from '../utils/idGenerator';
 import { useClients } from '../hooks/useClients';
+import { useOrders } from '../hooks/useOrders';
 import { transactionService } from '../services/transactionService';
 import { ClientNotesModal } from './Sales/ClientNotesModal';
 
 interface CRMProps {
-    clients: Client[]; // Legacy prop (can be used for migration if needed, but we ignore it mostly)
+    clients: Client[]; // Legacy prop (ignored - using Firebase)
     onSave: (clients: Client[]) => void; // Legacy
-    orders: Order[];
+    orders: Order[]; // Legacy prop (ignored - using Firebase)
     onSaveOrders?: (orders: Order[]) => void;
     transactions: Transaction[];
     setTransactions: (t: Transaction[]) => void;
@@ -25,12 +26,12 @@ interface CRMProps {
 
 type CRMView = 'clients' | 'repaymentStats';
 
-export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders, onSaveOrders, transactions, setTransactions, onSaveTransactions, currentUser }) => {
+export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders: legacyOrders, onSaveOrders, transactions, setTransactions, onSaveTransactions, currentUser }) => {
     const toast = useToast();
     const { theme } = useTheme();
     const t = getThemeClasses(theme);
     
-    // Firebase Hook
+    // Firebase Hook for Clients
     const { 
         clients, 
         loading: clientsLoading, 
@@ -41,6 +42,12 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
         refreshClients,
         migrateFromSheets 
     } = useClients({ realtime: true });
+
+    // Firebase Hook for Orders - use Firebase orders instead of legacy prop!
+    const { 
+        orders, 
+        loading: ordersLoading 
+    } = useOrders();
 
     const [activeView, setActiveView] = useState<CRMView>('clients');
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -180,6 +187,35 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
         return order.paymentMethod === 'debt' || status === 'unpaid' || status === 'partial' || hasOpenBalance(order);
     };
 
+    // Функция для расчёта общей суммы покупок клиента
+    const calculateClientPurchases = (client: Client): number => {
+        const clientId = client.id;
+        const clientName = (client.name || '').toLowerCase().trim();
+        const companyName = (client.companyName || '').toLowerCase().trim();
+        
+        let totalPurchases = 0;
+        
+        orders.forEach(order => {
+            const orderClientName = (order.customerName || '').toLowerCase().trim();
+            const orderClientId = order.clientId || '';
+            
+            const matchesClient = 
+                orderClientId === clientId || 
+                order.clientId === clientId ||
+                orderClientName === clientName ||
+                (clientName && orderClientName.includes(clientName)) ||
+                (clientName && clientName.includes(orderClientName)) ||
+                (companyName && orderClientName.includes(companyName)) ||
+                (companyName && companyName.includes(orderClientName));
+            
+            if (matchesClient) {
+                totalPurchases += order.totalAmount || 0;
+            }
+        });
+        
+        return totalPurchases;
+    };
+
     // Функция для расчёта актуального долга клиента из заказов и транзакций
     const calculateClientDebt = (client: Client): number => {
         const clientId = client.id;
@@ -189,11 +225,17 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
         let totalDebt = 0;
         let totalRepaid = 0;
         
+        // Debug: Log orders count
+        // console.log(`[CRM Debug] Client: ${client.name}, Orders count: ${orders.length}`);
+        
         // Найти ВСЕ заказы клиента которые БЫЛИ в долг
         // Используем ту же логику что и в getClientDebtHistory
         orders.forEach(order => {
             const orderClientName = (order.customerName || '').toLowerCase().trim();
+            const orderClientId = order.clientId || '';
+            
             const matchesClient = 
+                orderClientId === clientId || 
                 order.clientId === clientId || 
                 orderClientName === clientName ||
                 (clientName && orderClientName.includes(clientName)) ||
@@ -793,52 +835,7 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
         }
     };
 
-        // Сохраняем все транзакции
-        const updatedTransactions = [...transactions, ...newTransactions];
-        setTransactions(updatedTransactions);
-        if (onSaveTransactions) {
-            await onSaveTransactions(updatedTransactions);
-        }
 
-        // 2. Update Order amountPaid if specific order was selected
-        if (selectedOrderForRepayment && onSaveOrders) {
-            const updatedOrders = orders.map(order => {
-                if (order.id === selectedOrderForRepayment) {
-                    const newAmountPaid = (order.amountPaid || 0) + amountInUSD;
-                    const newDebt = Math.max(0, (order.totalAmount || 0) - newAmountPaid);
-                    const isPaidOff = newDebt < 0.01;
-                    return {
-                        ...order,
-                        amountPaid: newAmountPaid,
-                        // Обновляем статус оплаты
-                        paymentStatus: isPaidOff ? 'paid' : 'partial',
-                        // Если полностью оплачено - меняем метод (опционально)
-                        paymentMethod: isPaidOff ? (order.paymentMethod === 'debt' ? 'cash' : order.paymentMethod) : order.paymentMethod
-                    };
-                }
-                return order;
-            });
-            await onSaveOrders(updatedOrders);
-        }
-
-        // 3. Пересчитываем долг клиента динамически
-        // Вместо простого вычитания - считаем заново из всех заказов
-        const recalculatedDebt = calculateClientDebt(selectedClientForRepayment) - amountInUSD;
-        
-        const updatedClients = clients.map(c => {
-            if (c.id === selectedClientForRepayment.id) {
-                return {
-                    ...c,
-                    totalDebt: Math.max(0, recalculatedDebt)
-                };
-            }
-            return c;
-        });
-
-        onSave(updatedClients);
-        setIsRepayModalOpen(false);
-        toast.success('Долг успешно погашен!');
-    };
 
     const filteredClients = useMemo(() => {
         const list = clients.filter(c => {
@@ -1317,7 +1314,7 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
                                         <div>
                                             <p className={`text-xs ${t.textMuted} uppercase`}>Покупок</p>
                                             <p className="font-mono text-emerald-500 font-medium">
-                                                ${(client.totalPurchases || 0).toLocaleString()}
+                                                ${calculateClientPurchases(client).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                                             </p>
                                         </div>
                                         <div>

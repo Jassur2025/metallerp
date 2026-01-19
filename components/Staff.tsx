@@ -28,6 +28,7 @@ const ROLE_LABELS: Record<UserRole, string> = {
     warehouse: 'Склад'
 };
 
+// Force rebuild
 export const Staff: React.FC<StaffProps> = ({ employees: sheetsEmployees, onSave }) => {
     const { theme } = useTheme();
     const t = getThemeClasses(theme);
