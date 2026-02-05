@@ -99,7 +99,7 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({
               .slice()
               .reverse()
               .map((purchase) => {
-                const debt = purchase.totalInvoiceAmount - purchase.amountPaid;
+                const debt = (purchase.totalInvoiceAmount || 0) - (purchase.amountPaid || 0);
                 const isExpanded = expandedPurchaseIds.has(purchase.id);
                 const purchaseWarehouse = purchase.warehouse || 'main';
                 return (
@@ -124,8 +124,8 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({
                       </td>
                       <td className="px-4 py-4 text-center">
                         <span className={`px-2 py-1 rounded text-[10px] font-bold ${purchaseWarehouse === 'cloud'
-                            ? 'bg-violet-500/20 text-violet-400 border border-violet-500/20'
-                            : 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/20'
+                          ? 'bg-violet-500/20 text-violet-400 border border-violet-500/20'
+                          : 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/20'
                           }`}>
                           {purchaseWarehouse === 'cloud' ? '☁️ Облачный' : '🏭 Основной'}
                         </span>
@@ -140,9 +140,9 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({
                               purchase.paymentMethod === 'mixed' ? 'bg-amber-500/20 text-amber-400' :
                                 'bg-red-500/20 text-red-400'
                           }`}>
-                          {purchase.paymentMethod === 'cash' 
-                            ? (purchase.paymentCurrency === 'USD' ? '💵 Нал (USD)' : '💰 Нал (UZS)') 
-                            : purchase.paymentMethod === 'bank' ? '🏦 Р/С' 
+                          {purchase.paymentMethod === 'cash'
+                            ? (purchase.paymentCurrency === 'USD' ? '💵 Нал (USD)' : '💰 Нал (UZS)')
+                            : purchase.paymentMethod === 'bank' ? '🏦 Р/С'
                               : purchase.paymentMethod === 'card' ? '💳 Карта'
                                 : purchase.paymentMethod === 'mixed' ? '🔀 Микс' : '📋 Долг'}
                         </span>
@@ -164,7 +164,7 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({
                         </span>
                       </td>
                       <td className={`px-6 py-4 text-right font-mono ${theme === 'dark' ? 'text-emerald-400' : 'text-emerald-600'}`}>
-                        ${purchase.amountPaid.toLocaleString()}
+                        ${(purchase.amountPaid || 0).toLocaleString()}
                       </td>
                       <td className={`px-6 py-4 text-right font-mono font-bold ${theme === 'dark' ? 'text-red-400' : 'text-red-600'}`}>
                         {debt > 0 ? `$${debt.toLocaleString()}` : '-'}
@@ -226,7 +226,7 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({
                                     const prod = products.find((p) => p.id === item.productId);
                                     const dims = prod?.dimensions || '-';
                                     const isEditing = editingItem?.purchaseId === purchase.id && editingItem?.itemIndex === idx;
-                                    
+
                                     if (isEditing) {
                                       return (
                                         <tr key={idx} className="bg-indigo-500/10">
@@ -293,7 +293,7 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({
                                         </tr>
                                       );
                                     }
-                                    
+
                                     return (
                                       <tr key={idx} className={`hover:${t.bgHover}`}>
                                         <td className={`px-4 py-2 ${t.text} font-medium`}>{item.productName}</td>
