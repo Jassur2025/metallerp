@@ -3,90 +3,11 @@ import React, { useState } from 'react';
 import { AppSettings, ExpenseCategory, ExpensePnLCategory } from '../types';
 import { IdGenerator } from '../utils/idGenerator';
 import { Save, Settings as SettingsIcon, AlertCircle, Database, CheckCircle, XCircle, Loader2, Send, Plus, Trash2, Receipt, RefreshCw } from 'lucide-react';
-import { getSpreadsheetId, saveSpreadsheetId, sheetsService } from '../services/sheetsService';
 import { telegramService } from '../services/telegramService';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
 
-// Компонент кнопки очистки данных
-const ClearDataButton: React.FC<{ accessToken: string | null }> = ({ accessToken }) => {
-    const [status, setStatus] = useState<'idle' | 'confirm' | 'loading' | 'success' | 'error'>('idle');
-    const [message, setMessage] = useState('');
-    const { theme } = useTheme();
-    const t = getThemeClasses(theme);
 
-    const handleClear = async () => {
-        if (status === 'idle') {
-            setStatus('confirm');
-            return;
-        }
-        
-        if (status === 'confirm') {
-            if (!accessToken) {
-                setMessage('Нет токена доступа');
-                setStatus('error');
-                return;
-            }
-            
-            setStatus('loading');
-            try {
-                const result = await sheetsService.clearAllData(accessToken);
-                setMessage(result);
-                setStatus('success');
-                // Перезагрузить страницу через 2 секунды
-                setTimeout(() => window.location.reload(), 2000);
-            } catch (e) {
-                setMessage(e instanceof Error ? e.message : 'Ошибка');
-                setStatus('error');
-            }
-        }
-    };
-
-    const handleCancel = () => {
-        setStatus('idle');
-        setMessage('');
-    };
-
-    return (
-        <div className="flex items-center gap-3">
-            {status === 'confirm' && (
-                <button
-                    onClick={handleCancel}
-                    className={`px-4 py-2 ${theme === 'dark' ? 'bg-slate-700 hover:bg-slate-600' : 'bg-slate-200 hover:bg-slate-300'} ${t.text} rounded-lg text-sm transition-colors`}
-                >
-                    Отмена
-                </button>
-            )}
-            <button
-                onClick={handleClear}
-                disabled={status === 'loading' || status === 'success'}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
-                    status === 'confirm' 
-                        ? 'bg-red-600 hover:bg-red-500 text-white animate-pulse'
-                        : status === 'loading'
-                        ? 'bg-red-600/50 text-white cursor-wait'
-                        : status === 'success'
-                        ? 'bg-emerald-600 text-white'
-                        : status === 'error'
-                        ? 'bg-red-600 text-white'
-                        : 'bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/30'
-                }`}
-            >
-                {status === 'loading' && <Loader2 size={16} className="animate-spin" />}
-                {status === 'success' && <CheckCircle size={16} />}
-                {status === 'error' && <XCircle size={16} />}
-                {status === 'idle' && <Trash2 size={16} />}
-                {status === 'confirm' && <AlertCircle size={16} />}
-                
-                {status === 'idle' && 'Очистить все данные'}
-                {status === 'confirm' && 'Подтвердить удаление?'}
-                {status === 'loading' && 'Удаление...'}
-                {status === 'success' && 'Удалено! Перезагрузка...'}
-                {status === 'error' && message}
-            </button>
-        </div>
-    );
-};
 
 // Дефолтные категории расходов
 const DEFAULT_EXPENSE_CATEGORIES: ExpenseCategory[] = [
@@ -213,39 +134,7 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
         }));
     }, [settings, envBotToken, envChatId]);
 
-    // Google Sheets State
-    const [spreadsheetId, setSpreadsheetId] = useState(envSheetId || getSpreadsheetId());
-    const [connectionStatus, setConnectionStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
-    const [connectionMessage, setConnectionMessage] = useState('');
 
-    // Ensure env Sheet ID сохраняется локально, но не показывается
-    React.useEffect(() => {
-        if (envSheetId) {
-            saveSpreadsheetId(envSheetId);
-            setSpreadsheetId(envSheetId);
-        }
-    }, [envSheetId]);
-
-    const handleSaveId = () => {
-        saveSpreadsheetId(spreadsheetId);
-        setConnectionMessage('ID сохранен локально');
-        setConnectionStatus('idle');
-        setTimeout(() => setConnectionMessage(''), 3000);
-    };
-
-    const handleTestConnection = async () => {
-        if (!accessToken) return;
-        setConnectionStatus('loading');
-        try {
-            const msg = await sheetsService.testConnection(accessToken, spreadsheetId);
-            setConnectionStatus('success');
-            setConnectionMessage(msg);
-            saveSpreadsheetId(spreadsheetId); // Auto-save on success
-        } catch (e: unknown) {
-            setConnectionStatus('error');
-            setConnectionMessage(e instanceof Error ? e.message : 'Ошибка соединения');
-        }
-    };
 
     const handleTestTelegram = async () => {
         if (!formData.telegramBotToken || !formData.telegramChatId) {
@@ -305,76 +194,6 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
             {activeTab === 'general' && (
                 <div className={`${t.bgCard} rounded-2xl border ${t.border} p-8 shadow-lg space-y-8`}>
 
-                    {/* Google Sheets Connection */}
-                    <div className="space-y-6">
-                        <h3 className={`text-xl font-bold ${t.text} border-l-4 border-blue-500 pl-4 flex items-center gap-2`}>
-                            <Database size={24} className="text-blue-500" />
-                            Подключение к Google Sheets
-                        </h3>
-
-                        <div className="space-y-2">
-                            <label className={`block text-sm font-medium ${t.textMuted}`}>
-                                ID Таблицы (Spreadsheet ID)
-                            </label>
-                            <div className="flex gap-2">
-                                <input
-                                    type={isSheetFromEnv ? 'password' : 'text'}
-                                    className={`flex-1 ${t.input} border ${t.border} rounded-lg px-4 py-3 ${t.text} focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm disabled:opacity-60`}
-                                    value={isSheetFromEnv ? '••••••••••••••••' : spreadsheetId}
-                                    readOnly={isSheetFromEnv}
-                                    onChange={(e) => setSpreadsheetId(e.target.value)}
-                                    placeholder="1Sz3dpCAJqgY5oF-d0K50TlItj7gySubJ-iNhPFS5RzE"
-                                />
-                                <button
-                                    onClick={handleSaveId}
-                                    disabled={isSheetFromEnv}
-                                    className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-lg font-medium transition-colors"
-                                >
-                                    Сохранить
-                                </button>
-                            </div>
-
-                            <div className="flex items-center justify-between mt-2">
-                                <button
-                                    onClick={handleTestConnection}
-                                    disabled={connectionStatus === 'loading' || !spreadsheetId}
-                                    className="text-sm text-blue-400 hover:text-blue-300 underline underline-offset-4 disabled:opacity-50 disabled:no-underline"
-                                >
-                                    Проверить соединение
-                                </button>
-
-                                {connectionStatus !== 'idle' && (
-                                    <div className={`text-sm flex items-center gap-2 ${connectionStatus === 'success' ? 'text-emerald-400' :
-                                        connectionStatus === 'error' ? 'text-red-400' : t.textMuted
-                                        }`}>
-                                        {connectionStatus === 'loading' && <Loader2 size={16} className="animate-spin" />}
-                                        {connectionStatus === 'success' && <CheckCircle size={16} />}
-                                        {connectionStatus === 'error' && <XCircle size={16} />}
-                                        {connectionMessage}
-                                    </div>
-                                )}
-                            </div>
-
-                            <p className={`text-xs ${t.textMuted}`}>
-                                {isSheetFromEnv
-                                    ? 'ID таблицы задается через env и скрыт для безопасности.'
-                                    : 'Вставьте ID вашей Google Таблицы. Приложение будет автоматически сохранять туда товары и заказы.'}
-                            </p>
-                        </div>
-                    </div>
-
-                    {/* Danger Zone - Clear Data */}
-                    <div className="mt-6 p-4 bg-red-500/10 border border-red-500/30 rounded-xl">
-                        <h4 className="text-lg font-bold text-red-400 mb-2 flex items-center gap-2">
-                            <AlertCircle size={20} />
-                            Опасная зона
-                        </h4>
-                        <p className={`text-sm ${t.textMuted} mb-4`}>
-                            Очистка всех данных в Google Sheets. Используйте для тестирования. <strong className="text-red-400">Это действие нельзя отменить!</strong>
-                        </p>
-                        <ClearDataButton accessToken={accessToken} />
-                    </div>
-
                     <div className={`border-t ${t.border} my-6`}></div>
 
                     {/* Theme Settings */}
@@ -396,11 +215,10 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
                             <div className="flex gap-4">
                                 <button
                                     onClick={() => setFormData({ ...formData, theme: 'light' })}
-                                    className={`flex-1 p-4 rounded-xl border-2 transition-all ${
-                                        formData.theme === 'light' || !formData.theme
-                                            ? 'border-blue-500 bg-blue-500/10 shadow-lg shadow-blue-500/20'
-                                            : `${t.border} ${t.bgCard} hover:border-slate-500`
-                                    }`}
+                                    className={`flex-1 p-4 rounded-xl border-2 transition-all ${formData.theme === 'light' || !formData.theme
+                                        ? 'border-blue-500 bg-blue-500/10 shadow-lg shadow-blue-500/20'
+                                        : `${t.border} ${t.bgCard} hover:border-slate-500`
+                                        }`}
                                 >
                                     <div className="flex items-center justify-center gap-3 mb-2">
                                         <svg className="w-8 h-8 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
@@ -416,11 +234,10 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
 
                                 <button
                                     onClick={() => setFormData({ ...formData, theme: 'dark' })}
-                                    className={`flex-1 p-4 rounded-xl border-2 transition-all ${
-                                        formData.theme === 'dark'
-                                            ? 'border-slate-400 bg-slate-700/30 shadow-lg shadow-slate-500/20'
-                                            : `${t.border} ${t.bgCard} hover:border-slate-500`
-                                    }`}
+                                    className={`flex-1 p-4 rounded-xl border-2 transition-all ${formData.theme === 'dark'
+                                        ? 'border-slate-400 bg-slate-700/30 shadow-lg shadow-slate-500/20'
+                                        : `${t.border} ${t.bgCard} hover:border-slate-500`
+                                        }`}
                                 >
                                     <div className="flex items-center justify-center gap-3 mb-2">
                                         <svg className="w-8 h-8 text-indigo-400" fill="currentColor" viewBox="0 0 20 20">

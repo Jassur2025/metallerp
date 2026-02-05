@@ -26,7 +26,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
   const [showAddModal, setShowAddModal] = useState(false);
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [sortMode, setSortMode] = useState<'qty_desc' | 'qty_asc' | 'name_asc'>('qty_desc');
-  
+
   // Warehouse filter: 'all' | 'main' | 'cloud'
   const [warehouseFilter, setWarehouseFilter] = useState<'all' | WarehouseType>('all');
 
@@ -45,7 +45,8 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
     unit: Unit.METER,
     quantity: 0,
     pricePerUnit: 0,
-    costPrice: 0
+    costPrice: 0,
+    manufacturer: 'INSIGHT UNION'
   });
 
   // Smart Add Text
@@ -72,6 +73,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
       name: '',
       dimensions: '',
       steelGrade: '',
+      manufacturer: 'INSIGHT UNION',
     });
     setShowAddModal(true);
   };
@@ -97,6 +99,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
             type: formData.type as ProductType,
             dimensions: formData.dimensions || '-',
             steelGrade: formData.steelGrade || 'Ст3',
+            manufacturer: formData.manufacturer,
             quantity: Number(formData.quantity) || 0,
             unit: formData.unit as Unit,
             pricePerUnit: Number(formData.pricePerUnit) || 0,
@@ -156,14 +159,14 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
       // Search filter
       const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         p.dimensions.includes(searchTerm);
-      
+
       // Warehouse filter
       const productWarehouse = p.warehouse || WarehouseType.MAIN; // Default to MAIN if not set
       const matchesWarehouse = warehouseFilter === 'all' || productWarehouse === warehouseFilter;
-      
+
       return matchesSearch && matchesWarehouse;
     });
-    
+
     return [...filtered].sort((a, b) => {
       if (sortMode === 'qty_desc') {
         if (b.quantity !== a.quantity) return b.quantity - a.quantity;
@@ -182,11 +185,11 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
     const mainTotal = products
       .filter(p => (p.warehouse || WarehouseType.MAIN) === WarehouseType.MAIN)
       .reduce((sum, p) => sum + ((p.quantity || 0) * (p.costPrice || 0)), 0);
-    
+
     const cloudTotal = products
       .filter(p => p.warehouse === WarehouseType.CLOUD)
       .reduce((sum, p) => sum + ((p.quantity || 0) * (p.costPrice || 0)), 0);
-    
+
     return {
       main: mainTotal,
       cloud: cloudTotal,
@@ -217,7 +220,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
           <p className={`text-xs sm:text-sm ${t.textMuted}`}>Управление остатками труб и профиля (Цены в USD)</p>
         </div>
       </div>
-      
+
       {/* Warehouse Tabs & Summary */}
       <div className={`${t.bgCard} rounded-xl border ${t.border} p-4 ${t.shadow}`}>
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -226,8 +229,8 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
             <button
               onClick={() => setWarehouseFilter('all')}
               className={`px-4 py-2 rounded-lg text-sm font-bold border transition-all flex items-center gap-2 ${warehouseFilter === 'all'
-                  ? 'bg-primary-500/20 border-primary-500 text-primary-400'
-                  : `${t.bg} ${t.border} ${t.textMuted} hover:${t.bgHover}`
+                ? 'bg-primary-500/20 border-primary-500 text-primary-400'
+                : `${t.bg} ${t.border} ${t.textMuted} hover:${t.bgHover}`
                 }`}
             >
               <Warehouse size={16} />
@@ -236,8 +239,8 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
             <button
               onClick={() => setWarehouseFilter(WarehouseType.MAIN)}
               className={`px-4 py-2 rounded-lg text-sm font-bold border transition-all flex items-center gap-2 ${warehouseFilter === WarehouseType.MAIN
-                  ? 'bg-cyan-500/20 border-cyan-500 text-cyan-400'
-                  : `${t.bg} ${t.border} ${t.textMuted} hover:${t.bgHover}`
+                ? 'bg-cyan-500/20 border-cyan-500 text-cyan-400'
+                : `${t.bg} ${t.border} ${t.textMuted} hover:${t.bgHover}`
                 }`}
             >
               <Building2 size={16} />
@@ -246,15 +249,15 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
             <button
               onClick={() => setWarehouseFilter(WarehouseType.CLOUD)}
               className={`px-4 py-2 rounded-lg text-sm font-bold border transition-all flex items-center gap-2 ${warehouseFilter === WarehouseType.CLOUD
-                  ? 'bg-violet-500/20 border-violet-500 text-violet-400'
-                  : `${t.bg} ${t.border} ${t.textMuted} hover:${t.bgHover}`
+                ? 'bg-violet-500/20 border-violet-500 text-violet-400'
+                : `${t.bg} ${t.border} ${t.textMuted} hover:${t.bgHover}`
                 }`}
             >
               <Cloud size={16} />
               ☁️ Облачный склад
             </button>
           </div>
-          
+
           {/* Warehouse Totals */}
           <div className="flex flex-wrap gap-3 text-sm">
             <div className={`px-3 py-1.5 rounded-lg ${theme === 'dark' ? 'bg-cyan-500/10' : 'bg-cyan-50'} border border-cyan-500/20`}>
@@ -313,8 +316,9 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
         {/* Virtual Table - Desktop */}
         <div className={`hidden lg:block ${t.bgCard} rounded-xl border ${t.border} overflow-hidden ${t.shadow}`}>
           {/* Table Header */}
-          <div className={`${t.bgPanelAlt} text-xs uppercase tracking-wider ${t.textMuted} font-medium grid grid-cols-[2fr_80px_1fr_1fr_1fr_1fr_1fr_1fr_100px]`}>
+          <div className={`${t.bgPanelAlt} text-xs uppercase tracking-wider ${t.textMuted} font-medium grid grid-cols-[1.5fr_100px_80px_1fr_1fr_1fr_1fr_1fr_1fr_100px]`}>
             <div className="px-6 py-4">Наименование</div>
+            <div className="px-2 py-4">Производ.</div>
             <div className="px-6 py-4">Склад</div>
             <div className="px-6 py-4">Тип</div>
             <div className="px-6 py-4">Размеры</div>
@@ -324,7 +328,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
             <div className="px-6 py-4 text-right">Цена</div>
             <div className="px-6 py-4 text-center">Действия</div>
           </div>
-          
+
           {/* Virtualized Body */}
           {sortedProducts.length === 0 ? (
             <div className={`px-6 py-12 text-center ${t.textMuted}`}>
@@ -349,7 +353,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
                   return (
                     <div
                       key={product.id}
-                      className={`absolute top-0 left-0 w-full grid grid-cols-[2fr_80px_1fr_1fr_1fr_1fr_1fr_1fr_100px] items-center ${t.bgCardHover} transition-colors border-b ${t.border}`}
+                      className={`absolute top-0 left-0 w-full grid grid-cols-[1.5fr_100px_80px_1fr_1fr_1fr_1fr_1fr_1fr_100px] items-center ${t.bgCardHover} transition-colors border-b ${t.border}`}
                       style={{
                         height: `${ROW_HEIGHT}px`,
                         transform: `translateY(${virtualRow.start}px)`,
@@ -363,10 +367,13 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
                           </span>
                         )}
                       </div>
+                      <div className="px-2 text-xs font-semibold text-slate-500">
+                        {product.manufacturer || '-'}
+                      </div>
                       <div className="px-2">
                         <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${productWarehouse === WarehouseType.CLOUD
-                            ? 'bg-violet-500/10 text-violet-400 border border-violet-500/20'
-                            : 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20'
+                          ? 'bg-violet-500/10 text-violet-400 border border-violet-500/20'
+                          : 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20'
                           }`}>
                           {productWarehouse === WarehouseType.CLOUD ? '☁️ Обл' : '🏭 Осн'}
                         </span>
@@ -418,7 +425,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
               </div>
             </div>
           )}
-          
+
           {/* Footer Stats */}
           <div className={`px-6 py-3 ${t.bgPanelAlt} border-t ${t.border} text-sm ${t.textMuted}`}>
             Всего: {sortedProducts.length} товаров
@@ -465,8 +472,8 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
                               <div className="flex items-center gap-2 mb-1">
                                 <h3 className={`font-medium ${t.text} text-sm sm:text-base truncate`}>{product.name}</h3>
                                 <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold flex-shrink-0 ${productWarehouse === WarehouseType.CLOUD
-                                    ? 'bg-violet-500/10 text-violet-400 border border-violet-500/20'
-                                    : 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20'
+                                  ? 'bg-violet-500/10 text-violet-400 border border-violet-500/20'
+                                  : 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20'
                                   }`}>
                                   {productWarehouse === WarehouseType.CLOUD ? '☁️' : '🏭'}
                                 </span>
@@ -474,6 +481,14 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
                               {product.origin === 'import' && (
                                 <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-500/10 text-purple-400 border border-purple-500/20 mt-1">
                                   ИМПОРТ
+                                </span>
+                              )}
+                              {product.manufacturer && (
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded border ml-1 ${product.manufacturer === 'INSIGHT UNION' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
+                                    product.manufacturer === 'SOFMET' ? 'bg-orange-500/10 text-orange-400 border-orange-500/20' :
+                                      'bg-slate-500/10 text-slate-400 border-slate-500/20'
+                                  }`}>
+                                  {product.manufacturer}
                                 </span>
                               )}
                             </div>
@@ -597,6 +612,25 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
                     {!formData.name && (
                       <p className="text-xs text-red-400 mt-1">Обязательное поле</p>
                     )}
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className={`text-xs font-medium ${t.textMuted}`}>Производитель</label>
+                    <div className="relative">
+                      <select
+                        className={`w-full ${t.bgInput} border rounded-lg px-3 py-2 ${t.text} ${t.borderInput} ${t.focusRing} appearance-none cursor-pointer`}
+                        value={formData.manufacturer || 'INSIGHT UNION'}
+                        onChange={e => setFormData({ ...formData, manufacturer: e.target.value })}
+                      >
+                        <option value="INSIGHT UNION">INSIGHT UNION</option>
+                        <option value="SOFMET">SOFMET</option>
+                        <option value="TMZ">TMZ (ТМЗ)</option>
+                        <option value="BEKABAD">BEKABAD (Бекабад)</option>
+                        <option value="CHINA">CHINA (Китай)</option>
+                        <option value="RUSSIA">RUSSIA (Россия)</option>
+                      </select>
+                      <Building2 size={16} className={`absolute right-3 top-2.5 ${t.textMuted} pointer-events-none`} />
+                    </div>
                   </div>
 
                   <div className="space-y-1">

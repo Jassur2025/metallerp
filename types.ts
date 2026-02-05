@@ -104,6 +104,34 @@ export interface Client extends Versionable {
   // _version and updatedAt inherited from Versionable
 }
 
+// Supplier - поставщик
+export interface Supplier extends Versionable {
+  id: string;
+  name: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+
+  // Legal Entity Details
+  companyName?: string;
+  inn?: string; // ИНН
+  mfo?: string; // МФО банка
+  bankAccount?: string; // Расчётный счёт
+  bankName?: string;
+  addressLegal?: string; // Юридический адрес
+
+  // Contact Person
+  contactPerson?: string;
+  contactPhone?: string;
+
+  // Stats
+  totalPurchases?: number; // Общая сумма закупок
+  totalDebt?: number; // Наш долг поставщику
+
+  notes?: string;
+  isActive?: boolean; // Активный поставщик
+}
+
 export interface Product extends Versionable {
   id: string;
   name: string;
@@ -117,6 +145,7 @@ export interface Product extends Versionable {
   minStockLevel: number;
   origin?: 'import' | 'local'; // New field: Origin of the product
   warehouse?: WarehouseType; // Склад: Основной или Облачный
+  manufacturer?: string; // New field: Производитель (e.g. INSIGHT UNION, SOFMET)
   // _version and updatedAt inherited from Versionable
 }
 
@@ -247,16 +276,16 @@ export interface Purchase extends Versionable {
   status: 'completed';
   items: PurchaseItem[];
   overheads: PurchaseOverheads;
-  
+
   // Суммы в UZS (с НДС) - для кредиторки
   totalInvoiceAmountUZS: number; // Сумма счёта в сумах (с НДС)
   totalVatAmountUZS: number; // Сумма НДС в сумах
   totalWithoutVatUZS: number; // Сумма без НДС в сумах
-  
+
   // Суммы в USD (без НДС) - для ТМЦ
   totalInvoiceAmount: number; // Sum of items invoice prices (USD) - legacy, kept for compatibility
   totalLandedAmount: number; // Sum of landed costs (USD) - БЕЗ НДС
-  
+
   // Курс на момент закупки
   exchangeRate: number;
 
@@ -266,7 +295,7 @@ export interface Purchase extends Versionable {
   paymentStatus: 'paid' | 'unpaid' | 'partial';
   amountPaid: number; // Amount actually paid (UZS) - теперь в сумах
   amountPaidUSD: number; // Amount paid converted to USD
-  
+
   // Склад
   warehouse?: WarehouseType; // Склад на который оприходован товар
   // _version and updatedAt inherited from Versionable

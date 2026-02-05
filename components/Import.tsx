@@ -1,28 +1,78 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
     Purchase, Product, Transaction, ProductType, Unit,
-    PurchaseItem, PurchaseOverheads, AppSettings
+    PurchaseItem, PurchaseOverheads, AppSettings, Supplier
 } from '../types';
 import { IdGenerator } from '../utils/idGenerator';
-import { Plus, Trash2, Save, Calculator, Container, DollarSign, AlertTriangle, Truck, Scale, FileText, History, Wallet, CheckCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, Trash2, Save, Calculator, Container, DollarSign, AlertTriangle, Truck, Scale, FileText, History, Wallet, CheckCircle, ChevronDown, ChevronUp, Users, Cloud } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { PaymentSplitModal, PaymentDistribution } from './Sales/PaymentSplitModal';
+import { useSuppliers } from '../hooks/useSuppliers';
+import { usePurchases } from '../hooks/usePurchases';
 
 interface ImportProps {
     products: Product[];
     setProducts: (products: Product[]) => void;
     settings: AppSettings;
-    purchases: Purchase[];
-    onSavePurchases: (purchases: Purchase[]) => void;
+    purchases: Purchase[]; // Legacy - ignored, using Firebase
+    onSavePurchases: (purchases: Purchase[]) => void; // Legacy
     transactions: Transaction[];
     setTransactions: (t: Transaction[]) => void;
 }
 
-export const Import: React.FC<ImportProps> = ({ products, setProducts, settings, purchases, onSavePurchases, transactions, setTransactions }) => {
+export const Import: React.FC<ImportProps> = ({ products, setProducts, settings, purchases: legacyPurchases, onSavePurchases, transactions, setTransactions }) => {
     const toast = useToast();
+    
+    // Firebase hook for purchases
+    const {
+        purchases,
+        loading: purchasesLoading,
+        addPurchase,
+        updatePurchase,
+        migratePurchases
+    } = usePurchases({ realtime: true });
+    
+    // Firebase hook for suppliers
+    const { 
+        suppliers, 
+        loading: suppliersLoading, 
+        addSupplier, 
+        updateSupplier,
+        getOrCreateSupplier,
+        migrateFromPurchases 
+    } = useSuppliers({ realtime: true });
+    
     const [activeTab, setActiveTab] = useState<'new' | 'history'>('new');
     const [supplierName, setSupplierName] = useState('');
+    const [selectedSupplierId, setSelectedSupplierId] = useState<string>('');
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+
+    // Auto-migrate purchases from Google Sheets (one-time)
+    useEffect(() => {
+        if (!purchasesLoading && purchases.length === 0 && legacyPurchases.length > 0) {
+            console.log('[Import] Migrating purchases from Sheets:', legacyPurchases.length);
+            migratePurchases(legacyPurchases).then(count => {
+                if (count > 0) {
+                    toast.success(`Мигрировано ${count} закупок в Firebase`);
+                }
+            }).catch(err => {
+                console.error('Purchase migration error:', err);
+            });
+        }
+    }, [purchasesLoading, purchases.length, legacyPurchases.length, migratePurchases, toast]);
+
+    // Auto-migrate suppliers from purchases (one-time)
+    useEffect(() => {
+        if (!suppliersLoading && suppliers.length === 0 && purchases.length > 0) {
+            migrateFromPurchases(purchases).then(count => {
+                if (count > 0) {
+                    toast.success(`Мигрировано ${count} поставщиков в Firebase`);
+                }
+            }).catch(err => {
+                console.error('Supplier migration error:', err);
+            });
+        }
+    }, [suppliersLoading, suppliers.length, purchases.length, migrateFromPurchases, toast]);
 
     // Payment Logic
     const [paymentMethod, setPaymentMethod] = useState<'cash' | 'bank' | 'debt' | 'mixed'>('cash');
@@ -176,12 +226,32 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
     }, [totals.totalInvoiceValue, paymentMethod]);
 
 
-    const finalizePurchase = (distribution?: PaymentDistribution) => {
+    const finalizePurchase = async (distribution?: PaymentDistribution) => {
         if (!supplierName || cart.length === 0) return;
 
         const totalToPayUSD = totals.totalInvoiceValue;
         const paidUSD = distribution ? totalToPayUSD - distribution.remainingUSD : (paymentMethod === 'debt' ? 0 : totalToPayUSD);
         const status = distribution ? (distribution.isPaid ? 'paid' : (paidUSD > 0 ? 'partial' : 'unpaid')) : (paymentMethod === 'debt' ? 'unpaid' : 'paid');
+        const remainingDebt = totalToPayUSD - paidUSD;
+
+        // Get or create supplier in Firebase
+        let supplierId = selectedSupplierId;
+        try {
+            console.log('[Import] Creating supplier:', supplierName);
+            const supplier = await getOrCreateSupplier(supplierName);
+            supplierId = supplier.id;
+            console.log('[Import] Supplier created/found:', supplier);
+            
+            // Update supplier stats
+            await updateSupplier(supplier.id, {
+                totalPurchases: (supplier.totalPurchases || 0) + totalToPayUSD,
+                totalDebt: (supplier.totalDebt || 0) + remainingDebt
+            });
+            toast.success(`Поставщик "${supplierName}" сохранён в Firebase`);
+        } catch (err) {
+            console.error('Error updating supplier:', err);
+            toast.error(`Ошибка сохранения поставщика: ${err}`);
+        }
 
         const purchase: Purchase = {
             id: IdGenerator.purchase(),
@@ -197,8 +267,15 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
             amountPaid: paidUSD
         };
 
-        // 1. Save Purchase
-        onSavePurchases([...purchases, purchase]);
+        // 1. Save Purchase to Firebase
+        try {
+            await addPurchase(purchase);
+            console.log('[Import] Purchase saved to Firebase:', purchase.id);
+        } catch (err) {
+            console.error('Error saving purchase to Firebase:', err);
+            toast.error('Ошибка сохранения закупки');
+            return;
+        }
 
         // 2. Create Transactions
         const newTransactions: Transaction[] = [];
@@ -302,6 +379,7 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
         // Reset
         setCart([]);
         setSupplierName('');
+        setSelectedSupplierId('');
         setOverheads({ logistics: 0, customsDuty: 0, importVat: 0, other: 0 });
         setPaymentMethod('cash');
         toast.success('Закупка успешно проведена!');
@@ -326,7 +404,7 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
         setIsRepayModalOpen(true);
     };
 
-    const handleRepayDebt = () => {
+    const handleRepayDebt = async () => {
         if (!selectedPurchaseForRepayment || repaymentAmount <= 0) return;
 
         // 1. Create Transaction
@@ -354,7 +432,32 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
             }
             return p;
         });
-        onSavePurchases(updatedPurchases);
+        
+        // 2. Update Purchase in Firebase
+        const newAmountPaid = selectedPurchaseForRepayment.amountPaid + repaymentAmount;
+        const newStatus = newAmountPaid >= selectedPurchaseForRepayment.totalInvoiceAmount ? 'paid' : 'partial';
+        try {
+            await updatePurchase(selectedPurchaseForRepayment.id, {
+                amountPaid: newAmountPaid,
+                paymentStatus: newStatus
+            });
+        } catch (err) {
+            console.error('Error updating purchase:', err);
+        }
+
+        // 3. Update supplier debt in Firebase
+        try {
+            const supplier = suppliers.find(s => 
+                s.name.toLowerCase() === selectedPurchaseForRepayment.supplierName.toLowerCase()
+            );
+            if (supplier) {
+                await updateSupplier(supplier.id, {
+                    totalDebt: Math.max(0, (supplier.totalDebt || 0) - repaymentAmount)
+                });
+            }
+        } catch (err) {
+            console.error('Error updating supplier debt:', err);
+        }
 
         setIsRepayModalOpen(false);
         toast.success('Оплата поставщику проведена успешно!');
@@ -440,14 +543,39 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
                                 <FileText size={18} className="text-primary-500" /> Основное
                             </h3>
                             <div className="space-y-2">
-                                <label className="text-xs font-medium text-slate-400">Поставщик</label>
-                                <input
-                                    type="text"
-                                    className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-primary-500 outline-none"
-                                    placeholder="Название поставщика"
-                                    value={supplierName}
-                                    onChange={e => setSupplierName(e.target.value)}
-                                />
+                                <label className="text-xs font-medium text-slate-400 flex items-center gap-2">
+                                    <Users size={14} /> Поставщик
+                                    {suppliersLoading && <span className="text-primary-400 text-xs">(загрузка...)</span>}
+                                </label>
+                                <div className="relative">
+                                    <input
+                                        type="text"
+                                        list="suppliers-list"
+                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-primary-500 outline-none"
+                                        placeholder="Выберите или введите поставщика"
+                                        value={supplierName}
+                                        onChange={e => {
+                                            setSupplierName(e.target.value);
+                                            // Find matching supplier
+                                            const found = suppliers.find(s => 
+                                                s.name.toLowerCase() === e.target.value.toLowerCase()
+                                            );
+                                            setSelectedSupplierId(found?.id || '');
+                                        }}
+                                    />
+                                    <datalist id="suppliers-list">
+                                        {suppliers.map(s => (
+                                            <option key={s.id} value={s.name}>
+                                                {s.companyName || s.name}
+                                            </option>
+                                        ))}
+                                    </datalist>
+                                </div>
+                                {suppliers.length > 0 && (
+                                    <p className="text-xs text-slate-500">
+                                        {suppliers.length} поставщиков в базе
+                                    </p>
+                                )}
                             </div>
                             <div className="space-y-2">
                                 <label className="text-xs font-medium text-slate-400">Дата прихода</label>
@@ -729,7 +857,49 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
                     <div className="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-900/50">
                         <h3 className="font-bold text-white flex items-center gap-2">
                             <History size={18} className="text-slate-400" /> История закупок и Долги
+                            {purchasesLoading && <span className="text-xs text-primary-400">(загрузка...)</span>}
                         </h3>
+                        <div className="flex items-center gap-2">
+                            {/* Always show migration button */}
+                            <button
+                                onClick={async () => {
+                                    try {
+                                        toast.info('Миграция закупок в Firebase...');
+                                        
+                                        // Get purchases directly from the displayed data
+                                        const purchasesToMigrate = purchases.length > 0 ? purchases : legacyPurchases;
+                                        
+                                        if (purchasesToMigrate.length === 0) {
+                                            toast.warning('Нет данных для миграции');
+                                            return;
+                                        }
+                                        
+                                        console.log('[Import] Migrating purchases:', purchasesToMigrate.length);
+                                        const count = await migratePurchases(purchasesToMigrate);
+                                        
+                                        if (count > 0) {
+                                            toast.success(`Мигрировано ${count} закупок в Firebase!`);
+                                            // Also migrate suppliers
+                                            const supCount = await migrateFromPurchases(purchasesToMigrate);
+                                            if (supCount > 0) {
+                                                toast.success(`Мигрировано ${supCount} поставщиков!`);
+                                            }
+                                        } else {
+                                            toast.info('Все закупки уже в Firebase');
+                                        }
+                                    } catch (err) {
+                                        console.error('Migration error:', err);
+                                        toast.error('Ошибка миграции: ' + String(err));
+                                    }
+                                }}
+                                className="flex items-center gap-2 px-3 py-1.5 bg-primary-600 hover:bg-primary-500 text-white rounded-lg text-sm transition-colors"
+                            >
+                                <Cloud size={16} /> Мигрировать в Firebase
+                            </button>
+                            <span className="text-xs text-slate-500">
+                                Показано: {purchases.length} | Legacy: {legacyPurchases.length}
+                            </span>
+                        </div>
                     </div>
                     <div className="flex-1 overflow-y-auto">
                         <table className="w-full text-left text-sm">

@@ -1,0 +1,124 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------------------------------------------------------
+    // HELPER FUNCTIONS
+    // ---------------------------------------------------------
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isAdmin() {
+      // Check if user doc exists AND role is admin
+      return isAuthenticated() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+             getUserData().role == 'admin';
+    }
+
+    // ---------------------------------------------------------
+    // DEFAULT RULE: DENY ALL
+    // ---------------------------------------------------------
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ---------------------------------------------------------
+    // USERS COLLECTION
+    // ---------------------------------------------------------
+    match /users/{userId} {
+      // Users can read their own profile
+      allow read: if isAuthenticated();
+      
+      // Users can update their own profile, BUT cannot change their role
+      allow update: if isAuthenticated() && request.auth.uid == userId 
+                    && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']));
+      
+      // Admins can do anything with users
+      allow write: if isAdmin();
+    }
+
+    // ---------------------------------------------------------
+    // BUSINESS DATA (Protected)
+    // ---------------------------------------------------------
+    
+    // Products: Catalog is managed by Admins only
+    match /products/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+    
+    // Clients: Managed by Admins (sensitive data)
+    match /clients/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // Settings: Only Admins change global config
+    match /settings/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+    
+    // Fixed Assets: Accounting data, Admin only
+    match /fixedAssets/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // Employees: HR data, Admin only
+    match /employees/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // ---------------------------------------------------------
+    // OPERATIONAL DATA (Less strict, or strictly Admin for now)
+    // ---------------------------------------------------------
+
+    // Orders: Validated creation could be allowed for 'sales' role later.
+    // For MIGRATION SAFETY phase, we restrict large edits to Admins.
+    match /orders/{docId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated(); // Allow creating orders
+      allow update: if isAuthenticated(); // Allow updating orders
+      allow delete: if isAdmin();         // prevent deletion
+    }
+    
+    match /workflowOrders/{docId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated();
+      allow delete: if isAdmin();
+    }
+
+    match /purchases/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin(); // Procurement is sensitive
+    }
+
+    match /expenses/{docId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated(); // Allow editing own expenses?
+      allow delete: if isAdmin();
+    }
+
+    match /transactions/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin(); // Financial ledger - strict control
+    }
+    
+    match /journalEvents/{docId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated(); // System logs events
+      allow update, delete: if false;     // Audit log is immutable
+    }
+
+  }
+}

@@ -83,13 +83,13 @@ export function setConflictHandler<T>(handler: ConflictHandler<T> | null): void 
 
 function notifyConflicts<T>(conflicts: Array<{ local: T; remote: T }>, entityType: string): void {
   if (conflicts.length === 0) return;
-  
+
   warnDev(`⚠️ Обнаружены конфликты версий в ${entityType}:`, conflicts.map(c => ({
     id: (c.local as { id: string }).id,
     localVersion: (c.local as { _version?: number })._version,
     remoteVersion: (c.remote as { _version?: number })._version
   })));
-  
+
   if (globalConflictHandler) {
     globalConflictHandler(conflicts);
   }
@@ -119,129 +119,51 @@ async function getAll<T>(
 const MAX_CONFLICT_RETRIES = 3;
 
 /**
- * Безопасное сохранение с защитой от race condition и версионированием.
+ * Безопасное сохранение: Экспорт данных из Firebase в Google Sheets.
  * 
- * Алгоритм:
- * 1. Блокировка записи (мьютекс) - только один процесс пишет в таблицу
- * 2. Читаем актуальные данные из Google Sheets
- * 3. Merge с учётом версий (_version) - новые версии побеждают
- * 4. Перед записью проверяем - не изменились ли данные
- * 5. Если конфликт версий - уведомляем пользователя
- * 6. Записываем результат с инкрементом версий
+ * Алгоритм (One-Way Sync):
+ * 1. Блокировка записи (мьютекс) - предотвращаем параллельные записи.
+ * 2. Полная перезапись диапазона данными из приложения.
+ * 
+ * ВАЖНО: Мы больше НЕ читаем данные из Sheets для слияния. Firebase - единственный источник правды.
  */
-async function saveAllWithMerge<T extends { id: string; updatedAt?: string; _version?: number }>(
+async function saveAllWithMerge<T>(
   cacheKey: string,
   accessToken: string,
-  readRange: string,
+  readRange: string, // Больше не используется для чтения, только как идентификатор
   clearA1: string,
   writeA1: string,
   localItems: T[],
-  mapRow: (row: unknown[]) => T,
+  mapRow: (row: unknown[]) => T, // Больше не используется
   mapToRow: (t: T) => unknown[]
 ): Promise<void> {
   const spreadsheetId = getSpreadsheetId();
   if (!spreadsheetId) throw new Error('Spreadsheet ID not set');
 
-  // Используем мьютекс для предотвращения одновременной записи в одну таблицу
+  // Используем мьютекс для предотвращения одновременной записи
   return withWriteLock(cacheKey, async () => {
-    let retries = 0;
-    
-    while (retries < MAX_CONFLICT_RETRIES) {
-      // 1. Читаем актуальные данные
-      let remoteItems: T[] = [];
-      try {
-        const data = await fetchSheets(accessToken, readRange);
-        remoteItems = filterDataRows(data.values || []).map((r) => mapRow(r as unknown[]));
-      } catch (e) {
-        warnDev(`⚠️ Could not fetch remote ${cacheKey}, proceeding with local only`, e);
-      }
+    try {
+      logDev(`💾 Exporting ${cacheKey} to Sheets (Count: ${localItems.length})...`);
 
-      const initialHash = computeDataHash(remoteItems);
+      const dataToWrite = localItems.map(mapToRow);
 
-      // 2. Merge с учётом версий - детектируем конфликты
-      const { merged, conflicts } = mergeByIdWithVersion(localItems, remoteItems);
-      
-      // Уведомляем о конфликтах версий (remote победил)
-      if (conflicts.length > 0) {
-        notifyConflicts(conflicts, cacheKey);
-        logDev(`⚠️ ${cacheKey}: ${conflicts.length} записей перезаписаны более новыми версиями с сервера`);
-      }
-      
-      logDev(`💾 Saving ${cacheKey}: merged=${merged.length} local=${localItems.length} remote=${remoteItems.length} conflicts=${conflicts.length} (attempt ${retries + 1})`);
+      // 1. Очищаем старые данные (чтобы не осталось "хвостов" если записей стало меньше)
+      // ВАЖНО: Очищаем диапазон с запасом или используем динамическую очистку если возможно
+      await clearRange(accessToken, clearA1);
 
-      // 3. Перед записью - проверяем не изменились ли данные (double-check)
-      let currentRemote: T[] = [];
-      try {
-        const checkData = await fetchSheets(accessToken, readRange);
-        currentRemote = filterDataRows(checkData.values || []).map((r) => mapRow(r as unknown[]));
-      } catch (e) {
-        // Если не удалось перечитать - пишем как есть
-        warnDev(`⚠️ Could not re-check ${cacheKey} before write`, e);
-      }
-
-      const currentHash = computeDataHash(currentRemote);
-
-      // 4. Если данные изменились между чтением и записью - conflict!
-      if (initialHash !== currentHash && currentRemote.length > 0) {
-        retries++;
-        warnDev(`⚠️ Конфликт записи ${cacheKey}! Данные изменились другим пользователем. Повтор merge (попытка ${retries}/${MAX_CONFLICT_RETRIES})`);
-        
-        // Повторяем merge с учётом версий
-        const { merged: reMerged, conflicts: reConflicts } = mergeByIdWithVersion(localItems, currentRemote);
-        
-        if (reConflicts.length > 0) {
-          notifyConflicts(reConflicts, cacheKey);
-        }
-        
-        if (reMerged.length === 0) {
-          await clearRange(accessToken, clearA1);
-          cacheService.invalidate(cacheKey);
-          return;
-        }
-
-        const dataToWrite = reMerged.map(mapToRow);
-        
-        // Добавляем пустые строки если нужно
-        if (currentRemote.length > reMerged.length) {
-          const extraRowsCount = currentRemote.length - reMerged.length + 5;
-          const columnsCount = dataToWrite[0].length;
-          const emptyRow = new Array(columnsCount).fill('');
-          for (let i = 0; i < extraRowsCount; i++) {
-            dataToWrite.push(emptyRow);
-          }
-        }
-
-        await writeRange(accessToken, writeA1, dataToWrite);
-        cacheService.invalidate(cacheKey);
-        logDev(`✅ ${cacheKey} сохранён после разрешения конфликта`);
-        return;
-      }
-
-      // 5. Нет конфликта - пишем
-      if (merged.length === 0) {
-        await clearRange(accessToken, clearA1);
-      } else {
-        const dataToWrite = merged.map(mapToRow);
-
-        if (remoteItems.length > merged.length) {
-          const extraRowsCount = remoteItems.length - merged.length + 5;
-          const columnsCount = dataToWrite[0].length;
-          const emptyRow = new Array(columnsCount).fill('');
-          for (let i = 0; i < extraRowsCount; i++) {
-            dataToWrite.push(emptyRow);
-          }
-        }
-
+      // 2. Если есть данные - пишем
+      if (dataToWrite.length > 0) {
         await writeRange(accessToken, writeA1, dataToWrite);
       }
-      
+
+      // 3. Инвалидируем кэш (хотя он теперь используется только для чтения при старте, если нужно)
       cacheService.invalidate(cacheKey);
-      logDev(`✅ ${cacheKey} успешно сохранён`);
-      return;
-    }
 
-    // Исчерпаны все попытки
-    throw new Error(`Не удалось сохранить ${cacheKey}: слишком много конфликтов записи. Попробуйте ещё раз.`);
+      logDev(`✅ ${cacheKey} успешно экспортирован в Google Sheets`);
+    } catch (e) {
+      errorDev(`Ошибка экспорта ${cacheKey}`, e);
+      throw new Error(`Не удалось экспортировать ${cacheKey} в Google Sheets. Проверьте соединение.`);
+    }
   });
 }
 
@@ -446,7 +368,7 @@ export const sheetsService = {
     ];
 
     const errors: string[] = [];
-    
+
     for (const range of ranges) {
       try {
         await clearRange(accessToken, range);

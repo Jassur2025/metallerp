@@ -1,23 +1,24 @@
 import { initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider, browserLocalPersistence, setPersistence } from "firebase/auth";
-import { 
-  getFirestore, 
-  collection, 
-  doc, 
-  getDocs, 
-  getDoc, 
-  setDoc, 
+import {
+  getFirestore,
+  collection,
+  doc,
+  getDocs,
+  getDoc,
+  setDoc,
   addDoc,
-  updateDoc, 
-  deleteDoc, 
-  query, 
-  where, 
+  updateDoc,
+  deleteDoc,
+  query,
+  where,
   orderBy,
   onSnapshot,
   writeBatch,
   runTransaction,
   Timestamp,
-  enableIndexedDbPersistence
+  enableIndexedDbPersistence,
+  limit
 } from "firebase/firestore";
 
 // Get environment variables - use fallback if not set
@@ -53,23 +54,24 @@ enableIndexedDbPersistence(db).catch((err) => {
 });
 
 // Export Firestore utilities
-export { 
-  collection, 
-  doc, 
-  getDocs, 
-  getDoc, 
-  setDoc, 
+export {
+  collection,
+  doc,
+  getDocs,
+  getDoc,
+  setDoc,
   addDoc,
-  updateDoc, 
-  deleteDoc, 
-  query, 
-  where, 
+  updateDoc,
+  deleteDoc,
+  query,
+  where,
   orderBy,
   onSnapshot,
   writeBatch,
   runTransaction,
   Timestamp,
-  enableIndexedDbPersistence
+  enableIndexedDbPersistence,
+  limit
 };
 
 // Устанавливаем persistence для мобильных устройств

@@ -47,13 +47,11 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ToastProvider, useToast } from './contexts/ToastContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { Product, Order, AppSettings, Expense, FixedAsset, Client, Employee, Transaction, Purchase, JournalEvent, WorkflowOrder } from './types';
-import { sheetsService } from './services/sheetsService';
 import { SUPER_ADMIN_EMAILS, IS_DEV_MODE } from './constants';
 import { getErrorMessage } from './utils/errorHandler';
 import { validateAccessToken, isTokenExpiredError, logTokenStatus } from './utils/tokenHelper';
 import { telegramService } from './services/telegramService';
 import { calculateBaseTotals } from './utils/finance';
-import { useSaveHandler, createSaveHandlerFactory } from './hooks/useSaveHandler';
 import { useConflictHandler } from './hooks/useConflictHandler';
 
 const isDev = import.meta.env.DEV;
@@ -122,14 +120,23 @@ const defaultSettings: AppSettings = {
 };
 
 import { useOrders } from './hooks/useOrders';
+import { usePurchases } from './hooks/usePurchases';
+import { useProducts } from './hooks/useProducts';
+import { useTransactions } from './hooks/useTransactions';
+import { useExpenses } from './hooks/useExpenses';
+import { useClients } from './hooks/useClients';
+import { useEmployees } from './hooks/useEmployees';
+import { useFixedAssets } from './hooks/useFixedAssets';
+import { useWorkflowOrders } from './hooks/useWorkflowOrders';
+import { useJournal } from './hooks/useJournal';
 
 const AppContent: React.FC = () => {
   const { user, logout, accessToken, refreshAccessToken } = useAuth();
   const toast = useToast();
-  
+
   // Настраиваем глобальный обработчик конфликтов версий
   useConflictHandler();
-  
+
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(() => {
     try {
@@ -146,51 +153,153 @@ const AppContent: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   // Data State
-  const [products, setProducts] = useState<Product[]>([]);
+  // Use Firebase Hook for Products
+  const {
+    products,
+    addProduct,
+    updateProduct,
+    migrateProducts: migrateLegacyProducts
+  } = useProducts();
+
   // Use Firebase Hook for Orders
-  const { 
-      orders, 
-      setOrders,
-      loading: ordersLoading, 
-      addOrder, 
-      updateOrder, 
-      migrateOrders: migrateLegacyOrders 
+  const {
+    orders,
+    setOrders,
+    loading: ordersLoading,
+    addOrder,
+    updateOrder,
+    migrateOrders: migrateLegacyOrders
   } = useOrders();
   // const [orders, setOrders] = useState<Order[]>([]); // Replaced by hook
 
-  const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [fixedAssets, setFixedAssets] = useState<FixedAsset[]>([]);
-  const [clients, setClients] = useState<Client[]>([]);
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [purchases, setPurchases] = useState<Purchase[]>([]);
-  const [journalEvents, setJournalEvents] = useState<JournalEvent[]>([]);
-  const [workflowOrders, setWorkflowOrders] = useState<WorkflowOrder[]>([]);
+  // Use Firebase Hook for Expenses
+  const {
+    expenses,
+    addExpense,
+    migrateLegacyExpenses
+  } = useExpenses();
+  // const [expenses, setExpenses] = useState<Expense[]>([]); // Replaced by hook
+
+  // Use Firebase Hook for Fixed Assets
+  const {
+    fixedAssets,
+    addAsset,
+    updateAsset,
+    migrateAssets: migrateLegacyAssets
+  } = useFixedAssets();
+  // const [fixedAssets, setFixedAssets] = useState<FixedAsset[]>([]); // Replaced by hook
+
+  // Use Firebase Hook for Clients
+  const {
+    clients,
+    addClient,
+    updateClient,
+    migrateClients: migrateLegacyClients
+  } = useClients();
+  // const [clients, setClients] = useState<Client[]>([]); // Replaced by hook
+
+  // Use Firebase Hook for Employees
+  const {
+    employees,
+    addEmployee,
+    updateEmployee,
+    migrateEmployees: migrateLegacyEmployees
+  } = useEmployees();
+  // const [employees, setEmployees] = useState<Employee[]>([]); // Replaced by hook
+  // Use Firebase Hook for Transactions
+  const {
+    transactions,
+    addTransaction,
+    updateTransaction,
+    migrateTransactions: migrateLegacyTransactions
+  } = useTransactions();
+  // const [transactions, setTransactions] = useState<Transaction[]>([]); // Replaced by hook
+
+  // Use Firebase Hook for Purchases
+  const {
+    purchases,
+    setPurchases, // Optimistic updates
+    addPurchase,
+    updatePurchase,
+    deletePurchase, // We might need to expose this if Procurement supports deletion
+    migratePurchases: migrateLegacyPurchases
+  } = usePurchases();
+  // const [purchases, setPurchases] = useState<Purchase[]>([]); // Replaced by hook
+  // const [purchases, setPurchases] = useState<Purchase[]>([]); // Replaced by hook
+  // const [journalEvents, setJournalEvents] = useState<JournalEvent[]>([]); // Replaced by hook
+
+  // Use Firebase Hook for Journal
+  const {
+    journalEvents,
+    addEvent: addJournalEvent,
+    migrateEvents: migrateLegacyJournalEvents
+  } = useJournal();
+
+  // const [fixedAssets, setFixedAssets] = useState<FixedAsset[]>([]); // Replaced by hook
+  // const [fixedAssets, setFixedAssets] = useState<FixedAsset[]>([]); // Replaced by hook
+
+  // Use Firebase Hook for Workflow Orders
+  const {
+    workflowOrders,
+    addWorkflowOrder,
+    updateWorkflowOrder,
+    migrateWorkflowOrders: migrateLegacyWorkflowOrders
+  } = useWorkflowOrders();
+  // const [workflowOrders, setWorkflowOrders] = useState<WorkflowOrder[]>([]);
 
   // Initialize Save Handlers using the universal hook
-  const saveHandlerFactory = createSaveHandlerFactory(
-    () => accessToken,
-    refreshAccessToken
-  );
+  // const [workflowOrders, setWorkflowOrders] = useState<WorkflowOrder[]>([]);
 
-  const saveProductsHandler = saveHandlerFactory<Product>('Товары', (data) => sheetsService.saveAllProducts(accessToken!, data));
-  const saveOrdersHandler = async (newOrders: Order[]) => {
-      // Legacy handler replacement
-      // If the component tries to save All orders, we might ignore or adapt
-      // Ideally components should use addOrder/updateOrder instead of saving the whole array
-      console.warn('Full orders save requested - ignored in Firebase mode');
-      // We could use this to trigger migration if needed?
-      return true; 
+  const handleSaveProducts = async (newProducts: Product[]) => {
+    // Firebase Product Sync Adapter
+    // Compare newProducts with current products to find Add/Update
+    const prevIds = new Set(products.map(p => p.id));
+    const addedProducts = newProducts.filter(p => !prevIds.has(p.id));
+
+    // 1. Handle New Products
+    for (const product of addedProducts) {
+      await addProduct(product);
+    }
+
+    // 2. Handle Updates
+    if (addedProducts.length === 0) {
+      for (const newProduct of newProducts) {
+        const oldProduct = products.find(p => p.id === newProduct.id);
+        if (oldProduct) {
+          // Check for meaningful changes
+          if (JSON.stringify(oldProduct) !== JSON.stringify(newProduct)) {
+            await updateProduct(newProduct.id, newProduct);
+          }
+        }
+      }
+    }
+
+    return true;
   };
-  // const saveOrdersHandler = saveHandlerFactory<Order>('Заказы', (data) => sheetsService.saveAllOrders(accessToken!, data));
-  const saveExpensesHandler = saveHandlerFactory<Expense>('Расходы', (data) => sheetsService.saveAllExpenses(accessToken!, data));
-  const saveFixedAssetsHandler = saveHandlerFactory<FixedAsset>('Основные средства', (data) => sheetsService.saveAllFixedAssets(accessToken!, data));
-  const saveClientsHandler = saveHandlerFactory<Client>('Клиенты', (data) => sheetsService.saveAllClients(accessToken!, data));
-  const saveEmployeesHandler = saveHandlerFactory<Employee>('Сотрудники', (data) => sheetsService.saveAllEmployees(accessToken!, data));
-  const saveTransactionsHandler = saveHandlerFactory<Transaction>('Транзакции', (data) => sheetsService.saveAllTransactions(accessToken!, data));
-  const savePurchasesHandler = saveHandlerFactory<Purchase>('Закупки', (data) => sheetsService.saveAllPurchases(accessToken!, data));
-  const saveWorkflowOrdersHandler = saveHandlerFactory<WorkflowOrder>('Предзаказы', (data) => sheetsService.saveAllWorkflowOrders(accessToken!, data));
-  const saveJournalEventsHandler = saveHandlerFactory<JournalEvent>('Журнал', (data) => sheetsService.addJournalEvent(accessToken!, data[0]));
+  const saveOrdersHandler = async (newOrders: Order[]) => {
+    console.warn('Full orders save requested - ignored in Firebase mode');
+    return true;
+  };
+
+  const handleSaveTransactions = async (newTransactions: Transaction[]) => {
+    // Firebase Adapter
+    // Similar to products, we key off IDs.
+    const prevIds = new Set(transactions.map(t => t.id));
+    const added = newTransactions.filter(t => !prevIds.has(t.id));
+
+    for (const tx of added) {
+      await addTransaction(tx);
+    }
+    return true;
+  };
+
+  // Legacy Save Handlers (Removed)
+  const saveExpensesHandler = async (...args: any[]) => true;
+  const saveFixedAssetsHandler = async (...args: any[]) => true;
+  const saveClientsHandler = async (...args: any[]) => true;
+  const saveEmployeesHandler = async (...args: any[]) => true;
+  const saveWorkflowOrdersHandler = async (...args: any[]) => true;
+  const saveJournalEventsHandler = async (...args: any[]) => true;
   const [settings, setSettings] = useState<AppSettings>(() => {
     try {
       const saved = localStorage.getItem('metal_erp_settings');
@@ -235,10 +344,8 @@ const AppContent: React.FC = () => {
 
   // Load Data on Mount
   useEffect(() => {
-    if (user && accessToken) {
-      loadData();
-    }
-  }, [user, accessToken]);
+    // Firebase hooks load data automatically
+  }, []);
 
   // Save Settings
   useEffect(() => {
@@ -255,6 +362,7 @@ const AppContent: React.FC = () => {
   }, [isSidebarOpen]);
 
   // Recalculate client debt based on transactions
+  /* Legacy function - kept for reference if needed
   const recalculateClientDebts = (clients: Client[], transactions: Transaction[], orders: Order[]): Client[] => {
     return clients.map(client => {
       let calculatedDebt = 0;
@@ -265,19 +373,19 @@ const AppContent: React.FC = () => {
       // (debt, unpaid, partial - любые заказы где есть остаток)
       const clientOrders = orders.filter(o => {
         const orderClientName = (o.customerName || '').toLowerCase().trim();
-        const matchesClient = o.clientId === client.id || 
-                orderClientName === clientName ||
-                (clientName && orderClientName.includes(clientName)) ||
-                (clientName && clientName.includes(orderClientName)) ||
-                (companyName && orderClientName.includes(companyName)) ||
-                (companyName && companyName.includes(orderClientName));
-        
+        const matchesClient = o.clientId === client.id ||
+          orderClientName === clientName ||
+          (clientName && orderClientName.includes(clientName)) ||
+          (clientName && clientName.includes(orderClientName)) ||
+          (companyName && orderClientName.includes(companyName)) ||
+          (companyName && companyName.includes(orderClientName));
+
         // Заказ в долг если: явно debt/unpaid/partial ИЛИ есть остаток (totalAmount > amountPaid)
         const hasUnpaidBalance = ((o.totalAmount || 0) - (o.amountPaid || 0)) > 0.01;
-        const isDebtPayment = o.paymentMethod === 'debt' || 
-                              o.paymentStatus === 'unpaid' || 
-                              o.paymentStatus === 'partial';
-        
+        const isDebtPayment = o.paymentMethod === 'debt' ||
+          o.paymentStatus === 'unpaid' ||
+          o.paymentStatus === 'partial';
+
         return matchesClient && (isDebtPayment || hasUnpaidBalance);
       });
       const clientOrderIds = clientOrders.map(o => o.id.toLowerCase());
@@ -299,7 +407,7 @@ const AppContent: React.FC = () => {
           (clientName && desc.includes(clientName)) ||
           (companyName && desc.includes(companyName));
         // Исключаем если это долг по заказу который уже посчитан
-        const relatedToExistingOrder = clientOrderIds.some(orderId => 
+        const relatedToExistingOrder = clientOrderIds.some(orderId =>
           desc.includes(orderId) || t.relatedId?.toLowerCase() === orderId
         );
         return matchesClient && !relatedToExistingOrder;
@@ -316,13 +424,13 @@ const AppContent: React.FC = () => {
         const desc = (t.description || '').toLowerCase();
         const relatedIdLower = (t.relatedId || '').toLowerCase();
         const isPayment = t.type === 'client_payment' || (t.type === 'income' && desc.includes('погашение'));
-        
+
         // Погашение относится к клиенту напрямую (relatedId = clientId)
         // и НЕ к конкретному заказу (иначе amountPaid заказа уже учтено)
         const isForClientDirectly = t.relatedId === client.id;
         const isForDebtObligation = debtTxIds.includes(relatedIdLower);
         const isForKnownOrder = clientOrderIds.includes(relatedIdLower);
-        
+
         // Учитываем только если:
         // 1. Связано с клиентом напрямую
         // 2. ИЛИ связано с debt_obligation транзакцией
@@ -356,6 +464,112 @@ const AppContent: React.FC = () => {
       };
     });
   };
+  */
+
+  // Real-time Debt Recalculation Effect
+  useEffect(() => {
+    if (clients.length === 0) return;
+
+    // We process clients one by one or in batches if performance implementation is needed
+    // For now, let's just check if we need to update any client
+    const checkDebts = async () => {
+      let updatesCount = 0;
+
+      for (const client of clients) {
+        let calculatedDebt = 0;
+        const clientName = (client.name || '').toLowerCase().trim();
+        const companyName = (client.companyName || '').toLowerCase().trim();
+
+        const clientOrders = orders.filter(o => {
+          const orderClientName = (o.customerName || '').toLowerCase().trim();
+          const matchesClient = o.clientId === client.id ||
+            orderClientName === clientName ||
+            (clientName && orderClientName.includes(clientName)) ||
+            (clientName && clientName.includes(orderClientName)) ||
+            (companyName && orderClientName.includes(companyName)) ||
+            (companyName && companyName.includes(orderClientName));
+
+          const hasUnpaidBalance = ((o.totalAmount || 0) - (o.amountPaid || 0)) > 0.01;
+          const isDebtPayment = o.paymentMethod === 'debt' ||
+            o.paymentStatus === 'unpaid' ||
+            o.paymentStatus === 'partial';
+
+          return matchesClient && (isDebtPayment || hasUnpaidBalance);
+        });
+        const clientOrderIds = clientOrders.map(o => o.id.toLowerCase());
+
+        clientOrders.forEach(order => {
+          const paidUSD = order.amountPaid || 0;
+          const openAmount = (order.totalAmount || 0) - paidUSD;
+          calculatedDebt += Math.max(0, openAmount);
+        });
+
+        const debtTransactions = transactions.filter(t => {
+          if (t.type !== 'debt_obligation') return false;
+          const desc = (t.description || '').toLowerCase();
+          const matchesClient = t.relatedId === client.id ||
+            (clientName && desc.includes(clientName)) ||
+            (companyName && desc.includes(companyName));
+          const relatedToExistingOrder = clientOrderIds.some(orderId =>
+            desc.includes(orderId) || t.relatedId?.toLowerCase() === orderId
+          );
+          return matchesClient && !relatedToExistingOrder;
+        });
+        debtTransactions.forEach(t => {
+          calculatedDebt += t.amount;
+        });
+
+        const debtTxIds = debtTransactions.map(t => t.id.toLowerCase());
+        const paymentTransactions = transactions.filter(t => {
+          const desc = (t.description || '').toLowerCase();
+          const relatedIdLower = (t.relatedId || '').toLowerCase();
+          const isPayment = t.type === 'client_payment' || (t.type === 'income' && desc.includes('погашение'));
+
+          const isForClientDirectly = t.relatedId === client.id;
+          const isForDebtObligation = debtTxIds.includes(relatedIdLower);
+          const isForKnownOrder = clientOrderIds.includes(relatedIdLower);
+
+          return isPayment && (isForClientDirectly || isForDebtObligation) && !isForKnownOrder;
+        });
+        paymentTransactions.forEach(t => {
+          let amountUSD = t.amount;
+          if (t.currency === 'UZS' && t.exchangeRate && t.exchangeRate > 0) {
+            amountUSD = t.amount / t.exchangeRate;
+          }
+          calculatedDebt -= amountUSD;
+        });
+
+        const returnTransactions = transactions.filter(t =>
+          t.type === 'client_return' && (t as any).method === 'debt' && t.relatedId === client.id
+        );
+        returnTransactions.forEach(t => {
+          let amountUSD = t.amount;
+          if (t.currency === 'UZS' && t.exchangeRate && t.exchangeRate > 0) {
+            amountUSD = t.amount / t.exchangeRate;
+          }
+          calculatedDebt -= amountUSD;
+        });
+
+        const finalDebt = Math.max(0, calculatedDebt);
+
+        // If debt differs significantly (> 0.01), update it in Firebase
+        if (Math.abs(finalDebt - (client.totalDebt || 0)) > 0.01) {
+          // Update Firebase
+          await updateClient(client.id, { totalDebt: finalDebt });
+          updatesCount++;
+        }
+      }
+
+      if (updatesCount > 0) {
+        logDev(`📊 Updated debt for ${updatesCount} clients`);
+      }
+    };
+
+    // Debounce the check to avoid spamming updates during rapid changes
+    const timeoutId = setTimeout(checkDebts, 2000);
+    return () => clearTimeout(timeoutId);
+
+  }, [clients.length, orders, transactions, clients, updateClient]); // Only re-run if counts change or specific deps
 
   // Вычисление балансов кассы
   const balances = React.useMemo(() => {
@@ -364,6 +578,9 @@ const AppContent: React.FC = () => {
 
   // Combine journal events with auto-corrections for the Journal view
   const allJournalEvents = React.useMemo(() => {
+    // Ensure journalEvents is an array before spreading
+    const safeEvents = Array.isArray(journalEvents) ? journalEvents : [];
+
     const correctionEvents = (balances.corrections || []).map(c => ({
       id: `auto-fix-${c.id}`,
       date: new Date().toISOString(), // Using current date as placeholder
@@ -374,223 +591,21 @@ const AppContent: React.FC = () => {
       employeeName: 'System Auto-Fix'
     }));
 
-    return [...journalEvents, ...correctionEvents as any[]].sort((a, b) =>
+    return [...safeEvents, ...correctionEvents as any[]].sort((a, b) =>
       new Date(b.date).getTime() - new Date(a.date).getTime()
     );
   }, [journalEvents, balances.corrections]);
 
   const loadData = async () => {
-    if (!accessToken) return;
-    setIsLoading(true);
-    setError(null);
-
-    // Сохраняем текущие данные на случай ошибки
-    const currentData = {
-      products,
-      // orders теперь в Firebase
-      expenses,
-      fixedAssets,
-      clients,
-      employees,
-      transactions,
-      purchases,
-      journalEvents,
-      workflowOrders
-    };
-
-    try {
-      await sheetsService.initialize(accessToken);
-
-      // Загружаем данные с обработкой ошибок для каждого типа отдельно
-      const loadWithFallback = async <T,>(
-        loader: () => Promise<T[]>,
-        current: T[],
-        name: string
-      ): Promise<T[]> => {
-        try {
-          const loaded = await loader();
-          // ВАЖНО: Всегда используем загруженные данные, если загрузка прошла успешно
-          // Это гарантирует синхронизацию между устройствами
-          // Если загруженные данные пустые - это нормально (таблица может быть пустой)
-          logDev(`✅ ${name}: загружено ${loaded.length} записей из Google Sheets`);
-          return loaded;
-        } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          const isAuthError = errorMessage.includes('UNAUTHENTICATED') ||
-            errorMessage.includes('401') ||
-            errorMessage.includes('токен доступа истек');
-
-          errorDev(`❌ Ошибка загрузки ${name}: `, error);
-
-          // При ошибке аутентификации НЕ заменяем данные на пустой массив
-          // Это критично для защиты от потери данных при истечении токена
-          if (isAuthError && current.length > 0) {
-            warnDev(`🔒 ${name}: ошибка аутентификации, сохраняем текущие данные(${current.length} записей)`);
-            return current;
-          }
-
-          // При других ошибках возвращаем текущие данные, если они есть
-          // Это защищает от потери данных при временных проблемах с сетью
-          if (current.length > 0) {
-            logDev(`📦 ${name}: используем текущие данные(${current.length} записей) из - за ошибки загрузки`);
-            return current;
-          }
-
-          // Если текущих данных нет и произошла ошибка - возвращаем пустой массив
-          // Это нормально для первого входа, когда данных еще нет
-          warnDev(`⚠️ ${name}: нет данных и ошибка загрузки, возвращаем пустой массив`);
-          return [];
-        }
-      };
-
-      const [loadedProducts, loadedExpenses, loadedAssets, loadedClients, loadedEmployees, loadedTransactions, loadedPurchases, loadedJournalEvents, loadedWorkflowOrders] = await Promise.allSettled([
-        loadWithFallback(() => sheetsService.getProducts(accessToken), currentData.products, 'Products'),
-        // Orders are handled via useOrders hook
-        loadWithFallback(() => sheetsService.getExpenses(accessToken), currentData.expenses, 'Expenses'),
-        loadWithFallback(() => sheetsService.getFixedAssets(accessToken), currentData.fixedAssets, 'FixedAssets'),
-        loadWithFallback(() => sheetsService.getClients(accessToken), currentData.clients, 'Clients'),
-        loadWithFallback(() => sheetsService.getEmployees(accessToken), currentData.employees, 'Employees'),
-        loadWithFallback(() => sheetsService.getTransactions(accessToken), currentData.transactions, 'Transactions'),
-        loadWithFallback(() => sheetsService.getPurchases(accessToken), currentData.purchases, 'Purchases'),
-        loadWithFallback(() => sheetsService.getJournalEvents(accessToken), currentData.journalEvents, 'JournalEvents'),
-        loadWithFallback(() => sheetsService.getWorkflowOrders(accessToken), currentData.workflowOrders, 'WorkflowOrders')
-      ]);
-
-      // Обрабатываем результаты Promise.allSettled
-      const getResult = <T,>(result: PromiseSettledResult<T[]>, current: T[], name: string): T[] => {
-        if (result.status === 'fulfilled') {
-          // Всегда используем успешно загруженные данные для синхронизации между устройствами
-          return result.value;
-        }
-        errorDev(`❌ Ошибка загрузки ${name}: `, result.reason);
-        // При ошибке используем текущие данные, если они есть
-        // Это защищает от потери данных при временных проблемах
-        if (current.length > 0) {
-          logDev(`📦 ${name}: используем текущие данные(${current.length} записей) из - за ошибки`);
-          return current;
-        }
-        // Если данных нет - возвращаем пустой массив
-        return [];
-      };
-
-      const finalProducts = getResult(loadedProducts, currentData.products, 'Products');
-      // const finalOrders = getResult(loadedOrders, currentData.orders, 'Orders');
-      const finalExpenses = getResult(loadedExpenses, currentData.expenses, 'Expenses');
-      const finalAssets = getResult(loadedAssets, currentData.fixedAssets, 'FixedAssets');
-      const finalClients = getResult(loadedClients, currentData.clients, 'Clients');
-      const finalEmployees = getResult(loadedEmployees, currentData.employees, 'Employees');
-      const finalTransactions = getResult(loadedTransactions, currentData.transactions, 'Transactions');
-      const finalPurchases = getResult(loadedPurchases, currentData.purchases, 'Purchases');
-      const finalJournalEvents = getResult(loadedJournalEvents, currentData.journalEvents, 'JournalEvents');
-      const finalWorkflowOrders = getResult(loadedWorkflowOrders, currentData.workflowOrders, 'WorkflowOrders');
-
-      // ВАЖНО: Пересчитываем долги клиентов на основе заказов и транзакций
-      // Это гарантирует корректность данных после загрузки из Google Sheets
-      const clientsWithRecalculatedDebts = recalculateClientDebts(finalClients, finalTransactions, orders); // Use fetched orders from hook
-
-      // Обновляем состояние только если есть изменения
-      setProducts(finalProducts);
-      // setOrders(finalOrders); - Removed
-      setExpenses(finalExpenses);
-      setFixedAssets(finalAssets);
-      setClients(clientsWithRecalculatedDebts);
-      setEmployees(finalEmployees);
-      setTransactions(finalTransactions);
-      setPurchases(finalPurchases);
-      setJournalEvents(finalJournalEvents);
-      setWorkflowOrders(finalWorkflowOrders);
-
-      // AUTO-MIGRATE: Orders from Google Sheets to Firebase
-      // Only if Firebase has fewer orders than Sheets
-      try {
-        const sheetsOrders = await sheetsService.getOrders(accessToken, false);
-        if (sheetsOrders.length > orders.length) {
-          logDev(`📦 Миграция заказов: Sheets=${sheetsOrders.length}, Firebase=${orders.length}`);
-          const migrated = await migrateLegacyOrders(sheetsOrders);
-          if (migrated > 0) {
-            logDev(`✅ Мигрировано ${migrated} заказов из Google Sheets в Firebase`);
-            toast.success(`Мигрировано ${migrated} заказов в Firebase`);
-          }
-        }
-      } catch (migErr) {
-        warnDev('⚠️ Не удалось мигрировать заказы:', migErr);
-      }
-      
-      // Сохраняем пересчитанные долги в Google Sheets (если они изменились)
-      const debtsChanged = clientsWithRecalculatedDebts.some((c, i) => 
-        c.totalDebt !== finalClients[i]?.totalDebt
-      );
-      if (debtsChanged && clientsWithRecalculatedDebts.length > 0) {
-        logDev('📊 Долги клиентов пересчитаны, сохраняем...');
-        saveClientsHandler(clientsWithRecalculatedDebts).catch(err => 
-          warnDev('⚠️ Не удалось сохранить пересчитанные долги:', err)
-        );
-      }
-
-      // Проверяем, были ли ошибки при загрузке
-      const hasErrors = [
-        loadedProducts, loadedExpenses, loadedAssets,
-        loadedClients, loadedEmployees, loadedTransactions, loadedPurchases, loadedJournalEvents, loadedWorkflowOrders
-      ].some(result => result.status === 'rejected');
-
-      if (hasErrors) {
-        toast.warning('Некоторые данные не удалось загрузить. Используются локальные данные.');
-      }
-    } catch (err: unknown) {
-      errorDev('❌ Критическая ошибка при загрузке данных:', err);
-      const errorMessage = getErrorMessage(err);
-      setError(errorMessage);
-
-      // Проверяем, есть ли текущие данные
-      const hasCurrentData = currentData.products.length > 0 || orders.length > 0 || currentData.clients.length > 0;
-      if (hasCurrentData) {
-        toast.warning(`Не удалось обновить данные: ${errorMessage}. Используются локальные данные.`);
-      } else {
-        toast.error(`Ошибка при загрузке данных: ${errorMessage} `);
-      }
-    } finally {
-      setIsLoading(false);
-    }
+    // Legacy loadData removed (using Firebase hooks)
   };
 
-  const handleSaveAll = async () => {
-    setIsLoading(true);
-    try {
-      const results = await Promise.allSettled([
-        saveProductsHandler(products).then(() => ({ name: 'Товары', success: true })),
-        saveOrdersHandler(orders).then(() => ({ name: 'Заказы', success: true })),
-        saveExpensesHandler(expenses).then(() => ({ name: 'Расходы', success: true })),
-        saveFixedAssetsHandler(fixedAssets).then(() => ({ name: 'Основные средства', success: true })),
-        saveClientsHandler(clients).then(() => ({ name: 'Клиенты', success: true })),
-        saveEmployeesHandler(employees).then(() => ({ name: 'Сотрудники', success: true })),
-        saveTransactionsHandler(transactions).then(() => ({ name: 'Транзакции', success: true })),
-        savePurchasesHandler(purchases).then(() => ({ name: 'Закупки', success: true })),
-        saveWorkflowOrdersHandler(workflowOrders).then(() => ({ name: 'Предзаказы', success: true }))
-      ]);
-
-      const failed = (results as any[])
-        .filter(r => r.status === 'rejected' || (r.status === 'fulfilled' && !r.value.success))
-        .map(r => r.status === 'rejected' ? 'Сетевая ошибка' : r.value.name);
-
-      if (failed.length === 0) {
-        toast.success(`Все данные успешно синхронизированы (${results.length} модулей)`);
-      } else {
-        toast.warning(`Сохранено с ошибками: ${failed.join(', ')}`);
-      }
-    } catch (err) {
-      errorDev('Save All failed', err);
-      toast.error('Произошла ошибка при массовом сохранении');
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  /* handleSaveAll removed - fully disconnected from Sheets */
 
   const handleAddExpense = async (newExpense: Expense) => {
-    const updatedExpenses = [...expenses, newExpense];
-    setExpenses(updatedExpenses);
+    const id = await addExpense(newExpense);
 
-    const success = await saveExpensesHandler(updatedExpenses);
-    if (success) {
+    if (id) {
       // Telegram notification
       sendTelegramMoneyEvent({
         type: 'expense',
@@ -598,23 +613,64 @@ const AppContent: React.FC = () => {
         currency: newExpense.currency || 'USD',
         method: newExpense.paymentMethod,
         description: newExpense.description,
-        id: newExpense.id,
+        id: id,
         date: newExpense.date
       });
     }
   };
 
   const handleSaveEmployees = async (newEmployees: Employee[]) => {
-    setEmployees(newEmployees);
-    await saveEmployeesHandler(newEmployees);
+    // Firebase Update Logic
+    const prevIds = new Set(employees.map(e => e.id));
+    const added = newEmployees.filter(e => !prevIds.has(e.id));
+
+    for (const employee of added) {
+      await addEmployee(employee);
+    }
+
+    if (added.length === 0) {
+      for (const newEmp of newEmployees) {
+        const oldEmp = employees.find(e => e.id === newEmp.id);
+        if (oldEmp && JSON.stringify(oldEmp) !== JSON.stringify(newEmp)) {
+          await updateEmployee(newEmp.id, newEmp);
+        }
+      }
+    }
   };
 
   const handleSavePurchases = async (newPurchases: Purchase[]) => {
+    // Firebase Migration/Update Logic:
+    // We receive the full list of purchases from Procurement component.
+    // We need to identify NEW or UPDATED purchases and persist them to Firebase.
+
+    // 1. Identify new purchases
     const prevIds = new Set(purchases.map(p => p.id));
     const addedPurchases = newPurchases.filter(p => !prevIds.has(p.id));
 
-    setPurchases(newPurchases);
-    const success = await savePurchasesHandler(newPurchases);
+    // 2. Persist new purchases
+    for (const purchase of addedPurchases) {
+      await addPurchase(purchase);
+    }
+
+    // 3. Persist updates (check for changes)
+    if (addedPurchases.length === 0) {
+      for (const newPurchase of newPurchases) {
+        const oldPurchase = purchases.find(p => p.id === newPurchase.id);
+        if (oldPurchase) {
+          // Simple deep comparison or check key fields
+          if (JSON.stringify(oldPurchase) !== JSON.stringify(newPurchase)) {
+            await updatePurchase(newPurchase.id, newPurchase);
+          }
+        }
+      }
+    }
+
+    // Identify deleted purchases (if any) - optional feature
+    // const newIds = new Set(newPurchases.map(p => p.id));
+    // const deletedPurchases = purchases.filter(p => !newIds.has(p.id));
+    // for (const del of deletedPurchases) { await deletePurchase(del.id); }
+
+    const success = true; // Assume success for Firebase ops
 
     if (success) {
       addedPurchases.forEach(p =>
@@ -632,75 +688,82 @@ const AppContent: React.FC = () => {
   };
 
   const handleSaveClients = async (newClients: Client[]) => {
-    setClients(newClients);
-    await saveClientsHandler(newClients);
-  };
+    // Firebase Update Logic
+    const prevIds = new Set(clients.map(c => c.id));
+    const added = newClients.filter(c => !prevIds.has(c.id));
 
-  const handleSaveExpenses = async (newExpenses: Expense[]) => {
-    const prevIds = new Set(expenses.map(e => e.id));
-    const addedExpenses = newExpenses.filter(e => !prevIds.has(e.id));
+    for (const client of added) {
+      await addClient(client);
+    }
 
-    setExpenses(newExpenses);
-    const success = await saveExpensesHandler(newExpenses);
-
-    if (success) {
-      addedExpenses.forEach(exp =>
-        sendTelegramMoneyEvent({
-          type: 'expense',
-          amount: safeNumber(exp.amount),
-          currency: exp.currency || 'USD',
-          method: exp.paymentMethod,
-          description: exp.description,
-          id: exp.id,
-          date: exp.date
-        })
-      );
+    if (added.length === 0) {
+      for (const newClient of newClients) {
+        const oldClient = clients.find(c => c.id === newClient.id);
+        if (oldClient && JSON.stringify(oldClient) !== JSON.stringify(newClient)) {
+          await updateClient(newClient.id, newClient);
+        }
+      }
     }
   };
 
-  const handleSaveFixedAssets = async (newAssets: FixedAsset[]) => {
-    setFixedAssets(newAssets);
-    await saveFixedAssetsHandler(newAssets);
+  const handleSaveExpenses = async (newExpenses: Expense[]) => {
+    // Firebase Migration logic if needed, but for now we just log
+    console.warn('handleSaveExpenses called - ignoring in Firebase mode');
+    return true;
   };
 
-  const handleSaveProducts = async (newProducts: Product[]) => {
-    setProducts(newProducts);
-    await saveProductsHandler(newProducts);
+  const handleSaveFixedAssets = async (newAssets: FixedAsset[]) => {
+    // Firebase Update Logic
+    const prevIds = new Set(fixedAssets.map(a => a.id));
+    const added = newAssets.filter(a => !prevIds.has(a.id));
+
+    for (const asset of added) {
+      await addAsset(asset);
+    }
+
+    if (added.length === 0) {
+      for (const newAsset of newAssets) {
+        const oldAsset = fixedAssets.find(a => a.id === newAsset.id);
+        if (oldAsset && JSON.stringify(oldAsset) !== JSON.stringify(newAsset)) {
+          await updateAsset(newAsset.id, newAsset);
+        }
+      }
+    }
   };
 
   const handleSaveOrders = async (newOrders: Order[]) => {
     // Firebase Migration Logic:
     // We receive the full list of orders from legacy components.
     // We need to identify NEW or UPDATED orders and persist them to Firebase.
-    
+
     // 1. Identify new orders
     const prevIds = new Set(orders.map(o => o.id));
     const addedOrders = newOrders.filter(o => !prevIds.has(o.id));
-    
+
     // 2. Persist new orders
     for (const order of addedOrders) {
-        await addOrder(order);
+      await addOrder(order);
     }
-    
+
     // 3. Persist specific updates (focusing on Payment Status changes from CRM)
     if (addedOrders.length === 0) {
-        // Detect changed orders
-        for (const newOrder of newOrders) {
-            const oldOrder = orders.find(o => o.id === newOrder.id);
-            if (oldOrder) {
-                if (oldOrder.amountPaid !== newOrder.amountPaid || 
-                    oldOrder.paymentStatus !== newOrder.paymentStatus ||
-                    oldOrder.paymentMethod !== newOrder.paymentMethod) {
-                    
-                    await updateOrder(newOrder.id, {
-                        amountPaid: newOrder.amountPaid,
-                        paymentStatus: newOrder.paymentStatus,
-                        paymentMethod: newOrder.paymentMethod,
-                        // Add other fields if needed
-                    });
-                }
-            }
+      // Detect changed orders
+      for (const newOrder of newOrders) {
+        const oldOrder = orders.find(o => o.id === newOrder.id);
+        if (oldOrder) {
+          if (oldOrder.amountPaid !== newOrder.amountPaid ||
+            oldOrder.paymentStatus !== newOrder.paymentStatus ||
+            oldOrder.paymentMethod !== newOrder.paymentMethod) {
+
+            await updateOrder(newOrder.id, {
+              amountPaid: newOrder.amountPaid,
+              paymentStatus: newOrder.paymentStatus,
+              paymentMethod: newOrder.paymentMethod,
+              // Add other fields if needed
+            });
+          }
         }
+      }
     }
 
     // setOrders(newOrders); // Removed: orders are managed by hook now
@@ -733,40 +796,30 @@ const AppContent: React.FC = () => {
   };
 
   const handleSaveWorkflowOrders = async (newWorkflowOrders: WorkflowOrder[]) => {
-    setWorkflowOrders(newWorkflowOrders);
-    return await saveWorkflowOrdersHandler(newWorkflowOrders);
-  };
+    // Firebase Update Logic
+    const prevIds = new Set(workflowOrders.map(o => o.id));
+    const added = newWorkflowOrders.filter(o => !prevIds.has(o.id));
 
-  const handleSaveTransactions = async (newTransactions: Transaction[]) => {
-    const prevIds = new Set(transactions.map(t => t.id));
-    const addedTransactions = newTransactions.filter(t => !prevIds.has(t.id));
-
-    setTransactions(newTransactions);
-    const success = await saveTransactionsHandler(newTransactions);
-
-    if (success) {
-      addedTransactions.forEach(t => {
-        if (t.type === 'supplier_payment' || t.type === 'client_payment') {
-          sendTelegramMoneyEvent({
-            type: t.type === 'supplier_payment' ? 'supplier_payment' : 'client_payment',
-            amount: safeNumber(t.amount),
-            currency: t.currency,
-            method: t.method,
-            counterparty: t.relatedId,
-            description: t.description,
-            id: t.id,
-            date: t.date
-          });
-        }
-      });
-      return true;
+    for (const order of added) {
+      await addWorkflowOrder(order);
     }
-    return false;
+
+    if (added.length === 0) {
+      for (const newOrder of newWorkflowOrders) {
+        const oldOrder = workflowOrders.find(o => o.id === newOrder.id);
+        if (oldOrder && JSON.stringify(oldOrder) !== JSON.stringify(newOrder)) {
+          await updateWorkflowOrder(newOrder.id, newOrder);
+        }
+      }
+    }
   };
+
+
 
   const handleAddJournalEvent = async (event: JournalEvent) => {
-    setJournalEvents(prev => [event, ...prev]);
-    await saveJournalEventsHandler([event]);
+    // setJournalEvents(prev => [event, ...prev]); // Replaced by hook
+    // await saveJournalEventsHandler([event]); // Replaced by hook
+    await addJournalEvent(event);
   };
 
   const handleSaveSettings = async (newSettings: AppSettings) => {
@@ -812,16 +865,16 @@ const AppContent: React.FC = () => {
       case 'dashboard':
         return renderLazyComponent(<Dashboard products={products} orders={orders} clients={clients} transactions={transactions} settings={settings} />);
       case 'inventory':
-        return renderLazyComponent(<Inventory products={products} setProducts={setProducts} onSaveProducts={handleSaveProducts} />);
+        return renderLazyComponent(<Inventory products={products} setProducts={(val) => console.warn('setProducts ignored in Firebase mode', val)} onSaveProducts={handleSaveProducts} />);
       case 'import':
         return renderLazyComponent(<Procurement
           products={products}
-          setProducts={setProducts}
+          setProducts={(val) => console.warn('setProducts ignored in Firebase mode', val)}
           settings={settings}
           purchases={purchases}
           onSavePurchases={handleSavePurchases}
           transactions={transactions}
-          setTransactions={setTransactions}
+          setTransactions={(val) => console.warn('setTransactions ignored (Firebase)', val)}
           workflowOrders={workflowOrders}
           onSaveWorkflowOrders={handleSaveWorkflowOrders}
           onSaveProducts={handleSaveProducts}
@@ -833,19 +886,19 @@ const AppContent: React.FC = () => {
       case 'sales':
         return renderLazyComponent(<Sales
           products={products}
-          setProducts={setProducts}
+          setProducts={(val) => console.warn('setProducts ignored in Firebase mode', val)}
           orders={orders}
           setOrders={setOrders}
           settings={settings}
           setSettings={setSettings}
           expenses={expenses}
-          setExpenses={setExpenses}
+          setExpenses={(val) => console.warn('setExpenses ignored (Firebase)', val)}
           employees={employees}
           onNavigateToStaff={() => setActiveTab('staff')}
           clients={clients}
           onSaveClients={handleSaveClients}
           transactions={transactions}
-          setTransactions={setTransactions}
+          setTransactions={(val) => console.warn('setTransactions ignored (Firebase)', val)}
           workflowOrders={workflowOrders}
           onSaveWorkflowOrders={handleSaveWorkflowOrders}
           currentUserEmail={user?.email}
@@ -859,15 +912,15 @@ const AppContent: React.FC = () => {
       case 'workflow':
         return renderLazyComponent(<Workflow
           products={products}
-          setProducts={setProducts}
+          setProducts={(val) => console.warn('setProducts ignored (Firebase)', val)}
           workflowOrders={workflowOrders}
-          setWorkflowOrders={setWorkflowOrders}
+          setWorkflowOrders={(val) => console.warn('setWorkflowOrders ignored (Firebase)', val)}
           orders={orders}
           setOrders={setOrders}
           clients={clients}
           onSaveClients={handleSaveClients}
           transactions={transactions}
-          setTransactions={setTransactions}
+          setTransactions={(val) => console.warn('setTransactions ignored (Firebase)', val)}
           employees={employees}
           settings={settings}
           currentUserEmail={user?.email}
@@ -883,10 +936,10 @@ const AppContent: React.FC = () => {
       case 'fixedAssets':
         return renderLazyComponent(<FixedAssets
           assets={fixedAssets}
-          setAssets={setFixedAssets}
+          setAssets={(val) => console.warn('setAssets ignored (Firebase)', val)}
           onSaveAssets={handleSaveFixedAssets}
           transactions={transactions}
-          setTransactions={setTransactions}
+          setTransactions={(val) => console.warn('setTransactions ignored (Firebase)', val)}
           onSaveTransactions={handleSaveTransactions}
           defaultExchangeRate={settings.defaultExchangeRate}
         />);
@@ -897,7 +950,7 @@ const AppContent: React.FC = () => {
           orders={orders}
           onSaveOrders={handleSaveOrders}
           transactions={transactions}
-          setTransactions={setTransactions}
+          setTransactions={(val) => console.warn('setTransactions ignored (Firebase)', val)}
           onSaveTransactions={handleSaveTransactions}
           currentUser={user}
         />);
@@ -1221,31 +1274,8 @@ const AppContent: React.FC = () => {
                 </div>
               )}
 
-              {activeTab !== 'settings' && (
-                <button
-                  onClick={handleSaveAll}
-                  disabled={isLoading || !accessToken}
-                  className={`flex items-center gap-1 lg:gap-2 px-2 lg:px-4 py-2 rounded-lg font-medium transition-all text-sm lg:text-base ${isLoading
-                    ? settings.theme === 'light'
-                      ? 'bg-slate-200 text-slate-500 cursor-wait'
-                      : 'bg-slate-700 text-slate-400 cursor-wait'
-                    : !accessToken
-                      ? settings.theme === 'light'
-                        ? 'bg-slate-300 text-slate-500 cursor-not-allowed opacity-60'
-                        : 'bg-slate-600 text-slate-300 cursor-not-allowed opacity-60'
-                      : settings.theme === 'light'
-                        ? 'bg-[#1A73E8] hover:bg-[#1557B0] text-white shadow-md'
-                        : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/20'
-                    }`}
-                  title={!accessToken ? 'Войдите в систему для сохранения в Google Sheets' : 'Сохранить в Google Sheets'}
-                >
-                  <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
-                  <span className="hidden sm:inline">
-                    {isLoading ? 'Сохранение...' : !accessToken ? 'Требуется вход' : 'Сохранить в Google Sheets'}
-                  </span>
-                  <span className="sm:hidden">{isLoading ? '...' : !accessToken ? '🔒' : '💾'}</span>
-                </button>
-              )}
+
+
             </div>
           </header>
 
