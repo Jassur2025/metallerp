@@ -49,23 +49,33 @@ export const productService = {
         });
     },
 
-    // Add a new product
-    add: async (product: Omit<Product, 'id'>): Promise<Product> => {
+    // Add a new product (supports custom ID)
+    add: async (product: Product | Omit<Product, 'id'>): Promise<Product> => {
         try {
             // Clean undefined fields
             const data = JSON.parse(JSON.stringify(product));
+            const id = (product as any).id;
 
-            const docRef = await addDoc(collection(db, COLLECTION_NAME), {
-                ...data,
-                createdAt: serverTimestamp(),
-                updatedAt: new Date().toISOString(),
-                _version: 1
-            });
-
-            return {
-                id: docRef.id,
-                ...product
-            } as Product;
+            if (id) {
+                // Use provided ID with setDoc
+                const docRef = doc(db, COLLECTION_NAME, id);
+                await setDoc(docRef, {
+                    ...data,
+                    createdAt: serverTimestamp(),
+                    updatedAt: new Date().toISOString(),
+                    _version: 1
+                });
+                return { id, ...product } as Product;
+            } else {
+                // Auto-generate ID with addDoc
+                const docRef = await addDoc(collection(db, COLLECTION_NAME), {
+                    ...data,
+                    createdAt: serverTimestamp(),
+                    updatedAt: new Date().toISOString(),
+                    _version: 1
+                });
+                return { id: docRef.id, ...product } as Product;
+            }
         } catch (error) {
             console.error('Error adding product:', error);
             throw error;
@@ -79,12 +89,12 @@ export const productService = {
             const data = JSON.parse(JSON.stringify(updates));
             delete data.id; // Don't update ID
 
-            await updateDoc(docRef, {
+            // Use setDoc with merge instead of updateDoc to allow "Upsert"
+            // This prevents "No document to update" errors if the doc is missing in DB but exists in UI
+            await setDoc(docRef, {
                 ...data,
                 updatedAt: new Date().toISOString(),
-                // Increment version for optimistic locking if needed
-                // _version: increment(1) 
-            });
+            }, { merge: true });
         } catch (error) {
             console.error('Error updating product:', error);
             throw error;

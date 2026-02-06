@@ -261,9 +261,9 @@ const AppContent: React.FC = () => {
       await addProduct(product);
     }
 
-    // 2. Handle Updates
-    if (addedProducts.length === 0) {
-      for (const newProduct of newProducts) {
+    // 2. Handle Updates (Processed regardless of adding new products)
+    for (const newProduct of newProducts) {
+      if (!addedProducts.includes(newProduct)) { // Skip the ones we just added
         const oldProduct = products.find(p => p.id === newProduct.id);
         if (oldProduct) {
           // Check for meaningful changes
