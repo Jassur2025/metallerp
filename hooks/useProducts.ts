@@ -73,16 +73,18 @@ export const useProducts = (options: UseProductsOptions = {}): UseProductsReturn
         try {
             const newProduct = await productService.add(product);
 
-            // Optimistic update if not realtime
-            if (!realtime) {
-                setProducts(prev => [...prev, newProduct].sort((a, b) => a.name.localeCompare(b.name)));
-            }
+            // Optimistic update (always, for better UX)
+            setProducts(prev => {
+                const updated = [...prev, newProduct].sort((a, b) => a.name.localeCompare(b.name));
+                return updated;
+            });
             return newProduct;
         } catch (err: any) {
             toast.error(`Ошибка добавления товара: ${err.message}`);
+            // Rollback if needed (though harder with snapshot)
             return null;
         }
-    }, [realtime, toast]);
+    }, [toast]);
 
     // Update Product
     const updateProduct = useCallback(async (id: string, updates: Partial<Product>): Promise<boolean> => {
