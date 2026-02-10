@@ -173,6 +173,7 @@ const AppContent: React.FC = () => {
   const {
     expenses,
     addExpense,
+    deleteExpense,
     migrateLegacyExpenses
   } = useExpenses();
   // const [expenses, setExpenses] = useState<Expense[]>([]); // Replaced by hook
@@ -208,6 +209,7 @@ const AppContent: React.FC = () => {
     transactions,
     addTransaction,
     updateTransaction,
+    deleteTransaction,
     migrateTransactions: migrateLegacyTransactions
   } = useTransactions();
   // const [transactions, setTransactions] = useState<Transaction[]>([]); // Replaced by hook
@@ -797,6 +799,8 @@ const AppContent: React.FC = () => {
           onSaveProducts={handleSaveProducts}
           onSaveExpenses={handleSaveExpenses}
           onAddJournalEvent={handleAddJournalEvent}
+          onDeleteTransaction={deleteTransaction}
+          onDeleteExpense={deleteExpense}
         />);
       case 'workflow':
         return renderLazyComponent(<Workflow

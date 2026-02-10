@@ -31,7 +31,8 @@ export const Sales: React.FC<SalesProps> = ({
   products, setProducts, orders, setOrders, settings, setSettings, expenses, setExpenses,
   employees, onNavigateToStaff, clients, onSaveClients, transactions, setTransactions,
   workflowOrders, onSaveWorkflowOrders, currentUserEmail, onNavigateToProcurement,
-  onSaveOrders, onSaveTransactions, onSaveProducts, onSaveExpenses, onAddJournalEvent
+  onSaveOrders, onSaveTransactions, onSaveProducts, onSaveExpenses, onAddJournalEvent,
+  onDeleteTransaction, onDeleteExpense
 }) => {
   const { user } = useAuth();
   const toast = useToast();
@@ -1151,9 +1152,13 @@ export const Sales: React.FC<SalesProps> = ({
                 transactions={transactions}
                 onUpdateTransactions={setTransactions}
                 onSaveTransactions={onSaveTransactions}
+                onDeleteTransaction={onDeleteTransaction}
                 expenses={expenses}
                 onUpdateExpenses={setExpenses}
                 onSaveExpenses={onSaveExpenses}
+                onDeleteExpense={onDeleteExpense}
+                onAddJournalEvent={onAddJournalEvent}
+                currentUserEmail={currentUserEmail}
                 exchangeRate={exchangeRate}
               />
             </div>

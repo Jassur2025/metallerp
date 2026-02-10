@@ -24,6 +24,8 @@ export interface SalesProps {
   onSaveProducts?: (products: Product[]) => Promise<void>;
   onSaveExpenses?: (expenses: Expense[]) => Promise<void>;
   onAddJournalEvent?: (event: JournalEvent) => Promise<void>;
+  onDeleteTransaction?: (id: string) => Promise<boolean>;
+  onDeleteExpense?: (id: string) => Promise<boolean>;
 }
 
 export interface Balances {

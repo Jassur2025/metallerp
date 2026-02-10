@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { Transaction, Expense } from '../../types';
+import { Transaction, Expense, JournalEvent } from '../../types';
+import { IdGenerator } from '../../utils/idGenerator';
 import { useTheme, getThemeClasses } from '../../contexts/ThemeContext';
 import { 
   Trash2, 
@@ -21,9 +22,13 @@ interface TransactionsManagerProps {
   transactions: Transaction[];
   onUpdateTransactions: (transactions: Transaction[]) => void;
   onSaveTransactions?: (transactions: Transaction[]) => Promise<boolean | void>;
+  onDeleteTransaction?: (id: string) => Promise<boolean>;
   expenses?: Expense[];
   onUpdateExpenses?: (expenses: Expense[]) => void;
   onSaveExpenses?: (expenses: Expense[]) => Promise<boolean | void>;
+  onDeleteExpense?: (id: string) => Promise<boolean>;
+  onAddJournalEvent?: (event: JournalEvent) => Promise<void>;
+  currentUserEmail?: string | null;
   exchangeRate: number;
 }
 
@@ -48,9 +53,13 @@ export const TransactionsManager: React.FC<TransactionsManagerProps> = ({
   transactions,
   onUpdateTransactions,
   onSaveTransactions,
+  onDeleteTransaction,
   expenses = [],
   onUpdateExpenses,
   onSaveExpenses,
+  onDeleteExpense,
+  onAddJournalEvent,
+  currentUserEmail,
   exchangeRate
 }) => {
   const { theme } = useTheme();
@@ -105,15 +114,45 @@ export const TransactionsManager: React.FC<TransactionsManagerProps> = ({
   }, [allItems, filterType, searchTerm]);
 
   const handleDelete = async (id: string, source: 'transaction' | 'expense') => {
+    // Find item details before deleting for journal
+    const item = allItems.find(i => i.id === id);
+
     if (source === 'transaction') {
-      const updated = transactions.filter(t => t.id !== id);
-      onUpdateTransactions(updated);
-      if (onSaveTransactions) await onSaveTransactions(updated);
+      if (onDeleteTransaction) {
+        await onDeleteTransaction(id);
+      } else {
+        const updated = transactions.filter(t => t.id !== id);
+        onUpdateTransactions(updated);
+        if (onSaveTransactions) await onSaveTransactions(updated);
+      }
     } else {
-      const updated = expenses.filter(e => e.id !== id);
-      if (onUpdateExpenses) onUpdateExpenses(updated);
-      if (onSaveExpenses) await onSaveExpenses(updated);
+      if (onDeleteExpense) {
+        await onDeleteExpense(id);
+      } else {
+        const updated = expenses.filter(e => e.id !== id);
+        if (onUpdateExpenses) onUpdateExpenses(updated);
+        if (onSaveExpenses) await onSaveExpenses(updated);
+      }
     }
+
+    // Log to journal
+    if (onAddJournalEvent && item) {
+      const amountStr = item.currency === 'UZS'
+        ? `${item.amount.toLocaleString()} сум`
+        : `$${item.amount.toLocaleString()}`;
+      await onAddJournalEvent({
+        id: IdGenerator.journal(),
+        date: new Date().toISOString(),
+        type: 'data_change',
+        employeeEmail: currentUserEmail || undefined,
+        action: 'Удаление',
+        description: `Удалена ${source === 'transaction' ? 'транзакция' : 'расход'}: ${item.description || ''} (${amountStr}, ${item.method})`,
+        module: 'sales',
+        relatedType: source,
+        relatedId: id
+      });
+    }
+
     setDeleteConfirmId(null);
   };
 
@@ -147,6 +186,24 @@ export const TransactionsManager: React.FC<TransactionsManagerProps> = ({
       });
       if (onUpdateExpenses) onUpdateExpenses(updated);
       if (onSaveExpenses) await onSaveExpenses(updated);
+    }
+
+    // Log edit to journal
+    if (onAddJournalEvent && editData) {
+      const amountStr = editData.currency === 'UZS'
+        ? `${(editData.amount || 0).toLocaleString()} сум`
+        : `$${(editData.amount || 0).toLocaleString()}`;
+      await onAddJournalEvent({
+        id: IdGenerator.journal(),
+        date: new Date().toISOString(),
+        type: 'data_change',
+        employeeEmail: currentUserEmail || undefined,
+        action: 'Редактирование',
+        description: `Изменена ${editData._source === 'transaction' ? 'транзакция' : 'расход'}: ${editData.description || ''} (${amountStr})`,
+        module: 'sales',
+        relatedType: editData._source,
+        relatedId: editingId
+      });
     }
 
     setEditingId(null);

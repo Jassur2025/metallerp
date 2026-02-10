@@ -812,9 +812,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                 return;
             }
 
-            // Calculate USD/UZS based on currency
-            let amountUSD = 0;
-            let amountUZS = 0;
+            // Calculate USD/UZS based on currency (assign to outer variables)
 
             if (repaymentCurrency === 'UZS') {
                 amountUZS = repaymentAmount;
@@ -923,9 +921,13 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                     paymentStatus: isPaid ? 'paid' : 'partial'
                 } as Purchase;
 
-                // Direct update for better reliability
+                // Direct update to Firebase
                 if (onUpdatePurchase) {
-                    onUpdatePurchase(p.id, updatedPurchase).catch(err => console.error("Failed to update purchase directly", err));
+                    onUpdatePurchase(p.id, {
+                        amountPaid: newAmountPaidUZS,
+                        amountPaidUSD: newAmountPaidUSD,
+                        paymentStatus: isPaid ? 'paid' as const : 'partial' as const
+                    }).catch(err => console.error("Failed to update purchase directly", err));
                 }
 
                 return updatedPurchase;
