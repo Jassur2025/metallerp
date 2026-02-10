@@ -1134,9 +1134,11 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                                             <button
                                                 onClick={() => {
                                                     setRepaymentCurrency('USD');
-                                                    // Auto-convert amount for convenience? Maybe cleaner to just reset or let user type.
-                                                    // Let's reset to full debt in USD for convenience
-                                                    setRepaymentAmount(selectedPurchaseForRepayment.totalInvoiceAmount - selectedPurchaseForRepayment.amountPaid);
+                                                    const isLeg = selectedPurchaseForRepayment.totalInvoiceAmountUZS === undefined || selectedPurchaseForRepayment.totalInvoiceAmountUZS === 0;
+                                                    let pUSD = selectedPurchaseForRepayment.amountPaidUSD;
+                                                    if (isLeg && (pUSD === undefined || pUSD === null)) pUSD = selectedPurchaseForRepayment.amountPaid || 0;
+                                                    else pUSD = pUSD ?? 0;
+                                                    setRepaymentAmount(Math.max(0, selectedPurchaseForRepayment.totalInvoiceAmount - pUSD));
                                                 }}
                                                 className={`flex-1 py-1.5 rounded-md text-sm font-bold transition-all ${repaymentCurrency === 'USD' ? `${t.bgCard} ${t.text} shadow` : `${t.textMuted} hover:${t.text}`
                                                     }`}
@@ -1146,8 +1148,11 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                                             <button
                                                 onClick={() => {
                                                     setRepaymentCurrency('UZS');
-                                                    // Auto-convert full debt to UZS
-                                                    const debtUSD = selectedPurchaseForRepayment.totalInvoiceAmount - selectedPurchaseForRepayment.amountPaid;
+                                                    const isLeg = selectedPurchaseForRepayment.totalInvoiceAmountUZS === undefined || selectedPurchaseForRepayment.totalInvoiceAmountUZS === 0;
+                                                    let pUSD = selectedPurchaseForRepayment.amountPaidUSD;
+                                                    if (isLeg && (pUSD === undefined || pUSD === null)) pUSD = selectedPurchaseForRepayment.amountPaid || 0;
+                                                    else pUSD = pUSD ?? 0;
+                                                    const debtUSD = Math.max(0, selectedPurchaseForRepayment.totalInvoiceAmount - pUSD);
                                                     setRepaymentAmount(Math.round(debtUSD * settings.defaultExchangeRate));
                                                 }}
                                                 className={`flex-1 py-1.5 rounded-md text-sm font-bold transition-all ${repaymentCurrency === 'UZS' ? `${t.bgCard} ${t.text} shadow` : `${t.textMuted} hover:${t.text}`
