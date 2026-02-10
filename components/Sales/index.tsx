@@ -442,7 +442,7 @@ export const Sales: React.FC<SalesProps> = ({
     return r > 100 ? r : safeDefault;
   };
 
-  const calculateBalance = (): { balances: Balances; debugStats: any; suspicious: any } => {
+  const calculateBalance = (): { balances: Balances; debugStats: any; suspicious: { orders: Order[]; transactions: Transaction[]; expenses: Expense[] } } => {
     const { cashUSD, cashUZS, bankUZS, cardUZS } = calculateBaseTotals(
       orders || [],
       transactions || [],
@@ -865,7 +865,7 @@ export const Sales: React.FC<SalesProps> = ({
   // --- Client Save ---
   const handleSaveClient = () => {
     if (!newClientData.name || !newClientData.phone) { toast.warning('Имя и Телефон обязательны!'); return; }
-    const newClient: Client = { id: IdGenerator.client(), ...newClientData as Client };
+    const newClient: Client = { ...newClientData as Client, id: IdGenerator.client() };
     onSaveClients([...clients, newClient]);
     setCustomerName(newClient.name);
     setIsClientModalOpen(false);
@@ -910,7 +910,7 @@ export const Sales: React.FC<SalesProps> = ({
             <button onClick={() => setMode('expense')} className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${mode === 'expense' ? 'bg-red-600 text-white shadow-lg shadow-red-900/20' : `${t.bgCard} ${t.textMuted} ${t.bgCardHover}`}`}>
               <ArrowUpRight size={20} /> Новый Расход
             </button>
-            {(user?.permissions?.canProcessReturns !== false) && (
+            {((user as any)?.permissions?.canProcessReturns !== false) && (
               <button onClick={() => setMode('return')} className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${mode === 'return' ? 'bg-amber-600 text-white shadow-lg shadow-amber-900/20' : `${t.bgCard} ${t.textMuted} ${t.bgCardHover}`}`}>
                 <RefreshCw size={20} /> Возврат
               </button>

@@ -102,7 +102,7 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
 
     // Sort
     filtered.sort((a, b) => {
-      let aVal: number, bVal: number;
+      let aVal: number | string, bVal: number | string;
 
       switch (sortBy) {
         case 'date':
@@ -539,11 +539,11 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
                                 <div className="text-xs text-red-500">Транзакции оплаты не найдены</div>
                               ) : (
                                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                                  {orderTrx.map(t => (
-                                    <div key={t.id} className={`${t.bgCard} p-2 rounded-lg border ${t.border}`}>
-                                      <div className={`text-[10px] ${t.textMuted} uppercase`}>{formatPaymentMethod(t.method)}</div>
-                                      <div className={`text-sm font-mono font-bold ${t.method === 'cash' && t.currency === 'USD' ? 'text-emerald-500' : 'text-blue-500'}`}>
-                                        {t.currency === 'UZS' ? `${t.amount.toLocaleString()} UZS` : `$${t.amount.toFixed(2)}`}
+                                  {orderTrx.map(tx => (
+                                    <div key={tx.id} className={`${t.bgCard} p-2 rounded-lg border ${t.border}`}>
+                                      <div className={`text-[10px] ${t.textMuted} uppercase`}>{formatPaymentMethod((tx as any).method)}</div>
+                                      <div className={`text-sm font-mono font-bold ${(tx as any).method === 'cash' && tx.currency === 'USD' ? 'text-emerald-500' : 'text-blue-500'}`}>
+                                        {tx.currency === 'UZS' ? `${tx.amount.toLocaleString()} UZS` : `$${tx.amount.toFixed(2)}`}
                                       </div>
                                     </div>
                                   ))}

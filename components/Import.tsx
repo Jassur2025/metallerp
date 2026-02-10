@@ -275,7 +275,7 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
             totalInvoiceAmountUZS: 0,
             totalVatAmountUZS: 0,
             totalWithoutVatUZS: 0,
-            exchangeRate: settings.exchangeRate || 1,
+            exchangeRate: settings.defaultExchangeRate || 1,
             amountPaidUSD: paidUSD,
             warehouse: WarehouseType.MAIN
         };
@@ -1172,8 +1172,8 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
                 isOpen={isSplitModalOpen}
                 onClose={() => setIsSplitModalOpen(false)}
                 totalAmountUSD={totals.totalInvoiceValue}
-                totalAmountUZS={totals.totalInvoiceValue * settings.exchangeRate}
-                exchangeRate={settings.exchangeRate}
+                totalAmountUZS={totals.totalInvoiceValue * settings.defaultExchangeRate}
+                exchangeRate={settings.defaultExchangeRate}
                 onConfirm={finalizePurchase}
             />
         </div>

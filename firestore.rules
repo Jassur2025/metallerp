@@ -81,19 +81,18 @@ service cloud.firestore {
     // OPERATIONAL DATA (Less strict, or strictly Admin for now)
     // ---------------------------------------------------------
 
-    // Orders: Validated creation could be allowed for 'sales' role later.
-    // For MIGRATION SAFETY phase, we restrict large edits to Admins.
+    // Orders: only admin or the creator can modify
     match /orders/{docId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated(); // Allow creating orders
-      allow update: if isAuthenticated(); // Allow updating orders
-      allow delete: if isAdmin();         // prevent deletion
+      allow create: if isAuthenticated();
+      allow update: if isAdmin() || (isAuthenticated() && resource.data.createdBy == request.auth.uid);
+      allow delete: if isAdmin();
     }
     
     match /workflowOrders/{docId} {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated();
-      allow update: if isAuthenticated();
+      allow update: if isAdmin() || (isAuthenticated() && resource.data.createdBy == request.auth.uid);
       allow delete: if isAdmin();
     }
 
@@ -102,10 +101,11 @@ service cloud.firestore {
       allow write: if isAdmin(); // Procurement is sensitive
     }
 
+    // Expenses: only admin or the creator can modify
     match /expenses/{docId} {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated();
-      allow update: if isAuthenticated(); // Allow editing own expenses?
+      allow update: if isAdmin() || (isAuthenticated() && resource.data.createdBy == request.auth.uid);
       allow delete: if isAdmin();
     }
 

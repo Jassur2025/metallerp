@@ -1,4 +1,5 @@
 import {
+    db,
     collection,
     doc,
     getDocs,
@@ -13,8 +14,7 @@ import {
     setDoc,
     serverTimestamp,
     Timestamp
-} from 'firebase/firestore';
-import { db } from '../lib/firebase';
+} from '../lib/firebase';
 import { Product } from '../types';
 
 const COLLECTION_NAME = 'products';

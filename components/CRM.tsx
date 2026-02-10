@@ -3,15 +3,18 @@ import { Client, Order, Transaction } from '../types';
 import { User } from 'firebase/auth';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
-import { Plus, Search, Phone, Mail, MapPin, Edit, Trash2, DollarSign, Wallet, History, ArrowDownLeft, BarChart3, TrendingUp, Calendar, CheckCircle, XCircle, AlertCircle, Smartphone, Database, Cloud, MessageSquare } from 'lucide-react';
-import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid, PieChart, Pie, Cell } from 'recharts';
-import { checkAllPhones, formatPhoneForTablet, validateUzbekistanPhone } from '../utils/phoneFormatter';
+import { Plus, Search, Phone, Mail, MapPin, Edit, Trash2, DollarSign, Wallet, History, ArrowDownLeft, CheckCircle, XCircle, AlertCircle, Smartphone, MessageSquare } from 'lucide-react';
+import { checkAllPhones } from '../utils/phoneFormatter';
 import { SUPER_ADMIN_EMAILS } from '../constants';
 import { IdGenerator } from '../utils/idGenerator';
 import { useClients } from '../hooks/useClients';
 import { useOrders } from '../hooks/useOrders';
 import { transactionService } from '../services/transactionService';
 import { ClientNotesModal } from './Sales/ClientNotesModal';
+import { ClientCard } from './CRM/ClientCard';
+import { RepaymentStatsView } from './CRM/RepaymentStatsView';
+import { DebtHistoryModal } from './CRM/DebtHistoryModal';
+import type { HistoryItem } from './CRM/DebtHistoryModal';
 
 interface CRMProps {
     clients: Client[]; // Legacy prop (ignored - using Firebase)
@@ -26,6 +29,8 @@ interface CRMProps {
 
 type CRMView = 'clients' | 'repaymentStats';
 
+// HistoryItem type imported from ./CRM/DebtHistoryModal
+
 export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders: legacyOrders, onSaveOrders, transactions, setTransactions, onSaveTransactions, currentUser }) => {
     const toast = useToast();
     const { theme } = useTheme();
@@ -39,9 +44,8 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
         addClient, 
         updateClient, 
         deleteClient,
-        refreshClients,
-        migrateFromSheets 
-    } = useClients({ realtime: true });
+        migrateClients: migrateFromSheets 
+    } = useClients();
 
     // Firebase Hook for Orders - use Firebase orders instead of legacy prop!
     const { 
@@ -187,117 +191,79 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
         return order.paymentMethod === 'debt' || status === 'unpaid' || status === 'partial' || hasOpenBalance(order);
     };
 
+    // Строгое сопоставление заказа с клиентом: по clientId, затем точное совпадение имени
+    const orderMatchesClient = (order: Order, client: Client): boolean => {
+        // 1. По clientId — самый надёжный способ
+        if (order.clientId && order.clientId === client.id) return true;
+        // 2. Точное совпадение имени (не includes!) — для legacy заказов без clientId
+        const orderName = (order.customerName || '').toLowerCase().trim();
+        const clientName = (client.name || '').toLowerCase().trim();
+        if (clientName && orderName === clientName) return true;
+        // 3. Точное совпадение с названием компании
+        const companyName = (client.companyName || '').toLowerCase().trim();
+        if (companyName && orderName === companyName) return true;
+        return false;
+    };
+
+    // Строгое сопоставление транзакции с клиентом: по relatedId = clientId или relatedId = orderId клиента
+    const txMatchesClient = (tx: Transaction, clientId: string, clientOrderIds: string[]): boolean => {
+        // 1. relatedId === clientId
+        if (tx.relatedId === clientId) return true;
+        // 2. relatedId === один из заказов клиента
+        if (tx.relatedId && clientOrderIds.includes(tx.relatedId)) return true;
+        return false;
+    };
+
     // Функция для расчёта общей суммы покупок клиента
     const calculateClientPurchases = (client: Client): number => {
-        const clientId = client.id;
-        const clientName = (client.name || '').toLowerCase().trim();
-        const companyName = (client.companyName || '').toLowerCase().trim();
-        
         let totalPurchases = 0;
-        
         orders.forEach(order => {
-            const orderClientName = (order.customerName || '').toLowerCase().trim();
-            const orderClientId = order.clientId || '';
-            
-            const matchesClient = 
-                orderClientId === clientId || 
-                order.clientId === clientId ||
-                orderClientName === clientName ||
-                (clientName && orderClientName.includes(clientName)) ||
-                (clientName && clientName.includes(orderClientName)) ||
-                (companyName && orderClientName.includes(companyName)) ||
-                (companyName && companyName.includes(orderClientName));
-            
-            if (matchesClient) {
+            if (orderMatchesClient(order, client)) {
                 totalPurchases += order.totalAmount || 0;
             }
         });
-        
         return totalPurchases;
     };
 
     // Функция для расчёта актуального долга клиента из заказов и транзакций
     const calculateClientDebt = (client: Client): number => {
         const clientId = client.id;
-        const clientName = (client.name || '').toLowerCase().trim();
-        const companyName = (client.companyName || '').toLowerCase().trim();
         
         let totalDebt = 0;
         let totalRepaid = 0;
         
-        // Debug: Log orders count
-        // console.log(`[CRM Debug] Client: ${client.name}, Orders count: ${orders.length}`);
-        
-        // Найти ВСЕ заказы клиента которые БЫЛИ в долг
-        // Используем ту же логику что и в getClientDebtHistory
+        // 1. Найти ВСЕ заказы клиента которые БЫЛИ в долг
         orders.forEach(order => {
-            const orderClientName = (order.customerName || '').toLowerCase().trim();
-            const orderClientId = order.clientId || '';
+            if (!orderMatchesClient(order, client)) return;
             
-            const matchesClient = 
-                orderClientId === clientId || 
-                order.clientId === clientId || 
-                orderClientName === clientName ||
-                (clientName && orderClientName.includes(clientName)) ||
-                (clientName && clientName.includes(orderClientName)) ||
-                (companyName && orderClientName.includes(companyName)) ||
-                (companyName && companyName.includes(orderClientName));
-            
-            // Заказ был в долг: paymentMethod === 'debt' ИЛИ статус unpaid/partial ИЛИ totalAmount > amountPaid
             const wasDebtOrder = order.paymentMethod === 'debt' || 
                                  order.paymentStatus === 'unpaid' || 
                                  order.paymentStatus === 'partial' ||
                                  ((order.totalAmount || 0) > (order.amountPaid || 0) + 0.01);
             
-            if (matchesClient && wasDebtOrder) {
+            if (wasDebtOrder) {
                 const paidUSD = getOrderPaidUSD(order);
-                // Реальный долг = totalAmount минус то что оплачено в самом заказе (amountPaid)
                 const actualDebt = Math.max(0, (order.totalAmount || 0) - paidUSD);
                 totalDebt += actualDebt;
             }
         });
 
-        // Собираем ID заказов для поиска погашений
-        const clientOrderIds: string[] = [];
-        orders.forEach(order => {
-            const orderClientName = (order.customerName || '').toLowerCase().trim();
-            const matchesClient = 
-                order.clientId === clientId || 
-                orderClientName === clientName ||
-                (clientName && orderClientName.includes(clientName)) ||
-                (companyName && orderClientName.includes(companyName));
-            if (matchesClient) {
-                clientOrderIds.push(order.id.toLowerCase());
-            }
-        });
+        // 2. Собираем ID заказов клиента для сопоставления транзакций
+        const clientOrderIds: string[] = orders
+            .filter(order => orderMatchesClient(order, client))
+            .map(order => order.id);
         
-        // Найти все транзакции погашений для этого клиента
+        // 3. Найти все транзакции погашений для этого клиента
+        // FIX #7: Убран фильтр по слову "погашение" — все client_payment считаются погашениями
         transactions.forEach(tx => {
-            const txDescription = (tx.description || '').toLowerCase();
-            const relatedIdLower = (tx.relatedId || '').toLowerCase();
+            if (!txMatchesClient(tx, clientId, clientOrderIds)) return;
             
-            const matchesClient = 
-                tx.relatedId === clientId ||
-                clientOrderIds.includes(relatedIdLower) ||
-                (clientName && txDescription.includes(clientName)) ||
-                (companyName && txDescription.includes(companyName));
-            
-            // Также проверяем связь с заказами клиента
-            const matchesClientOrder = clientOrderIds.some(orderId => 
-                relatedIdLower === orderId ||
-                txDescription.includes(orderId)
-            );
-            
-            if (matchesClient || matchesClientOrder) {
-                // Погашение долга - type income/client_payment/sale с "погашение" в описании
-                if ((tx.type === 'income' || tx.type === 'client_payment' || tx.type === 'sale') && 
-                    (txDescription.includes('погашение') || txDescription.includes('repayment'))) {
-                    let amountInUSD = tx.amount || 0;
-                    if (tx.currency === 'UZS' && tx.exchangeRate) {
-                        amountInUSD = (tx.amount || 0) / tx.exchangeRate;
-                    }
-                    totalRepaid += amountInUSD;
+            if (tx.type === 'client_payment') {
+                let amountInUSD = tx.amount || 0;
+                if (tx.currency === 'UZS' && tx.exchangeRate) {
+                    amountInUSD = (tx.amount || 0) / tx.exchangeRate;
                 }
+                totalRepaid += amountInUSD;
             }
         });
         
@@ -308,8 +274,6 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
         if (!selectedClientForRepayment) return [];
         
         const clientId = selectedClientForRepayment.id;
-        const clientName = (selectedClientForRepayment.name || '').toLowerCase().trim();
-        const companyName = (selectedClientForRepayment.companyName || '').toLowerCase().trim();
         
         const unpaidOrders: { 
             id: string; 
@@ -322,181 +286,110 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
             paymentDueDate?: string;
             payments: PaymentRecord[];
         }[] = [];
+
+        // Хелпер: конвертация суммы транзакции в USD
+        const txToUSD = (tx: Transaction): number => {
+            if (tx.currency === 'UZS' && tx.exchangeRate) {
+                return (tx.amount || 0) / tx.exchangeRate;
+            }
+            return tx.amount || 0;
+        };
+
+        // Хелпер: собрать PaymentRecord из транзакции
+        const toPaymentRecord = (r: Transaction): PaymentRecord => ({
+            date: r.date,
+            amount: r.amount || 0,
+            amountUSD: txToUSD(r),
+            currency: r.currency || 'USD',
+            method: r.method || 'cash'
+        });
         
-        // Найти заказы в долг (с paymentMethod === 'debt' или статусами unpaid/partial)
+        // 1. Найти заказы в долг (строгое сопоставление)
         orders.forEach(order => {
-            const orderClientName = (order.customerName || '').toLowerCase().trim();
-            const matchesClient = 
-                order.clientId === clientId || 
-                orderClientName === clientName ||
-                (clientName && orderClientName.includes(clientName)) ||
-                (clientName && clientName.includes(orderClientName)) ||
-                (companyName && orderClientName.includes(companyName));
+            if (!orderMatchesClient(order, selectedClientForRepayment)) return;
             
-            // Заказ был в долг если paymentMethod === 'debt' или статус unpaid/partial
             const wasDebtOrder = order.paymentMethod === 'debt' || 
                                  order.paymentStatus === 'unpaid' || 
                                  order.paymentStatus === 'partial';
             
-            if (matchesClient && wasDebtOrder) {
-                // Рассчитать погашения из транзакций для этого заказа
-                // Погашения могут быть type: 'income', 'client_payment', 'sale'
-                const repayments = transactions.filter(t => {
-                    const desc = (t.description || '').toLowerCase();
-                    const isRepaymentType = desc.includes('погашение') || t.type === 'client_payment';
-                    
-                    // ОБЯЗАТЕЛЬНО должна быть привязка к этому заказу
-                    const orderId = order.id.toLowerCase();
-                    const matchesThisOrder = 
-                        t.relatedId === order.id ||
-                        t.relatedId?.toLowerCase() === orderId ||
-                        desc.includes(orderId);
-                    
-                    return isRepaymentType && matchesThisOrder;
-                });
-                
-                // Собираем историю платежей (поле может быть method или paymentMethod)
-                const payments: PaymentRecord[] = repayments.map(r => ({
-                    date: r.date,
-                    amount: r.amount || 0,
-                    amountUSD: r.currency === 'UZS' && r.exchangeRate ? (r.amount || 0) / r.exchangeRate : (r.amount || 0),
-                    currency: r.currency || 'USD',
-                    method: (r as any).method || r.paymentMethod || 'cash'
-                }));
-                
-                // Суммируем погашения в USD
-                let totalRepaidUSD = getOrderPaidUSD(order);
-                repayments.forEach(r => {
-                    if (r.currency === 'UZS' && r.exchangeRate) {
-                        totalRepaidUSD += (r.amount || 0) / r.exchangeRate;
-                    } else {
-                        totalRepaidUSD += (r.amount || 0);
-                    }
-                });
-                
-                const debtAmount = (order.totalAmount || 0) - totalRepaidUSD;
-                if (debtAmount > 0.01) {
-                    unpaidOrders.push({
-                        id: order.id,
-                        date: order.date,
-                        totalAmount: order.totalAmount || 0,
-                        amountPaid: totalRepaidUSD,
-                        debtAmount,
-                        items: (order.items || []).map(it => it.productName).slice(0, 2).join(', ') + (order.items && order.items.length > 2 ? '...' : ''),
-                        reportNo: order.reportNo,
-                        paymentDueDate: order.paymentDueDate,
-                        payments
-                    });
-                }
-            }
-        });
-        
-        // Также проверить транзакции "Долг по заказу"
-        transactions.forEach(tx => {
-            const txDescription = (tx.description || '').toLowerCase();
-            const matchesClient = 
-                tx.relatedId === clientId ||
-                (clientName && txDescription.includes(clientName)) ||
-                (companyName && txDescription.includes(companyName));
+            if (!wasDebtOrder) return;
+
+            // Погашения привязанные к этому заказу (по relatedId)
+            const repayments = transactions.filter(t =>
+                t.type === 'client_payment' && t.relatedId === order.id
+            );
             
-            // Также проверяем долг по обязательствам или "Долг по заказу"
-            if (matchesClient && (tx.type === 'debt_obligation' || txDescription.includes('долг по заказу'))) {
-                // Извлечь ID заказа из описания (если есть)
-                const orderIdMatch = txDescription.match(/ord-[a-z0-9-]+/i);
-                // Если нет ORD-..., используем ID транзакции как идентификатор долга
-                const orderId = orderIdMatch ? orderIdMatch[0].toUpperCase() : tx.id;
-                
-                // Проверить не добавлен ли уже этот заказ
-                const existingOrder = unpaidOrders.find(o => o.id === orderId || o.id.toLowerCase() === orderId.toLowerCase());
-                if (!existingOrder) {
-                    // Рассчитать сколько погашено по этому заказу
-                    // Ищем по relatedId или по упоминанию ID заказа в описании
-                    // Погашения могут быть type: 'income', 'client_payment', 'sale'
-                    const repayments = transactions.filter(t => {
-                        const desc = (t.description || '').toLowerCase();
-                        const isRepayment = desc.includes('погашение') || t.type === 'client_payment';
-                        const matchesOrder = 
-                            t.relatedId === orderId ||
-                            t.relatedId?.toLowerCase() === orderId.toLowerCase() ||
-                            desc.includes(orderId.toLowerCase());
-                        return isRepayment && matchesOrder;
-                    });
-                    
-                    // Собираем историю платежей из транзакций (поле method или paymentMethod)
-                    const payments: PaymentRecord[] = repayments.map(r => ({
-                        date: r.date,
-                        amount: r.amount || 0,
-                        amountUSD: r.currency === 'UZS' && r.exchangeRate ? (r.amount || 0) / r.exchangeRate : (r.amount || 0),
-                        currency: r.currency || 'USD',
-                        method: (r as any).method || r.paymentMethod || 'cash'
-                    }));
-                    
-                    // Суммируем в USD
-                    let totalRepaidUSD = 0;
-                    repayments.forEach(r => {
-                        if (r.currency === 'UZS' && r.exchangeRate) {
-                            totalRepaidUSD += (r.amount || 0) / r.exchangeRate;
-                        } else {
-                            totalRepaidUSD += (r.amount || 0);
-                        }
-                    });
-                    
-                    const debtAmount = (tx.amount || 0) - totalRepaidUSD;
-                    
-                    if (debtAmount > 0.01) {
-                        unpaidOrders.push({
-                            id: orderId,
-                            date: tx.date,
-                            totalAmount: tx.amount || 0,
-                            amountPaid: totalRepaidUSD,
-                            debtAmount,
-                            items: tx.description || '',
-                            payments
-                        });
-                    }
-                }
+            const payments: PaymentRecord[] = repayments.map(toPaymentRecord);
+            
+            let totalRepaidUSD = getOrderPaidUSD(order);
+            repayments.forEach(r => { totalRepaidUSD += txToUSD(r); });
+            
+            const debtAmount = (order.totalAmount || 0) - totalRepaidUSD;
+            if (debtAmount > 0.01) {
+                unpaidOrders.push({
+                    id: order.id,
+                    date: order.date,
+                    totalAmount: order.totalAmount || 0,
+                    amountPaid: totalRepaidUSD,
+                    debtAmount,
+                    items: (order.items || []).map(it => it.productName).slice(0, 2).join(', ') + (order.items && order.items.length > 2 ? '...' : ''),
+                    reportNo: order.reportNo,
+                    paymentDueDate: order.paymentDueDate,
+                    payments
+                });
             }
         });
         
-        // Сортировать по дате (старые первые - для FIFO распределения)
+        // 2. Проверить транзакции debt_obligation для этого клиента
+        transactions.forEach(tx => {
+            if (tx.type !== 'debt_obligation') return;
+            if (tx.relatedId !== clientId) return;
+            
+            // Проверить не добавлен ли уже этот заказ
+            const existingOrder = unpaidOrders.find(o => o.id === tx.id);
+            if (existingOrder) return;
+
+            // Погашения по этому обязательству
+            const repayments = transactions.filter(t =>
+                t.type === 'client_payment' && t.relatedId === tx.id
+            );
+            
+            const payments: PaymentRecord[] = repayments.map(toPaymentRecord);
+            let totalRepaidUSD = 0;
+            repayments.forEach(r => { totalRepaidUSD += txToUSD(r); });
+            
+            const debtAmount = (tx.amount || 0) - totalRepaidUSD;
+            if (debtAmount > 0.01) {
+                unpaidOrders.push({
+                    id: tx.id,
+                    date: tx.date,
+                    totalAmount: tx.amount || 0,
+                    amountPaid: totalRepaidUSD,
+                    debtAmount,
+                    items: tx.description || '',
+                    payments
+                });
+            }
+        });
+        
+        // 3. Сортировать по дате (FIFO)
         unpaidOrders.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
         
-        // Собираем ID всех заказов клиента
-        const allOrderIds = unpaidOrders.map(o => o.id.toLowerCase());
+        // 4. Найти погашения клиента БЕЗ привязки к конкретному заказу (relatedId = clientId)
+        const orderIdsSet = new Set(unpaidOrders.map(o => o.id));
+        const clientPaymentsWithoutOrder = transactions.filter(t =>
+            t.type === 'client_payment' &&
+            t.relatedId === clientId &&
+            !orderIdsSet.has(t.relatedId)
+        );
         
-        // Найти погашения клиента БЕЗ привязки к конкретному заказу
-        // (когда relatedId = clientId, а не orderId)
-        const clientPaymentsWithoutOrder = transactions.filter(t => {
-            const desc = (t.description || '').toLowerCase();
-            const isRepayment = desc.includes('погашение') || t.type === 'client_payment';
-            const isForClient = t.relatedId === clientId || 
-                (clientName && desc.includes(clientName)) ||
-                (companyName && desc.includes(companyName));
-            
-            // Проверяем что это НЕ привязано к конкретному заказу
-            // relatedId начинается с ORD- = привязан к заказу
-            const relatedIdIsOrder = t.relatedId?.toUpperCase().startsWith('ORD-');
-            // Или в описании есть ссылка на конкретный заказ из списка
-            const descHasOrderRef = allOrderIds.some(orderId => desc.includes(orderId));
-            
-            return isRepayment && isForClient && !relatedIdIsOrder && !descHasOrderRef;
-        });
-        
-        // Суммируем неразмеченные погашения в USD
+        // 5. Распределяем неразмеченные погашения по заказам (FIFO)
         let unallocatedPaymentsUSD = 0;
-        clientPaymentsWithoutOrder.forEach(t => {
-            if (t.currency === 'UZS' && t.exchangeRate) {
-                unallocatedPaymentsUSD += (t.amount || 0) / t.exchangeRate;
-            } else {
-                unallocatedPaymentsUSD += (t.amount || 0);
-            }
-        });
+        clientPaymentsWithoutOrder.forEach(t => { unallocatedPaymentsUSD += txToUSD(t); });
         
-        // Распределяем неразмеченные погашения по заказам (FIFO - старые первые)
         if (unallocatedPaymentsUSD > 0) {
             for (const order of unpaidOrders) {
                 if (unallocatedPaymentsUSD <= 0) break;
-                
                 const canPay = Math.min(unallocatedPaymentsUSD, order.debtAmount);
                 order.amountPaid += canPay;
                 order.debtAmount -= canPay;
@@ -504,10 +397,10 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
             }
         }
         
-        // Убираем полностью оплаченные заказы
+        // 6. Убираем полностью оплаченные
         const stillUnpaid = unpaidOrders.filter(o => o.debtAmount > 0.01);
         
-        // Fallback: если заказы не нашлись, но по расчёту есть долг - создаём виртуальный чек
+        // 7. Fallback: если заказы не нашлись, но по расчёту есть долг
         const calculatedDebt = selectedClientForRepayment ? calculateClientDebt(selectedClientForRepayment) : 0;
         if (stillUnpaid.length === 0 && calculatedDebt > 0.01) {
             stillUnpaid.push({
@@ -536,161 +429,107 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
 
     // Получить полную историю долгов клиента - заказы в долг + транзакции
     const getClientDebtHistory = useMemo(() => {
-        if (!selectedClientForHistory) return { orders: [], transactions: [], allHistory: [] };
+        if (!selectedClientForHistory) return [] as HistoryItem[];
         
         const clientId = selectedClientForHistory.id;
-        const clientName = (selectedClientForHistory.name || '').toLowerCase().trim();
-        const companyName = (selectedClientForHistory.companyName || '').toLowerCase().trim();
-        
-        type HistoryItem = {
-            id: string;
-            date: string;
-            type: 'order' | 'repayment' | 'transaction';
-            description: string;
-            items?: { name: string; qty: number; price: number }[];
-            totalAmount: number;
-            amountPaid: number;
-            debtChange: number; // + добавляет долг, - уменьшает
-            balance: number;
-            reportNo?: number;
-            paymentMethod?: string;
-            currency?: string;
-            exchangeRate?: number;
-            amountInUSD?: number;
-            paymentDueDate?: string;
-        };
-        
         const allHistory: HistoryItem[] = [];
         
-        // Найти все заказы в долг для этого клиента (включая полностью оплаченные)
-        // Показываем заказы которые БЫЛИ в долг (paymentMethod === 'debt' или paymentStatus !== 'paid')
+        // 1. Найти все заказы в долг (строгое сопоставление)
         orders.forEach(order => {
-            const orderClientName = (order.customerName || '').toLowerCase().trim();
-            const matchesClient = 
-                order.clientId === clientId || 
-                orderClientName === clientName ||
-                (clientName && orderClientName.includes(clientName)) ||
-                (clientName && clientName.includes(orderClientName)) ||
-                (companyName && orderClientName.includes(companyName)) ||
-                (companyName && companyName.includes(orderClientName));
+            if (!orderMatchesClient(order, selectedClientForHistory)) return;
             
-            // Заказ был в долг если: paymentMethod === 'debt' ИЛИ был partial/unpaid ИЛИ amountPaid < totalAmount
             const wasDebtOrder = order.paymentMethod === 'debt' || 
                                  order.paymentStatus === 'unpaid' || 
                                  order.paymentStatus === 'partial' ||
                                  ((order.totalAmount || 0) > (order.amountPaid || 0) + 0.01);
             
-            if (matchesClient && wasDebtOrder) {
-                const paidUSD = getOrderPaidUSD(order);
-                // Реальный остаток долга по заказу = totalAmount - то что уже оплачено
-                const actualDebt = Math.max(0, (order.totalAmount || 0) - paidUSD);
+            if (!wasDebtOrder) return;
+
+            const paidUSD = getOrderPaidUSD(order);
+            const actualDebt = Math.max(0, (order.totalAmount || 0) - paidUSD);
+            
+            allHistory.push({
+                id: order.id,
+                date: order.date,
+                type: 'order',
+                description: order.reportNo ? `Отчёт №${order.reportNo}` : `Заказ #${order.id.slice(-6)}`,
+                items: (order.items || []).map(it => ({
+                    name: it.productName || 'Товар',
+                    qty: it.quantity || 0,
+                    price: it.priceAtSale || 0
+                })),
+                totalAmount: order.totalAmount || 0,
+                amountPaid: paidUSD,
+                debtChange: actualDebt,
+                balance: actualDebt,
+                reportNo: order.reportNo,
+                paymentDueDate: order.paymentDueDate
+            });
+        });
+        
+        // 2. Собираем ID заказов клиента
+        const clientOrderIds = orders
+            .filter(order => orderMatchesClient(order, selectedClientForHistory))
+            .map(order => order.id);
+        
+        // 3. Найти все транзакции связанные с этим клиентом (строгое сопоставление)
+        transactions.forEach(tx => {
+            if (!txMatchesClient(tx, clientId, clientOrderIds)) return;
+            
+            // Долг по обязательству
+            if (tx.type === 'debt_obligation') {
+                // Проверяем дубликаты (заказ уже добавлен)
+                const alreadyExists = allHistory.some(h => 
+                    h.id === tx.id || 
+                    (tx.relatedId && h.id === tx.relatedId && h.type === 'order')
+                );
+                if (alreadyExists) return;
+                
+                const relatedOrder = orders.find(o => tx.relatedId === o.id);
                 
                 allHistory.push({
-                    id: order.id,
-                    date: order.date,
+                    id: tx.id,
+                    date: tx.date,
                     type: 'order',
-                    description: order.reportNo ? `Отчёт №${order.reportNo}` : `Заказ #${order.id.slice(-6)}`,
-                    items: (order.items || []).map(it => ({
-                        name: it.productName || 'Товар',
-                        qty: it.quantity || 0,
-                        price: it.priceAtSale || 0
-                    })),
-                    totalAmount: order.totalAmount || 0,
-                    amountPaid: paidUSD,
-                    debtChange: actualDebt, // Реальный долг = сумма минус уже оплаченное
-                    balance: actualDebt, // Текущий остаток
-                    reportNo: order.reportNo,
-                    paymentDueDate: order.paymentDueDate
+                    description: relatedOrder?.reportNo 
+                        ? `Отчёт №${relatedOrder.reportNo}` 
+                        : (tx.description || 'Начальный долг / Обязательство'),
+                    totalAmount: tx.amount || 0,
+                    amountPaid: 0,
+                    debtChange: tx.amount || 0,
+                    balance: 0,
+                    reportNo: relatedOrder?.reportNo,
+                    paymentDueDate: relatedOrder?.paymentDueDate
+                });
+            }
+            // FIX #7: Все client_payment считаются погашениями (убран фильтр по слову "погашение")
+            else if (tx.type === 'client_payment') {
+                let amountInUSD = tx.amount || 0;
+                if (tx.currency === 'UZS' && tx.exchangeRate) {
+                    amountInUSD = (tx.amount || 0) / tx.exchangeRate;
+                }
+                
+                allHistory.push({
+                    id: tx.id,
+                    date: tx.date,
+                    type: 'repayment',
+                    description: tx.description || 'Погашение долга',
+                    totalAmount: tx.amount || 0,
+                    amountPaid: tx.amount || 0,
+                    debtChange: -amountInUSD,
+                    balance: 0,
+                    paymentMethod: tx.method,
+                    currency: tx.currency || 'USD',
+                    exchangeRate: tx.exchangeRate,
+                    amountInUSD
                 });
             }
         });
         
-        // Собираем ID всех заказов этого клиента для поиска погашений
-        const clientOrderIds = allHistory.filter(h => h.type === 'order').map(h => h.id.toLowerCase());
-        
-        // Найти все транзакции связанные с этим клиентом
-        transactions.forEach(tx => {
-            const txDescription = (tx.description || '').toLowerCase();
-            const matchesClient = 
-                tx.relatedId === clientId ||
-                (clientName && txDescription.includes(clientName)) ||
-                (companyName && txDescription.includes(companyName));
-            
-            // Также проверяем связь с заказами клиента
-            const matchesClientOrder = clientOrderIds.some(orderId => 
-                tx.relatedId?.toLowerCase() === orderId ||
-                txDescription.includes(orderId)
-            );
-            
-            if (matchesClient || matchesClientOrder) {
-                // Долг по заказу или ручное обязательство - это создание долга (добавление)
-                if (tx.type === 'debt_obligation' || txDescription.includes('долг по заказу') || txDescription.includes('debt for order')) {
-                    // Проверяем, не добавлен ли уже этот заказ (avoid double counting of orders)
-                    const alreadyExists = allHistory.some(h => 
-                        h.id === tx.id || 
-                        (tx.relatedId && h.id === tx.relatedId && h.type === 'order') ||
-                        (txDescription.includes(h.id.toLowerCase()) && h.type === 'order')
-                    );
-                    if (alreadyExists) return; // Пропускаем дубликаты
-                    
-                    // Найдём reportNo из связанного заказа (если есть)
-                    const relatedOrder = orders.find(o => 
-                        tx.description?.toLowerCase().includes(o.id.toLowerCase()) ||
-                        tx.relatedId === o.id
-                    );
-                    
-                    allHistory.push({
-                        id: tx.id,
-                        date: tx.date,
-                        type: 'order', // Treat as debt increase
-                        description: relatedOrder?.reportNo 
-                            ? `Отчёт №${relatedOrder.reportNo}` 
-                            : (tx.description || 'Начальный долг / Обязательство'),
-                        totalAmount: tx.amount || 0,
-                        amountPaid: 0,
-                        debtChange: tx.amount || 0, // Добавляет долг
-                        balance: 0,
-                        reportNo: relatedOrder?.reportNo,
-                        paymentDueDate: relatedOrder?.paymentDueDate
-                    });
-                }
-                // Погашение долга - уменьшение долга (type может быть 'income', 'client_payment', 'sale')
-                else if ((tx.type === 'income' || tx.type === 'client_payment' || tx.type === 'sale') && (txDescription.includes('погашение') || txDescription.includes('repayment'))) {
-                    // Определяем сумму в USD
-                    let amountInUSD = tx.amount || 0;
-                    if (tx.currency === 'UZS' && tx.exchangeRate) {
-                        amountInUSD = (tx.amount || 0) / tx.exchangeRate;
-                    }
-                    
-                    // Поле может называться method или paymentMethod
-                    const payMethod = (tx as any).method || tx.paymentMethod;
-                    
-                    allHistory.push({
-                        id: tx.id,
-                        date: tx.date,
-                        type: 'repayment',
-                        description: tx.description || 'Погашение долга',
-                        totalAmount: tx.amount || 0,
-                        amountPaid: tx.amount || 0,
-                        debtChange: -amountInUSD, // Уменьшает долг в USD
-                        balance: 0,
-                        paymentMethod: payMethod,
-                        currency: tx.currency || 'USD',
-                        exchangeRate: tx.exchangeRate,
-                        amountInUSD
-                    });
-                }
-                // Другие транзакции связанные с клиентом
-                else if (tx.type === 'sale' || tx.type === 'income') {
-                    // Пропускаем обычные продажи, они уже в заказах
-                }
-            }
-        });
-        
-        // Сортировать по дате
+        // 4. Сортировать по дате
         allHistory.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
         
-        // Рассчитать баланс (накопительный долг)
+        // 5. Рассчитать баланс (накопительный долг)
         let runningBalance = 0;
         allHistory.forEach(item => {
             runningBalance += item.debtChange;
@@ -748,8 +587,9 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
                         exchangeRate: exchangeRate,
                         method: 'cash',
                         description: `Погашение долга (нал UZS): ${selectedClientForRepayment.name}${orderRef}`,
-                        relatedId: selectedOrderForRepayment || clientId
-                    } as any, clientId);
+                        relatedId: selectedOrderForRepayment || clientId,
+                        date: new Date().toISOString()
+                    }, clientId);
                 }
                 if (mixCashUSD > 0) {
                     await transactionService.createPayment({
@@ -758,8 +598,9 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
                         currency: 'USD',
                         method: 'cash',
                         description: `Погашение долга (нал USD): ${selectedClientForRepayment.name}${orderRef}`,
-                        relatedId: selectedOrderForRepayment || clientId
-                    } as any, clientId);
+                        relatedId: selectedOrderForRepayment || clientId,
+                        date: new Date().toISOString()
+                    }, clientId);
                 }
                 if (mixCard > 0) {
                      await transactionService.createPayment({
@@ -769,8 +610,9 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
                         exchangeRate: exchangeRate,
                         method: 'card',
                         description: `Погашение долга (карта): ${selectedClientForRepayment.name}${orderRef}`,
-                        relatedId: selectedOrderForRepayment || clientId
-                    } as any, clientId);
+                        relatedId: selectedOrderForRepayment || clientId,
+                        date: new Date().toISOString()
+                    }, clientId);
                 }
                 if (mixBank > 0) {
                      await transactionService.createPayment({
@@ -780,8 +622,9 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
                         exchangeRate: exchangeRate,
                         method: 'bank',
                         description: `Погашение долга (перечисл.): ${selectedClientForRepayment.name}${orderRef}`,
-                        relatedId: selectedOrderForRepayment || clientId
-                    } as any, clientId);
+                        relatedId: selectedOrderForRepayment || clientId,
+                        date: new Date().toISOString()
+                    }, clientId);
                 }
             } else {
                 // Single Payment
@@ -790,10 +633,11 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
                     amount: repaymentAmount,
                     currency: repaymentCurrency,
                     exchangeRate: exchangeRate,
-                    method: repaymentMethod,
+                    method: repaymentMethod as 'cash' | 'bank' | 'card' | 'debt',
                     description: `Погашение долга: ${selectedClientForRepayment.name}${orderRef}`,
-                    relatedId: selectedOrderForRepayment || clientId
-                } as any, clientId);
+                    relatedId: selectedOrderForRepayment || clientId,
+                    date: new Date().toISOString()
+                }, clientId);
             }
 
             toast.success('Долг успешно погашен и баланс обновлен');
@@ -1011,183 +855,13 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
 
             {/* Repayment Statistics View */}
             {activeView === 'repaymentStats' && (
-                <div className="flex-1 overflow-y-auto space-y-6 pb-20 custom-scrollbar">
-                    {/* Time Range Selector */}
-                    <div className={`flex items-center gap-2 ${t.bgCard} rounded-xl p-1 border ${t.border} w-full sm:w-auto`}>
-                        {(['week', 'month', 'year', 'all'] as const).map((range) => (
-                            <button
-                                key={range}
-                                onClick={() => setStatsTimeRange(range)}
-                                className={`flex-1 sm:flex-initial px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${
-                                    statsTimeRange === range
-                                        ? t.tabActive
-                                        : t.tabInactive
-                                }`}
-                            >
-                                {range === 'week' ? 'Неделя' : 
-                                 range === 'month' ? 'Месяц' : 
-                                 range === 'year' ? 'Год' : 'Все'}
-                            </button>
-                        ))}
-                    </div>
-
-                    {/* Stats Cards */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                        <div className={`${t.bgStatEmerald} p-4 sm:p-6 rounded-xl border`}>
-                            <div className="flex items-center gap-3 mb-2">
-                                <div className={`p-2 ${t.iconBgEmerald} rounded-lg`}>
-                                    <TrendingUp size={20} className={t.iconEmerald} />
-                                </div>
-                                <p className={`text-xs sm:text-sm ${t.textMuted}`}>Всего погашено</p>
-                            </div>
-                            <p className={`text-2xl sm:text-3xl font-mono font-bold ${t.iconEmerald}`}>
-                                ${repaymentStats.totalRepaidUSD.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                            </p>
-                        </div>
-                        <div className={`${t.bgStatBlue} p-4 sm:p-6 rounded-xl border`}>
-                            <div className="flex items-center gap-3 mb-2">
-                                <div className={`p-2 ${t.iconBgBlue} rounded-lg`}>
-                                    <History size={20} className={t.iconBlue} />
-                                </div>
-                                <p className={`text-xs sm:text-sm ${t.textMuted}`}>Количество операций</p>
-                            </div>
-                            <p className={`text-2xl sm:text-3xl font-mono font-bold ${t.iconBlue}`}>
-                                {repaymentStats.totalCount}
-                            </p>
-                        </div>
-                        <div className={`${t.bgStatPurple} p-4 sm:p-6 rounded-xl border sm:col-span-2 lg:col-span-1`}>
-                            <div className="flex items-center gap-3 mb-2">
-                                <div className={`p-2 ${t.iconBgPurple} rounded-lg`}>
-                                    <DollarSign size={20} className={t.iconPurple} />
-                                </div>
-                                <p className="text-xs sm:text-sm text-slate-400">Среднее погашение</p>
-                            </div>
-                            <p className="text-2xl sm:text-3xl font-mono font-bold text-purple-400">
-                                ${repaymentStats.totalCount > 0 
-                                    ? (repaymentStats.totalRepaidUSD / repaymentStats.totalCount).toLocaleString(undefined, { maximumFractionDigits: 2 })
-                                    : '0.00'}
-                            </p>
-                        </div>
-                    </div>
-
-                    {/* Charts Grid */}
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        {/* Repayments by Day Chart */}
-                        <div className={`${t.bgCard} rounded-xl border ${t.border} p-4 sm:p-6`}>
-                            <h3 className={`text-lg font-bold ${t.text} mb-4 flex items-center gap-2`}>
-                                <Calendar className="text-blue-400" size={20} /> Погашения по дням
-                            </h3>
-                            {repaymentStats.chartData.length > 0 ? (
-                                <ResponsiveContainer width="100%" height={300}>
-                                    <BarChart data={repaymentStats.chartData}>
-                                        <CartesianGrid strokeDasharray="3 3" stroke={theme === 'dark' ? "#334155" : "#e2e8f0"} />
-                                        <XAxis dataKey="date" stroke={theme === 'dark' ? "#94a3b8" : "#64748b"} fontSize={12} />
-                                        <YAxis stroke={theme === 'dark' ? "#94a3b8" : "#64748b"} fontSize={12} />
-                                        <Tooltip
-                                            contentStyle={{ 
-                                                backgroundColor: theme === 'dark' ? '#1e293b' : '#ffffff', 
-                                                borderColor: theme === 'dark' ? '#334155' : '#e2e8f0', 
-                                                color: theme === 'dark' ? '#f1f5f9' : '#0f172a' 
-                                            }}
-                                            formatter={(value: number) => `$${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`}
-                                        />
-                                        <Bar dataKey="amount" fill="#10b981" radius={[4, 4, 0, 0]} />
-                                    </BarChart>
-                                </ResponsiveContainer>
-                            ) : (
-                                <div className={`h-[300px] flex items-center justify-center ${t.textMuted}`}>
-                                    Нет данных за выбранный период
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Repayments by Method Chart */}
-                        <div className={`${t.bgCard} rounded-xl border ${t.border} p-4 sm:p-6`}>
-                            <h3 className={`text-lg font-bold ${t.text} mb-4 flex items-center gap-2`}>
-                                <Wallet className="text-emerald-400" size={20} /> По методам оплаты
-                            </h3>
-                            {repaymentStats.methodData.length > 0 ? (
-                                <ResponsiveContainer width="100%" height={300}>
-                                    <PieChart>
-                                        <Pie
-                                            data={repaymentStats.methodData}
-                                            cx="50%"
-                                            cy="50%"
-                                            labelLine={false}
-                                            label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                                            outerRadius={80}
-                                            fill="#8884d8"
-                                            dataKey="value"
-                                        >
-                                            {repaymentStats.methodData.map((entry, index) => (
-                                                <Cell key={`cell-${index}`} fill={entry.color} stroke={theme === 'dark' ? undefined : '#fff'} />
-                                            ))}
-                                        </Pie>
-                                        <Tooltip
-                                            contentStyle={{ 
-                                                backgroundColor: theme === 'dark' ? '#1e293b' : '#ffffff', 
-                                                borderColor: theme === 'dark' ? '#334155' : '#e2e8f0', 
-                                                color: theme === 'dark' ? '#f1f5f9' : '#0f172a' 
-                                            }}
-                                            formatter={(value: number) => `$${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`}
-                                        />
-                                    </PieChart>
-                                </ResponsiveContainer>
-                            ) : (
-                                <div className={`h-[300px] flex items-center justify-center ${t.textMuted}`}>
-                                    Нет данных за выбранный период
-                                </div>
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Top Clients Table */}
-                    <div className={`${t.bgCard} rounded-xl border ${t.border} overflow-hidden`}>
-                        <div className={`p-4 sm:p-6 border-b ${t.border}`}>
-                            <h3 className={`text-lg font-bold ${t.text} flex items-center gap-2`}>
-                                <BarChart3 className="text-indigo-400" size={20} /> Топ клиентов по погашениям
-                            </h3>
-                        </div>
-                        {repaymentStats.topClients.length > 0 ? (
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-left text-sm">
-                                    <thead className={`${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-100'} text-xs uppercase ${t.textMuted} font-medium`}>
-                                        <tr>
-                                            <th className="px-4 sm:px-6 py-3">Клиент</th>
-                                            <th className="px-4 sm:px-6 py-3 text-right">Сумма (USD)</th>
-                                            <th className="px-4 sm:px-6 py-3 text-center">Операций</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className={`divide-y ${t.divide}`}>
-                                        {repaymentStats.topClients.map((client, index) => (
-                                            <tr key={client.name} className={`${theme === 'dark' ? 'hover:bg-slate-700/30' : 'hover:bg-slate-50'} transition-colors`}>
-                                                <td className="px-4 sm:px-6 py-4">
-                                                    <div className="flex items-center gap-3">
-                                                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm">
-                                                            {index + 1}
-                                                        </div>
-                                                        <span className={`font-medium ${t.text}`}>{client.name}</span>
-                                                    </div>
-                                                </td>
-                                                <td className="px-4 sm:px-6 py-4 text-right font-mono text-emerald-500 font-bold">
-                                                    ${client.amount.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                                                </td>
-                                                <td className={`px-4 sm:px-6 py-4 text-center ${t.textMuted}`}>
-                                                    {client.count}
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        ) : (
-                            <div className={`p-12 text-center ${t.textMuted}`}>
-                                Нет данных за выбранный период
-                            </div>
-                        )}
-                    </div>
-                </div>
+                <RepaymentStatsView
+                    stats={repaymentStats}
+                    timeRange={statsTimeRange}
+                    onTimeRangeChange={setStatsTimeRange}
+                />
             )}
+
 
             {/* Clients View */}
             {activeView === 'clients' && (
@@ -1239,118 +913,19 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
 
                     {/* Clients Grid */}
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 overflow-y-auto pb-12 custom-scrollbar">
-                        {displayedClients.map(client => {
-                            const isLegal = client.type === 'legal';
-                            return (
-                                <div key={client.id} className={`${t.bgCard} rounded-xl border p-5 hover:${theme === 'dark' ? 'border-slate-500' : 'border-slate-400'} transition-all group relative overflow-hidden ${isLegal ? 'border-blue-500/30' : t.border}`}>
-                                    {/* Type Badge */}
-                                    <div className={`absolute top-3 left-3 px-2 py-0.5 rounded text-[10px] font-bold ${isLegal ? 'bg-blue-500/20 text-blue-500' : 'bg-emerald-500/20 text-emerald-500'}`}>
-                                        {isLegal ? '🏢 Юр. лицо' : '👤 Физ. лицо'}
-                                    </div>
-                                    
-                                    <div className="absolute top-0 right-0 p-4 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
-                                        <button onClick={() => handleOpenModal(client)} className={`p-2 ${theme === 'dark' ? 'bg-slate-700 hover:bg-slate-600' : 'bg-slate-200 hover:bg-slate-300'} rounded-lg ${t.textMuted} hover:${t.text}`}>
-                                            <Edit size={16} />
-                                        </button>
-                                        <button onClick={() => handleDelete(client.id)} className={`p-2 ${theme === 'dark' ? 'bg-slate-700 hover:bg-red-900/40' : 'bg-slate-200 hover:bg-red-100'} rounded-lg ${t.textMuted} hover:text-red-500`}>
-                                            <Trash2 size={16} />
-                                        </button>
-                                    </div>
-
-                                    <div className="flex items-start gap-4 mb-4 mt-6">
-                                        <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg shadow-lg ${isLegal ? 'bg-gradient-to-br from-blue-500 to-cyan-600' : 'bg-gradient-to-br from-indigo-500 to-purple-600'}`}>
-                                            {isLegal ? '🏢' : client.name.charAt(0).toUpperCase()}
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                            {isLegal && client.companyName ? (
-                                                <>
-                                                    <h3 className={`font-bold ${t.text} text-lg truncate`}>{client.companyName}</h3>
-                                                    <div className={`text-xs ${t.textMuted}`}>Контакт: {client.name}</div>
-                                                </>
-                                            ) : (
-                                                <h3 className={`font-bold ${t.text} text-lg`}>{client.name}</h3>
-                                            )}
-                                            <div className={`flex items-center gap-2 ${t.textMuted} text-sm mt-1`}>
-                                                <Phone size={14} /> {client.phone}
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div className="space-y-2 mb-4">
-                                        {isLegal && (
-                                            <div className="p-2 bg-blue-500/10 rounded-lg border border-blue-500/20 space-y-1">
-                                                {client.inn && (
-                                                    <div className={`text-xs ${t.textMuted}`}><span className="text-blue-500">ИНН:</span> {client.inn}</div>
-                                                )}
-                                                {client.mfo && (
-                                                    <div className={`text-xs ${t.textMuted}`}><span className="text-blue-500">МФО:</span> {client.mfo}</div>
-                                                )}
-                                                {client.bankAccount && (
-                                                    <div className={`text-xs ${t.textMuted} truncate`}><span className="text-blue-500">Р/С:</span> {client.bankAccount}</div>
-                                                )}
-                                                {client.bankName && (
-                                                    <div className={`text-xs ${t.textMuted} truncate`}><span className="text-blue-500">Банк:</span> {client.bankName}</div>
-                                                )}
-                                            </div>
-                                        )}
-                                        {client.email && (
-                                            <div className={`flex items-center gap-2 ${t.textMuted} text-sm`}>
-                                                <Mail size={14} /> {client.email}
-                                            </div>
-                                        )}
-                                        {client.address && (
-                                            <div className={`flex items-center gap-2 ${t.textMuted} text-sm`}>
-                                                <MapPin size={14} /> {client.address}
-                                            </div>
-                                        )}
-                                        {client.type === 'legal' && client.addressLegal && (
-                                            <div className={`flex items-center gap-2 ${t.textMuted} text-sm`}>
-                                                <MapPin size={14} /> Юр. адрес: {client.addressLegal}
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    <div className={`grid grid-cols-2 gap-3 py-3 border-t ${theme === 'dark' ? 'border-slate-700/50' : 'border-slate-200'}`}>
-                                        <div>
-                                            <p className={`text-xs ${t.textMuted} uppercase`}>Покупок</p>
-                                            <p className="font-mono text-emerald-500 font-medium">
-                                                ${calculateClientPurchases(client).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                                            </p>
-                                        </div>
-                                        <div>
-                                            <p className={`text-xs ${t.textMuted} uppercase`}>Долг</p>
-                                            <p className={`font-mono font-bold ${calculateClientDebt(client) > 0 ? 'text-red-500' : t.textMuted}`}>
-                                                ${calculateClientDebt(client).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                                            </p>
-                                        </div>
-                                    </div>
-
-                                    <div className="mt-4 flex gap-2">
-                                        <button
-                                            onClick={() => handleOpenNotesModal(client)}
-                                            className={`px-3 ${theme === 'dark' ? 'bg-slate-700 hover:bg-slate-600' : 'bg-slate-200 hover:bg-slate-300 text-slate-700'} py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-1`}
-                                            title="Заметки"
-                                        >
-                                            <MessageSquare size={16} />
-                                        </button>
-                                        <button
-                                            onClick={() => handleOpenDebtHistoryModal(client)}
-                                            className={`px-3 ${theme === 'dark' ? 'bg-slate-700 hover:bg-slate-600' : 'bg-slate-200 hover:bg-slate-300 text-slate-700'} py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-1`}
-                                            title="История долгов"
-                                        >
-                                            <History size={16} />
-                                        </button>
-                                        <button
-                                            onClick={() => handleOpenRepayModal(client)}
-                                            disabled={calculateClientDebt(client) <= 0}
-                                            className={`flex-1 ${theme === 'dark' ? 'bg-slate-700' : 'bg-slate-200 text-slate-700'} hover:bg-emerald-600 hover:text-white disabled:opacity-50 disabled:hover:bg-slate-700 text-white py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2`}
-                                        >
-                                            <Wallet size={16} /> Погасить долг
-                                        </button>
-                                    </div>
-                                </div>
-                            );
-                        })}
+                        {displayedClients.map(client => (
+                            <ClientCard
+                                key={client.id}
+                                client={client}
+                                debt={calculateClientDebt(client)}
+                                purchases={calculateClientPurchases(client)}
+                                onEdit={handleOpenModal}
+                                onDelete={handleDelete}
+                                onRepay={handleOpenRepayModal}
+                                onHistory={handleOpenDebtHistoryModal}
+                                onNotes={handleOpenNotesModal}
+                            />
+                        ))}
                     </div>
 
                     {/* Pagination */}
@@ -1775,7 +1350,7 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
                                         <div className="flex justify-between text-sm">
                                             <span className={`${t.textMuted}`}>Остаток долга:</span>
                                             <span className={`${t.text} font-mono opacity-80`}>
-                                                ${Math.max(0, (selectedClientForRepayment.totalDebt || 0) - ((mixCashUZS / exchangeRate) + mixCashUSD + (mixCard / exchangeRate) + (mixBank / exchangeRate))).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                                ${Math.max(0, calculateClientDebt(selectedClientForRepayment) - ((mixCashUZS / exchangeRate) + mixCashUSD + (mixCard / exchangeRate) + (mixBank / exchangeRate))).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                                             </span>
                                         </div>
                                     </div>
@@ -1828,7 +1403,7 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
                                         <div className="flex justify-between text-sm">
                                             <span className={`${t.textMuted}`}>Остаток долга:</span>
                                             <span className={`${t.text} font-mono opacity-80`}>
-                                                ${Math.max(0, (selectedClientForRepayment.totalDebt || 0) - (repaymentCurrency === 'UZS' && exchangeRate > 0 ? (repaymentAmount / exchangeRate) : repaymentAmount)).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                                ${Math.max(0, calculateClientDebt(selectedClientForRepayment) - (repaymentCurrency === 'UZS' && exchangeRate > 0 ? (repaymentAmount / exchangeRate) : repaymentAmount)).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                                             </span>
                                         </div>
                                     </div>
@@ -1989,192 +1564,13 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
             )}
 
             {/* Debt History Modal */}
-            {isDebtHistoryModalOpen && selectedClientForHistory && (() => {
-                // Вычисляем текущий долг из истории
-                const totalDebtFromHistory = getClientDebtHistory.filter(h => h.debtChange > 0).reduce((s, h) => s + h.debtChange, 0);
-                const totalRepaidFromHistory = Math.abs(getClientDebtHistory.filter(h => h.debtChange < 0).reduce((s, h) => s + h.debtChange, 0));
-                const currentDebtFromHistory = Math.max(0, totalDebtFromHistory - totalRepaidFromHistory);
-                
-                return (
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className={`${t.bgCard} rounded-2xl w-full max-w-4xl border ${t.border} shadow-2xl animate-scale-in max-h-[90vh] overflow-hidden flex flex-col`}>
-                        <div className={`p-6 border-b ${t.border} flex justify-between items-center flex-shrink-0`}>
-                            <div>
-                                <h3 className={`text-xl font-bold ${t.text} flex items-center gap-2`}>
-                                    <History size={22} className="text-indigo-500" />
-                                    История долга: {selectedClientForHistory.companyName || selectedClientForHistory.name}
-                                </h3>
-                                <p className={`text-sm ${t.textMuted} mt-1`}>
-                                    Полная история операций по долгу клиента
-                                </p>
-                            </div>
-                            <div className="text-right mr-4">
-                                <p className={`text-xs ${t.textMuted}`}>Текущий долг</p>
-                                <p className={`text-2xl font-mono font-bold ${currentDebtFromHistory > 0 ? 'text-red-500' : 'text-emerald-500'}`}>
-                                    ${currentDebtFromHistory.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                                </p>
-                            </div>
-                            <button onClick={() => setIsDebtHistoryModalOpen(false)} className={`${t.textMuted} hover:${t.text}`}>
-                                <Plus size={24} className="rotate-45" />
-                            </button>
-                        </div>
-                        
-                        <div className="flex-1 overflow-y-auto custom-scrollbar">
-                            {getClientDebtHistory.length === 0 ? (
-                                <div className={`text-center py-12 ${t.textMuted}`}>
-                                    <History size={48} className="mx-auto mb-4 opacity-30" />
-                                    <p className="text-lg">Нет записей по долгу</p>
-                                    <p className="text-sm mt-2">
-                                        Долг в карточке: <span className="text-red-500 font-bold">${(selectedClientForHistory.totalDebt || 0).toLocaleString()}</span>
-                                    </p>
-                                    <p className="text-xs mt-4 max-w-md mx-auto">
-                                        Возможно долг был введён вручную или заказы оформлены на другое имя клиента.
-                                        Проверьте имя клиента в заказах.
-                                    </p>
-                                </div>
-                            ) : (
-                                <table className="w-full text-sm">
-                                    <thead className={`${t.bg} sticky top-0`}>
-                                        <tr className={`border-b ${t.border}`}>
-                                            <th className={`px-3 py-3 text-left ${t.textMuted} font-medium`}>Дата</th>
-                                            <th className={`px-3 py-3 text-left ${t.textMuted} font-medium`}>Операция</th>
-                                            <th className={`px-3 py-3 text-left ${t.textMuted} font-medium`}>Описание</th>
-                                            <th className={`px-3 py-3 text-center ${t.textMuted} font-medium`}>Способ оплаты</th>
-                                            <th className={`px-3 py-3 text-right ${t.textMuted} font-medium`}>Сумма</th>
-                                            <th className={`px-3 py-3 text-right ${t.textMuted} font-medium`}>Долг ±</th>
-                                            <th className={`px-3 py-3 text-right ${t.textMuted} font-medium`}>Остаток</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className={`divide-y ${t.divide}`}>
-                                        {getClientDebtHistory.map((item) => (
-                                            <tr key={item.id} className={`hover:${t.bgHover} ${item.type === 'repayment' ? 'bg-emerald-500/5' : item.type === 'order' ? 'bg-red-500/5' : ''}`}>
-                                                <td className={`px-3 py-3 ${t.textMuted} whitespace-nowrap`}>
-                                                    <div>{new Date(item.date).toLocaleDateString('ru-RU')}</div>
-                                                    {item.paymentDueDate && (
-                                                        <div className="text-xs text-amber-500">
-                                                            До: {new Date(item.paymentDueDate).toLocaleDateString('ru-RU')}
-                                                        </div>
-                                                    )}
-                                                </td>
-                                                <td className="px-3 py-3">
-                                                    <span className={`px-2 py-1 rounded text-xs font-bold ${
-                                                        item.type === 'order' ? 'bg-red-500/20 text-red-500' :
-                                                        item.type === 'repayment' ? 'bg-emerald-500/20 text-emerald-500' :
-                                                        'bg-blue-500/20 text-blue-500'
-                                                    }`}>
-                                                        {item.type === 'order' ? '📦 Долг' : 
-                                                         item.type === 'repayment' ? '✅ Оплачено' : 
-                                                         '📋 Транзакция'}
-                                                    </span>
-                                                </td>
-                                                <td className={`px-3 py-3 ${t.text}`}>
-                                                    <div className="max-w-xs">
-                                                        <div className="font-medium">
-                                                            {item.reportNo 
-                                                                ? `Отчёт №${item.reportNo}` 
-                                                                : item.type === 'order' && item.description.includes('ORD-')
-                                                                    ? `Заказ #${item.description.match(/ORD-[a-z0-9]+/i)?.[0]?.slice(-6) || item.id.slice(-6)}`
-                                                                    : item.type === 'repayment'
-                                                                        ? 'Погашение долга'
-                                                                        : item.description
-                                                            }
-                                                        </div>
-                                                        {item.items && item.items.length > 0 && (
-                                                            <div className={`text-xs ${t.textMuted} mt-1`}>
-                                                                {item.items.slice(0, 2).map((it, idx) => (
-                                                                    <span key={idx}>{it.name} × {it.qty}{idx < Math.min(item.items!.length, 2) - 1 ? ', ' : ''}</span>
-                                                                ))}
-                                                                {item.items.length > 2 && <span> +{item.items.length - 2}</span>}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </td>
-                                                <td className={`px-3 py-3 text-center`}>
-                                                    {item.type === 'repayment' ? (
-                                                        <div className="flex flex-col items-center gap-1">
-                                                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                                                                item.paymentMethod === 'cash' ? 'bg-green-500/20 text-green-500' :
-                                                                item.paymentMethod === 'card' ? 'bg-blue-500/20 text-blue-500' :
-                                                                item.paymentMethod === 'bank' ? 'bg-purple-500/20 text-purple-500' :
-                                                                item.paymentMethod === 'mixed' ? 'bg-amber-500/20 text-amber-500' :
-                                                                `${t.bgCard} ${t.textMuted}`
-                                                            }`}>
-                                                                {item.paymentMethod === 'cash' ? '💵 Наличные' :
-                                                                 item.paymentMethod === 'card' ? '💳 Карта' :
-                                                                 item.paymentMethod === 'bank' ? '🏦 Р/С (Банк)' :
-                                                                 item.paymentMethod === 'mixed' ? '🔀 Микс' :
-                                                                 '—'}
-                                                            </span>
-                                                            <span className={`text-xs ${t.textMuted}`}>
-                                                                {item.currency === 'UZS' ? '🇺🇿 Сум' : '🇺🇸 USD'}
-                                                            </span>
-                                                        </div>
-                                                    ) : (
-                                                        <span className={`text-xs ${t.textMuted}`}>—</span>
-                                                    )}
-                                                </td>
-                                                <td className={`px-3 py-3 text-right font-mono ${t.text}`}>
-                                                    <div>
-                                                        {item.currency === 'UZS' ? (
-                                                            <>
-                                                                <div>{item.totalAmount.toLocaleString()} сум</div>
-                                                                {item.amountInUSD && (
-                                                                    <div className={`text-xs ${t.textMuted}`}>
-                                                                        ≈ ${item.amountInUSD.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                                                                    </div>
-                                                                )}
-                                                            </>
-                                                        ) : (
-                                                            <div>${item.totalAmount.toLocaleString()}</div>
-                                                        )}
-                                                    </div>
-                                                </td>
-                                                <td className={`px-3 py-3 text-right font-mono font-bold ${item.debtChange > 0 ? 'text-red-500' : 'text-emerald-500'}`}>
-                                                    {item.debtChange > 0 ? '+' : ''}${item.debtChange.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                                                </td>
-                                                <td className={`px-3 py-3 text-right font-mono font-bold ${item.balance > 0 ? 'text-amber-500' : 'text-emerald-500'}`}>
-                                                    ${item.balance.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            )}
-                        </div>
-                        
-                        <div className={`p-4 border-t ${t.border} flex justify-between items-center ${t.bg}`}>
-                            <div className={`text-sm ${t.textMuted}`}>
-                                Записей: {getClientDebtHistory.length}
-                                {getClientDebtHistory.length > 0 && (() => {
-                                    // Сумма всех долгов (положительные debtChange) - это реальный остаток долга от заказов
-                                    const totalDebtAdded = getClientDebtHistory.filter(h => h.debtChange > 0).reduce((s, h) => s + h.debtChange, 0);
-                                    // Сумма всех погашений (отрицательные debtChange)
-                                    const totalRepaid = Math.abs(getClientDebtHistory.filter(h => h.debtChange < 0).reduce((s, h) => s + h.debtChange, 0));
-                                    // Текущий долг = сумма долгов минус погашения
-                                    const calculatedDebt = Math.max(0, totalDebtAdded - totalRepaid);
-                                    return (
-                                        <>
-                                            <span className="mx-2">|</span>
-                                            Сумма долга: <span className={`font-mono ${t.text}`}>${totalDebtAdded.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
-                                            <span className="mx-2">|</span>
-                                            Погашено: <span className="text-emerald-500 font-mono">${totalRepaid.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
-                                            <span className="mx-2">|</span>
-                                            Остаток долга: <span className={`font-mono font-bold ${calculatedDebt > 0 ? 'text-red-500' : 'text-emerald-500'}`}>${calculatedDebt.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
-                                        </>
-                                    );
-                                })()}
-                            </div>
-                            <button
-                                onClick={() => setIsDebtHistoryModalOpen(false)}
-                                className={`px-6 py-2 ${theme === 'dark' ? 'bg-slate-700 hover:bg-slate-600' : 'bg-slate-200 hover:bg-slate-300'} ${t.text} rounded-lg font-medium transition-colors`}
-                            >
-                                Закрыть
-                            </button>
-                        </div>
-                    </div>
-                </div>
-                );
-            })()}
+            {isDebtHistoryModalOpen && selectedClientForHistory && (
+                <DebtHistoryModal
+                    client={selectedClientForHistory}
+                    history={getClientDebtHistory}
+                    onClose={() => setIsDebtHistoryModalOpen(false)}
+                />
+            )}
             {/* Client Notes Modal - Rendered conditionally */}
             <ClientNotesModal
                 client={selectedClientForNotes}

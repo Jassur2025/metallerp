@@ -276,7 +276,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
         </div>
       </div>
 
-      {(user?.permissions?.canEditProducts !== false) && (
+      {((user as any)?.permissions?.canEditProducts !== false) && (
         <button
           onClick={openAddModal}
           className={`${theme === 'light' ? 'bg-[#1A73E8] hover:bg-[#1557B0]' : 'bg-primary-600 hover:bg-primary-500'} text-white px-3 sm:px-4 py-2 rounded-lg flex items-center justify-center gap-2 transition-colors ${t.shadow} text-sm sm:text-base`}
@@ -392,7 +392,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
                         {product.quantity} <span className={`text-xs ${t.textMuted}`}>{product.unit}</span>
                       </div>
                       <div className="px-6 text-right font-mono text-slate-400">
-                        {user?.permissions?.canViewCostPrice !== false ? (
+                        {(user as any)?.permissions?.canViewCostPrice !== false ? (
                           `$${(product.costPrice || 0).toFixed(2)}`
                         ) : (
                           <span className={`${t.textMuted} flex justify-end gap-1 items-center`}><Lock size={12} /> ***</span>
@@ -532,7 +532,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
                             <div>
                               <p className={`${t.textMuted} mb-0.5`}>Себест.</p>
                               <p className={`font-mono ${t.textMuted}`}>
-                                {user?.permissions?.canViewCostPrice !== false ? `$${(product.costPrice || 0).toFixed(2)}` : '***'}
+                                {(user as any)?.permissions?.canViewCostPrice !== false ? `$${(product.costPrice || 0).toFixed(2)}` : '***'}
                               </p>
                             </div>
                             <div>

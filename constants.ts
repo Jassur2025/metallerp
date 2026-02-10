@@ -4,9 +4,8 @@ import { Product, ProductType, Unit, Order, Expense, Purchase } from './types';
 export const DEFAULT_EXCHANGE_RATE = 12650; // 1 USD = 12650 UZS
 
 export const SUPER_ADMIN_EMAILS = [
-  'jasurmc@gmail.com', // Replace with your actual email
-  'jassurgme@gmail.com', // Admin for phone format check
-  'admin@example.com'
+  'jasurmc@gmail.com',
+  'jassurgme@gmail.com',
 ];
 
 export const INITIAL_PRODUCTS: Product[] = [
@@ -111,6 +110,6 @@ export const INITIAL_EXPENSES: Expense[] = [
   }
 ];
 
-export const IS_DEV_MODE = true;
+export const IS_DEV_MODE = import.meta.env.DEV;
 
 export const INITIAL_PURCHASES: Purchase[] = [];

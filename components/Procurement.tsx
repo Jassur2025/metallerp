@@ -15,7 +15,7 @@ import { HistoryTab } from './Procurement/HistoryTab';
 const isDev = import.meta.env.DEV;
 const logDev = (...args: unknown[]) => { if (isDev) console.log(...args); };
 
-export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts, settings, purchases, onSavePurchases, transactions, setTransactions, workflowOrders, onSaveWorkflowOrders, onSaveProducts, onSaveTransactions, balances }) => {
+export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts, settings, purchases, onSavePurchases, transactions, setTransactions, workflowOrders, onSaveWorkflowOrders, onSaveProducts, onSaveTransactions, onUpdatePurchase, balances }) => {
     const toast = useToast();
     const { theme } = useTheme();
     const t = getThemeClasses(theme);
@@ -522,9 +522,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
 
         if (newTransactions.length > 0) {
             const updatedTransactions = [...transactions, ...newTransactions];
-            // CRITICAL: Save to Sheets FIRST, then update state
             if (onSaveTransactions) await onSaveTransactions(updatedTransactions);
-            setTransactions(updatedTransactions);
         }
 
         // 3. Update Product Stock & Cost (с учётом склада)
@@ -711,7 +709,22 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
 
     const handleOpenRepayModal = (purchase: Purchase) => {
         setSelectedPurchaseForRepayment(purchase);
-        setRepaymentAmount(purchase.totalInvoiceAmount - purchase.amountPaid);
+        // Use amountPaidUSD if available (for new records), otherwise assume amountPaid is USD (legacy) or convert?
+        // Actually since we are in a transition, reliance on amountPaidUSD for USD calculations is safer if it exists.
+        // Smart Legacy Check: if amountPaidUSD is missing but amountPaid exists and it's a legacy item
+        // (we assume legacy items generally don't have totalInvoiceAmountUZS set yet)
+        const isLegacy = purchase.totalInvoiceAmountUZS === undefined || purchase.totalInvoiceAmountUZS === 0;
+        let paidUSD = purchase.amountPaidUSD;
+
+        if (isLegacy && (paidUSD === undefined || paidUSD === null)) {
+            paidUSD = purchase.amountPaid || 0;
+        } else {
+            paidUSD = paidUSD ?? 0;
+        }
+        // If amountPaidUSD is 0 but amountPaid is > 0, we might be in a state where only UZS was recorded?
+        // But let's stick to the main bug: new usage has amountPaid as UZS.
+
+        setRepaymentAmount(Math.max(0, purchase.totalInvoiceAmount - paidUSD));
         setRepaymentMethod('cash');
         setRepaymentCurrency('USD');
         setIsRepayModalOpen(true);
@@ -721,11 +734,19 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
         if (!selectedPurchaseForRepayment) return;
 
         const rate = settings.defaultExchangeRate || 12900;
-        const remainingDebt = selectedPurchaseForRepayment.totalInvoiceAmount - selectedPurchaseForRepayment.amountPaid;
+        const isLegacy = selectedPurchaseForRepayment.totalInvoiceAmountUZS === undefined || selectedPurchaseForRepayment.totalInvoiceAmountUZS === 0;
+        let prevPaidUSD = selectedPurchaseForRepayment.amountPaidUSD;
+        if (isLegacy && (prevPaidUSD === undefined || prevPaidUSD === null)) {
+            prevPaidUSD = selectedPurchaseForRepayment.amountPaid || 0;
+        } else {
+            prevPaidUSD = prevPaidUSD ?? 0;
+        }
+
+        const remainingDebt = selectedPurchaseForRepayment.totalInvoiceAmount - prevPaidUSD;
         const remainingDebtUZS = remainingDebt * rate;
 
-        let amountUSD: number;
-        let amountUZS: number;
+        let amountUSD: number = 0;
+        let amountUZS: number = 0;
         const newTransactions: Transaction[] = [];
         const baseTrx = {
             date: new Date().toISOString(),
@@ -785,13 +806,30 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
             // Обычная оплата одним методом
             if (repaymentAmount <= 0) return;
 
-            // Calculate USD Equivalent for Purchase update
+            // Validate inputs
+            if (!Number.isFinite(repaymentAmount) || repaymentAmount <= 0) {
+                toast.warning('Введите корректную сумму оплаты');
+                return;
+            }
+
+            // Calculate USD/UZS based on currency
+            let amountUSD = 0;
+            let amountUZS = 0;
+
             if (repaymentCurrency === 'UZS') {
                 amountUZS = repaymentAmount;
-                amountUSD = repaymentAmount / rate;
+                const safeRate = (rate && rate > 0) ? rate : 12900;
+                amountUSD = repaymentAmount / safeRate;
             } else {
                 amountUSD = repaymentAmount;
-                amountUZS = repaymentAmount * rate;
+                const safeRate = (rate && rate > 0) ? rate : 12900;
+                amountUZS = repaymentAmount * safeRate;
+            }
+
+            // Check for NaN result
+            if (!Number.isFinite(amountUSD) || !Number.isFinite(amountUZS)) {
+                toast.error('Ошибка в расчетах курса. Проверьте настройки валюты.');
+                return;
             }
 
             // Validate if trying to pay more than debt
@@ -836,10 +874,9 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
             });
         }
 
-        // Save Transactions
+        // Save Transactions via Firebase
         if (newTransactions.length > 0) {
             const updatedTransactions = [...transactions, ...newTransactions];
-            setTransactions(updatedTransactions);
             if (onSaveTransactions) {
                 onSaveTransactions(updatedTransactions);
             }
@@ -848,12 +885,50 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
         // Update Purchase (Always in USD)
         const updatedPurchases = purchases.map(p => {
             if (p.id === selectedPurchaseForRepayment.id) {
-                const newAmountPaid = (p.amountPaid || 0) + (Number.isFinite(amountUSD) ? amountUSD : 0);
-                return {
+                // Determine clean values to add
+                const addedUSD = Number.isFinite(amountUSD) ? amountUSD : 0;
+                const addedUZS = Number.isFinite(amountUZS) ? amountUZS : 0;
+
+                // Smart Legacy Handling:
+                // 1. New Schema: totalInvoiceAmountUZS exists -> amountPaid is UZS, amountPaidUSD is USD
+                // 2. Legacy Schema: totalInvoiceAmountUZS missing -> amountPaid is USD
+                const isLegacy = p.totalInvoiceAmountUZS === undefined || p.totalInvoiceAmountUZS === 0;
+
+                let currentPaidUSD = p.amountPaidUSD;
+                let currentPaidUZS = p.amountPaid;
+
+                if (isLegacy) {
+                    // Legacy: amountPaid holds USD value
+                    currentPaidUSD = currentPaidUSD ?? p.amountPaid ?? 0;
+                    // Recalculate UZS equivalent for consistency (using current rate or purchase rate)
+                    const pRate = p.exchangeRate || 12800;
+                    currentPaidUZS = (currentPaidUSD * pRate);
+                } else {
+                    // New: just ensure safe numbers
+                    currentPaidUSD = currentPaidUSD ?? 0;
+                    currentPaidUZS = currentPaidUZS ?? 0;
+                }
+
+                const newAmountPaidUZS = currentPaidUZS + addedUZS;
+                const newAmountPaidUSD = currentPaidUSD + addedUSD;
+
+                // Snap to Paid Logic:
+                // If remaining debt is negligible (< 0.1 USD), mark as fully paid.
+                const isPaid = newAmountPaidUSD >= p.totalInvoiceAmount - 0.1;
+
+                const updatedPurchase = {
                     ...p,
-                    amountPaid: newAmountPaid,
-                    paymentStatus: newAmountPaid >= p.totalInvoiceAmount - 0.1 ? 'paid' : 'partial'
+                    amountPaid: newAmountPaidUZS, // UZS
+                    amountPaidUSD: newAmountPaidUSD, // USD
+                    paymentStatus: isPaid ? 'paid' : 'partial'
                 } as Purchase;
+
+                // Direct update for better reliability
+                if (onUpdatePurchase) {
+                    onUpdatePurchase(p.id, updatedPurchase).catch(err => console.error("Failed to update purchase directly", err));
+                }
+
+                return updatedPurchase;
             }
             return p;
         });
@@ -941,40 +1016,56 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                         </div>
                         <div className="p-6 space-y-6">
                             <div className={`${t.bg} p-4 rounded-xl border ${t.border}`}>
-                                <p className={`text-sm ${t.textMuted} mb-1`}>Поставщик</p>
-                                <p className={`text-lg font-bold ${t.text}`}>{selectedPurchaseForRepayment.supplierName}</p>
-                                <div className="mt-3 flex justify-between items-end">
-                                    <span className={`text-sm ${t.textMuted}`}>Остаток долга:</span>
-                                    <span className="text-xl font-mono font-bold text-red-400">
-                                        ${(selectedPurchaseForRepayment.totalInvoiceAmount - selectedPurchaseForRepayment.amountPaid).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                    </span>
-                                </div>
+                                {(() => {
+                                    // Calculate paidUSD for display (reusing legacy logic)
+                                    const isLegacy = selectedPurchaseForRepayment.totalInvoiceAmountUZS === undefined || selectedPurchaseForRepayment.totalInvoiceAmountUZS === 0;
+                                    let purchasePaidUSD = selectedPurchaseForRepayment.amountPaidUSD;
+                                    if (isLegacy && (purchasePaidUSD === undefined || purchasePaidUSD === null)) {
+                                        purchasePaidUSD = selectedPurchaseForRepayment.amountPaid || 0;
+                                    } else {
+                                        purchasePaidUSD = purchasePaidUSD ?? 0;
+                                    }
+                                    return (
+                                        <>
+                                            <p className={`text-sm ${t.textMuted} mb-1`}>Поставщик</p>
+                                            <p className={`text-lg font-bold ${t.text}`}>{selectedPurchaseForRepayment.supplierName}</p>
+                                            <div className="mt-3 flex justify-between items-end">
+                                                <span className={`text-sm ${t.textMuted}`}>Остаток долга:</span>
+                                                <span className="text-xl font-mono font-bold text-red-400">
+                                                    ${(selectedPurchaseForRepayment.totalInvoiceAmount - (purchasePaidUSD || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                </span>
+                                            </div>
+                                        </>
+                                    );
+                                })()}
                             </div>
 
                             {/* Available Balances */}
-                            {balances && (
-                                <div className={`${t.bg} p-3 rounded-xl border ${t.border}`}>
-                                    <p className={`text-xs font-medium ${t.textMuted} mb-2`}>Доступно в кассах:</p>
-                                    <div className="grid grid-cols-2 gap-2 text-xs">
-                                        <div className="flex justify-between">
-                                            <span className={t.textMuted}>Нал USD:</span>
-                                            <span className="text-emerald-400 font-mono">${balances.cashUSD.toLocaleString()}</span>
-                                        </div>
-                                        <div className="flex justify-between">
-                                            <span className={t.textMuted}>Нал сум:</span>
-                                            <span className="text-blue-400 font-mono">{balances.cashUZS.toLocaleString()}</span>
-                                        </div>
-                                        <div className="flex justify-between">
-                                            <span className={t.textMuted}>Карта:</span>
-                                            <span className="text-purple-400 font-mono">{balances.cardUZS.toLocaleString()}</span>
-                                        </div>
-                                        <div className="flex justify-between">
-                                            <span className={t.textMuted}>Р/С:</span>
-                                            <span className="text-amber-400 font-mono">{balances.bankUZS.toLocaleString()}</span>
+                            {
+                                balances && (
+                                    <div className={`${t.bg} p-3 rounded-xl border ${t.border}`}>
+                                        <p className={`text-xs font-medium ${t.textMuted} mb-2`}>Доступно в кассах:</p>
+                                        <div className="grid grid-cols-2 gap-2 text-xs">
+                                            <div className="flex justify-between">
+                                                <span className={t.textMuted}>Нал USD:</span>
+                                                <span className="text-emerald-400 font-mono">${balances.cashUSD.toLocaleString()}</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className={t.textMuted}>Нал сум:</span>
+                                                <span className="text-blue-400 font-mono">{balances.cashUZS.toLocaleString()}</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className={t.textMuted}>Карта:</span>
+                                                <span className="text-purple-400 font-mono">{balances.cardUZS.toLocaleString()}</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className={t.textMuted}>Р/С:</span>
+                                                <span className="text-amber-400 font-mono">{balances.bankUZS.toLocaleString()}</span>
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
-                            )}
+                                )
+                            }
 
                             {/* Payment Method Selector */}
                             <div className="space-y-2">
@@ -1094,6 +1185,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                                         className={`w-full ${t.bg} border ${t.border} rounded-lg pl-12 pr-4 py-3 ${t.text} text-lg font-mono focus:ring-2 focus:ring-emerald-500 outline-none`}
                                         value={repaymentAmount || ''}
                                         onChange={e => setRepaymentAmount(Number(e.target.value))}
+                                        max={selectedPurchaseForRepayment.totalInvoiceAmount - (selectedPurchaseForRepayment.amountPaidUSD ?? selectedPurchaseForRepayment.amountPaid ?? 0)}
                                     />
                                 </div>
                                 {repaymentCurrency === 'UZS' && repaymentAmount > 0 && (
@@ -1104,7 +1196,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                             </div>
 
                             <button
-                                onClick={handleRepayDebt}
+                                onClick={() => handleRepayDebt()}
                                 disabled={repaymentAmount <= 0}
                                 className={`w-full bg-emerald-600 hover:bg-emerald-500 disabled:${t.bgHover} disabled:${t.textMuted} text-white py-3 rounded-xl font-bold transition-colors shadow-lg shadow-emerald-600/20`}
                             >
@@ -1296,8 +1388,8 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                         setIsRepaymentSplitModalOpen(false);
                         setIsRepayModalOpen(true);
                     }}
-                    totalAmountUSD={selectedPurchaseForRepayment.totalInvoiceAmount - selectedPurchaseForRepayment.amountPaid}
-                    totalAmountUZS={(selectedPurchaseForRepayment.totalInvoiceAmount - selectedPurchaseForRepayment.amountPaid) * (settings.defaultExchangeRate || 12900)}
+                    totalAmountUSD={selectedPurchaseForRepayment.totalInvoiceAmount - (selectedPurchaseForRepayment.amountPaidUSD ?? 0)}
+                    totalAmountUZS={(selectedPurchaseForRepayment.totalInvoiceAmount - (selectedPurchaseForRepayment.amountPaidUSD ?? 0)) * (settings.defaultExchangeRate || 12900)}
                     exchangeRate={settings.defaultExchangeRate || 12900}
                     onConfirm={handleRepayDebt}
                 />

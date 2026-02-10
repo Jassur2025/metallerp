@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Order, Expense, Product, Purchase, AppSettings, Transaction } from '../types';
+import { Order, Expense, Product, Purchase, AppSettings, Transaction, FixedAsset } from '../types';
 import { telegramService } from '../services/telegramService';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
@@ -21,12 +21,13 @@ interface ReportsProps {
   purchases: Purchase[];
   settings: AppSettings;
   transactions: Transaction[];
+  fixedAssets?: FixedAsset[];
   onAddExpense: (expense: Expense) => void;
 }
 
 type ReportType = 'pnl' | 'cashflow' | 'sales' | 'statistics' | 'vat';
 
-export const Reports: React.FC<ReportsProps> = ({ orders, expenses, products, purchases, settings, transactions, onAddExpense }) => {
+export const Reports: React.FC<ReportsProps> = ({ orders, expenses, products, purchases, settings, transactions, fixedAssets = [], onAddExpense }) => {
   const { theme } = useTheme();
   const t = getThemeClasses(theme);
   const [activeTab, setActiveTab] = useState<ReportType>('pnl');
@@ -248,7 +249,7 @@ export const Reports: React.FC<ReportsProps> = ({ orders, expenses, products, pu
 
       {/* Report Content */}
       <div className={`flex-1 overflow-auto ${t.bgMain} custom-scrollbar`}>
-        {activeTab === 'pnl' && <PnL orders={orders} expenses={expenses} defaultExchangeRate={settings.defaultExchangeRate} />}
+        {activeTab === 'pnl' && <PnL orders={orders} expenses={expenses} fixedAssets={fixedAssets} expenseCategories={settings.expenseCategories} defaultExchangeRate={settings.defaultExchangeRate} />}
         {activeTab === 'cashflow' && <CashFlow orders={orders} expenses={expenses} settings={settings} onAddExpense={onAddExpense} transactions={transactions} />}
         {activeTab === 'sales' && <SalesAnalytics orders={orders} settings={settings} />}
         {activeTab === 'statistics' && <SalesStatistics orders={orders} products={products} transactions={transactions} />}

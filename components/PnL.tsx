@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Order, Expense } from '../types';
+import { Order, Expense, FixedAsset, ExpenseCategory } from '../types';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, Cell } from 'recharts';
 import { TrendingUp, DollarSign, Printer, FileSpreadsheet, Download } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
@@ -11,10 +11,12 @@ const errorDev = (...args: unknown[]) => { if (isDev) console.error(...args); };
 interface PnLProps {
     orders: Order[];
     expenses: Expense[];
+    fixedAssets?: FixedAsset[];
+    expenseCategories?: ExpenseCategory[];
     defaultExchangeRate?: number;
 }
 
-export const PnL: React.FC<PnLProps> = ({ orders, expenses, defaultExchangeRate = 12600 }) => {
+export const PnL: React.FC<PnLProps> = ({ orders, expenses, fixedAssets = [], expenseCategories = [], defaultExchangeRate = 12600 }) => {
     const { theme } = useTheme();
     const t = getThemeClasses(theme);
     const toast = useToast();
@@ -85,16 +87,65 @@ export const PnL: React.FC<PnLProps> = ({ orders, expenses, defaultExchangeRate 
         return sum + amountUSD;
     }, 0);
 
-    const netProfit = grossProfit - operatingExpenses;
+    // FIX #5: OPEX breakdown by IFRS categories
+    const categoryMap = useMemo(() => {
+        const map: Record<string, string> = {};
+        expenseCategories.forEach(c => { map[c.id] = c.pnlCategory; });
+        return map;
+    }, [expenseCategories]);
+
+    const opexByCategory = useMemo(() => {
+        const result = { administrative: 0, operational: 0, commercial: 0 };
+        filteredData.expenses.forEach(e => {
+            const rate = safeNumber(e.exchangeRate) > 0 ? safeNumber(e.exchangeRate) : safeNumber(defaultExchangeRate, 12600);
+            const amountUSD = (e.currency === 'UZS') ? safeNumber(e.amount) / rate : safeNumber(e.amount);
+            const pnlCat = categoryMap[e.category] || 'administrative';
+            if (pnlCat === 'operational') result.operational += amountUSD;
+            else if (pnlCat === 'commercial') result.commercial += amountUSD;
+            else result.administrative += amountUSD;
+        });
+        return result;
+    }, [filteredData.expenses, categoryMap, defaultExchangeRate]);
+
+    // FIX #4: Амортизация ОС за период
+    const depreciation = useMemo(() => {
+        if (!fixedAssets.length) return 0;
+        const now = new Date();
+        const currentMonth = now.getMonth();
+        const currentYear = now.getFullYear();
+
+        // Для "все время" считаем полную накопленную амортизацию
+        if (timeRange === 'all') {
+            return fixedAssets.reduce((sum, fa) => sum + safeNumber(fa.accumulatedDepreciation), 0);
+        }
+
+        // Для месяца считаем месячную амортизацию = годовая / 12
+        const targetMonth = timeRange === 'currentMonth' ? currentMonth : (currentMonth === 0 ? 11 : currentMonth - 1);
+        const targetYear = timeRange === 'currentMonth' ? currentYear : (currentMonth === 0 ? currentYear - 1 : currentYear);
+
+        return fixedAssets.reduce((sum, fa) => {
+            const purchaseDate = new Date(fa.purchaseDate);
+            // Актив должен быть куплен до конца целевого месяца
+            const endOfTarget = new Date(targetYear, targetMonth + 1, 0);
+            if (purchaseDate > endOfTarget) return sum;
+            // Земля не амортизируется
+            if (safeNumber(fa.depreciationRate) === 0) return sum;
+            const monthlyDep = (safeNumber(fa.purchaseCost) * safeNumber(fa.depreciationRate) / 100) / 12;
+            return sum + monthlyDep;
+        }, 0);
+    }, [fixedAssets, timeRange]);
+
+    const netProfit = grossProfit - operatingExpenses - depreciation;
     const netProfitMargin = revenue > 0 ? (netProfit / revenue) * 100 : 0;
 
     // Waterfall Chart Data
     const waterfallData = [
-        { name: 'Выручка', value: revenue, fill: '#3b82f6' }, // Blue
-        { name: 'Себестоимость', value: -cogs, fill: '#f59e0b' }, // Orange
-        { name: 'Валовая Прибыль', value: grossProfit, isSubtotal: true, fill: '#8b5cf6' }, // Purple (Intermediate)
-        { name: 'Расходы', value: -operatingExpenses, fill: '#ef4444' }, // Red
-        { name: 'Чистая Прибыль', value: netProfit, isTotal: true, fill: netProfit >= 0 ? '#10b981' : '#ef4444' } // Green/Red
+        { name: 'Выручка', value: revenue, fill: '#3b82f6' },
+        { name: 'Себестоимость', value: -cogs, fill: '#f59e0b' },
+        { name: 'Валовая Прибыль', value: grossProfit, isSubtotal: true, fill: '#8b5cf6' },
+        { name: 'Расходы', value: -operatingExpenses, fill: '#ef4444' },
+        ...(depreciation > 0 ? [{ name: 'Амортизация', value: -depreciation, fill: '#fb923c' }] : []),
+        { name: 'Чистая Прибыль', value: netProfit, isTotal: true, fill: netProfit >= 0 ? '#10b981' : '#ef4444' }
     ];
 
     // Helper to calculate bar start points for waterfall effect
@@ -146,6 +197,10 @@ export const PnL: React.FC<PnLProps> = ({ orders, expenses, defaultExchangeRate 
                 <td>Операционные расходы (OPEX)</td>
                 <td>-${operatingExpenses.toFixed(2)}</td>
               </tr>
+              ${depreciation > 0 ? `<tr>
+                <td>Амортизация ОС (Depreciation)</td>
+                <td>-${depreciation.toFixed(2)}</td>
+              </tr>` : ''}
               <tr style="font-weight: bold; background-color: #d0f0c0;">
                 <td>Чистая прибыль (Net Profit)</td>
                 <td>${netProfit.toFixed(2)}</td>
@@ -426,7 +481,7 @@ export const PnL: React.FC<PnLProps> = ({ orders, expenses, defaultExchangeRate 
                                 <span className={`font-mono ${t.text} font-bold print:text-black`}>{formatCurrency(grossProfit)}</span>
                             </div>
 
-                            {/* OPEX Section */}
+                            {/* OPEX Section — IFRS breakdown */}
                             <div className="mt-4">
                                 <div className="flex justify-between items-center mb-2">
                                     <span className="font-bold text-red-500 print:text-black">(-) РАСХОДЫ (OPEX)</span>
@@ -436,26 +491,38 @@ export const PnL: React.FC<PnLProps> = ({ orders, expenses, defaultExchangeRate 
                                     {filteredData.expenses.length === 0 ? (
                                         <span className={`${t.textMuted} italic`}>Нет расходов за период</span>
                                     ) : (
-                                        filteredData.expenses.map(e => (
-                                            <div key={e.id} className="flex justify-between">
-                                                <span>{e.category}</span>
-                                                <span>
-                                                    {formatCurrency(
-                                                        e.currency === 'UZS'
-                                                            ? safeNumber(e.amount) / (safeNumber(e.exchangeRate) > 0 ? safeNumber(e.exchangeRate) : safeNumber(defaultExchangeRate, 12600))
-                                                            : safeNumber(e.amount)
-                                                    )}
-                                                    {e.currency === 'UZS' && (
-                                                        <span className={`text-xs ${t.textMuted} ml-1`}>
-                                                            ({safeNumber(e.amount).toLocaleString()} UZS)
-                                                        </span>
-                                                    )}
-                                                </span>
-                                            </div>
-                                        ))
+                                        <>
+                                            {opexByCategory.administrative > 0 && (
+                                                <div className="flex justify-between font-medium">
+                                                    <span>Административные</span>
+                                                    <span>{formatCurrency(opexByCategory.administrative)}</span>
+                                                </div>
+                                            )}
+                                            {opexByCategory.operational > 0 && (
+                                                <div className="flex justify-between font-medium">
+                                                    <span>Производственные</span>
+                                                    <span>{formatCurrency(opexByCategory.operational)}</span>
+                                                </div>
+                                            )}
+                                            {opexByCategory.commercial > 0 && (
+                                                <div className="flex justify-between font-medium">
+                                                    <span>Коммерческие</span>
+                                                    <span>{formatCurrency(opexByCategory.commercial)}</span>
+                                                </div>
+                                            )}
+                                        </>
                                     )}
                                 </div>
                             </div>
+
+                            {depreciation > 0 && (
+                                <div className="mt-2">
+                                    <div className="flex justify-between items-center mb-1">
+                                        <span className="font-bold text-orange-400 print:text-black">(-) АМОРТИЗАЦИЯ</span>
+                                        <span className={`font-mono ${t.text} print:text-black`}>{formatCurrency(depreciation)}</span>
+                                    </div>
+                                </div>
+                            )}
 
                             <div className={`border-t ${t.border} my-2 print:border-gray-300`}></div>
 

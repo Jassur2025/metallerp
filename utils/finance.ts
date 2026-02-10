@@ -132,15 +132,15 @@ export const calculateBaseTotals = (
     const isUSD = t.currency === 'USD';
     const tRate = getSafeRate(t.exchangeRate, rate);
     
-    // Extract Order ID if present
+    // Extract Order ID: prefer relatedId, fallback to description regex
     const orderIdMatch = t.description?.match(/ORD-\d+/);
-    const relatedOrderId = orderIdMatch ? orderIdMatch[0] : null;
+    const relatedOrderId = t.relatedId || (orderIdMatch ? orderIdMatch[0] : null);
     const relatedOrder = relatedOrderId ? orders.find(o => o.id === relatedOrderId) : null;
     
     // Only count client_payments if they are for mixed orders or debt repayment (not standard cash/bank orders already counted)
     // Standard orders are counted above. Mixed orders have payments in transactions.
     const isMixedPayment = relatedOrder?.paymentMethod === 'mixed';
-    const isDebtPayment = t.type === 'client_payment' && !relatedOrderId; // Simple heuristic for debt payment
+    const isDebtPayment = t.type === 'client_payment' && !relatedOrder; // No linked order = standalone debt repayment
 
     if (t.type === 'client_payment') {
       if (isMixedPayment || isDebtPayment) {

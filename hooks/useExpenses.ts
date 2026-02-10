@@ -40,7 +40,7 @@ export const useExpenses = () => {
                 type: 'expense',
                 amount: expense.amount,
                 currency: expense.currency,
-                method: expense.paymentMethod as any,
+                method: expense.paymentMethod,
                 description: expense.description,
                 date: expense.date,
                 relatedId: expense.category, // Store category in relatedId
@@ -65,7 +65,7 @@ export const useExpenses = () => {
             const txUpdates: Partial<Transaction> = {};
             if (updates.amount !== undefined) txUpdates.amount = updates.amount;
             if (updates.currency !== undefined) txUpdates.currency = updates.currency;
-            if (updates.paymentMethod !== undefined) txUpdates.method = updates.paymentMethod as any;
+            if (updates.paymentMethod !== undefined) txUpdates.method = updates.paymentMethod;
             if (updates.description !== undefined) txUpdates.description = updates.description;
             if (updates.date !== undefined) txUpdates.date = updates.date;
             if (updates.category !== undefined) txUpdates.relatedId = updates.category;
@@ -93,7 +93,7 @@ export const useExpenses = () => {
             type: 'expense' as const,
             amount: e.amount,
             currency: e.currency,
-            method: e.paymentMethod as any,
+            method: e.paymentMethod,
             description: e.description,
             date: e.date,
             relatedId: e.category,

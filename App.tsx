@@ -52,7 +52,6 @@ import { getErrorMessage } from './utils/errorHandler';
 import { validateAccessToken, isTokenExpiredError, logTokenStatus } from './utils/tokenHelper';
 import { telegramService } from './services/telegramService';
 import { calculateBaseTotals } from './utils/finance';
-import { useConflictHandler } from './hooks/useConflictHandler';
 
 const isDev = import.meta.env.DEV;
 const logDev = (...args: unknown[]) => { if (isDev) console.log(...args); };
@@ -129,13 +128,11 @@ import { useEmployees } from './hooks/useEmployees';
 import { useFixedAssets } from './hooks/useFixedAssets';
 import { useWorkflowOrders } from './hooks/useWorkflowOrders';
 import { useJournal } from './hooks/useJournal';
+import { useSettings } from './hooks/useSettings';
 
 const AppContent: React.FC = () => {
   const { user, logout, accessToken, refreshAccessToken } = useAuth();
   const toast = useToast();
-
-  // Настраиваем глобальный обработчик конфликтов версий
-  useConflictHandler();
 
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(() => {
@@ -203,7 +200,7 @@ const AppContent: React.FC = () => {
     employees,
     addEmployee,
     updateEmployee,
-    migrateEmployees: migrateLegacyEmployees
+    migrateFromSheets: migrateLegacyEmployees
   } = useEmployees();
   // const [employees, setEmployees] = useState<Employee[]>([]); // Replaced by hook
   // Use Firebase Hook for Transactions
@@ -250,7 +247,7 @@ const AppContent: React.FC = () => {
   // Initialize Save Handlers using the universal hook
   // const [workflowOrders, setWorkflowOrders] = useState<WorkflowOrder[]>([]);
 
-  const handleSaveProducts = async (newProducts: Product[]) => {
+  const handleSaveProducts = async (newProducts: Product[]): Promise<void> => {
     // Firebase Product Sync Adapter
     // Compare newProducts with current products to find Add/Update
     const prevIds = new Set(products.map(p => p.id));
@@ -274,14 +271,12 @@ const AppContent: React.FC = () => {
       }
     }
 
-    return true;
   };
-  const saveOrdersHandler = async (newOrders: Order[]) => {
+  const saveOrdersHandler = async (newOrders: Order[]): Promise<void> => {
     console.warn('Full orders save requested - ignored in Firebase mode');
-    return true;
   };
 
-  const handleSaveTransactions = async (newTransactions: Transaction[]) => {
+  const handleSaveTransactions = async (newTransactions: Transaction[]): Promise<void> => {
     // Firebase Adapter
     // Similar to products, we key off IDs.
     const prevIds = new Set(transactions.map(t => t.id));
@@ -290,33 +285,16 @@ const AppContent: React.FC = () => {
     for (const tx of added) {
       await addTransaction(tx);
     }
-    return true;
   };
 
   // Legacy Save Handlers (Removed)
-  const saveExpensesHandler = async (...args: any[]) => true;
-  const saveFixedAssetsHandler = async (...args: any[]) => true;
-  const saveClientsHandler = async (...args: any[]) => true;
-  const saveEmployeesHandler = async (...args: any[]) => true;
-  const saveWorkflowOrdersHandler = async (...args: any[]) => true;
-  const saveJournalEventsHandler = async (...args: any[]) => true;
-  const [settings, setSettings] = useState<AppSettings>(() => {
-    try {
-      const saved = localStorage.getItem('metal_erp_settings');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        // Ensure expenseCategories exist (fallback for old saved settings)
-        if (!parsed.expenseCategories || parsed.expenseCategories.length === 0) {
-          parsed.expenseCategories = DEFAULT_EXPENSE_CATEGORIES;
-        }
-        return { ...defaultSettings, ...parsed };
-      }
-      return defaultSettings;
-    } catch (e) {
-      errorDev("Failed to parse settings", e);
-      return defaultSettings;
-    }
-  });
+  const saveExpensesHandler = async (...args: any[]): Promise<void> => {};
+  const saveFixedAssetsHandler = async (...args: any[]): Promise<void> => {};
+  const saveClientsHandler = async (...args: any[]): Promise<void> => {};
+  const saveEmployeesHandler = async (...args: any[]): Promise<void> => {};
+  const saveWorkflowOrdersHandler = async (...args: any[]): Promise<void> => {};
+  const saveJournalEventsHandler = async (...args: any[]): Promise<void> => {};
+  const { settings, saveSettings: saveSettingsToFirestore } = useSettings(defaultSettings);
 
   type MoneyEvent = {
     type: 'expense' | 'purchase' | 'supplier_payment' | 'client_payment' | 'sale';
@@ -347,10 +325,7 @@ const AppContent: React.FC = () => {
     // Firebase hooks load data automatically
   }, []);
 
-  // Save Settings
-  useEffect(() => {
-    localStorage.setItem('metal_erp_settings', JSON.stringify(settings));
-  }, [settings]);
+  // Settings are now synced via useSettings hook (Firestore + localStorage cache)
 
   // Persist sidebar state
   useEffect(() => {
@@ -361,215 +336,134 @@ const AppContent: React.FC = () => {
     }
   }, [isSidebarOpen]);
 
-  // Recalculate client debt based on transactions
-  /* Legacy function - kept for reference if needed
-  const recalculateClientDebts = (clients: Client[], transactions: Transaction[], orders: Order[]): Client[] => {
-    return clients.map(client => {
-      let calculatedDebt = 0;
-      const clientName = (client.name || '').toLowerCase().trim();
-      const companyName = (client.companyName || '').toLowerCase().trim();
-
-      // Найти ВСЕ заказы клиента, которые имеют неоплаченный остаток
-      // (debt, unpaid, partial - любые заказы где есть остаток)
-      const clientOrders = orders.filter(o => {
-        const orderClientName = (o.customerName || '').toLowerCase().trim();
-        const matchesClient = o.clientId === client.id ||
-          orderClientName === clientName ||
-          (clientName && orderClientName.includes(clientName)) ||
-          (clientName && clientName.includes(orderClientName)) ||
-          (companyName && orderClientName.includes(companyName)) ||
-          (companyName && companyName.includes(orderClientName));
-
-        // Заказ в долг если: явно debt/unpaid/partial ИЛИ есть остаток (totalAmount > amountPaid)
-        const hasUnpaidBalance = ((o.totalAmount || 0) - (o.amountPaid || 0)) > 0.01;
-        const isDebtPayment = o.paymentMethod === 'debt' ||
-          o.paymentStatus === 'unpaid' ||
-          o.paymentStatus === 'partial';
-
-        return matchesClient && (isDebtPayment || hasUnpaidBalance);
-      });
-      const clientOrderIds = clientOrders.map(o => o.id.toLowerCase());
-
-      // Считаем долг ИЗ ЗАКАЗОВ (только неоплаченную часть!)
-      clientOrders.forEach(order => {
-        // Долг = общая сумма - уже оплачено (amountPaid в USD)
-        const paidUSD = order.amountPaid || 0;
-        const openAmount = (order.totalAmount || 0) - paidUSD;
-        calculatedDebt += Math.max(0, openAmount);
-      });
-
-      // Также добавляем долг из транзакций debt_obligation (для старых данных)
-      // НО только если они НЕ связаны с заказами которые уже посчитаны
-      const debtTransactions = transactions.filter(t => {
-        if (t.type !== 'debt_obligation') return false;
-        const desc = (t.description || '').toLowerCase();
-        const matchesClient = t.relatedId === client.id ||
-          (clientName && desc.includes(clientName)) ||
-          (companyName && desc.includes(companyName));
-        // Исключаем если это долг по заказу который уже посчитан
-        const relatedToExistingOrder = clientOrderIds.some(orderId =>
-          desc.includes(orderId) || t.relatedId?.toLowerCase() === orderId
-        );
-        return matchesClient && !relatedToExistingOrder;
-      });
-      debtTransactions.forEach(t => {
-        calculatedDebt += t.amount;
-      });
-
-      // Вычитаем погашения (client_payment) ТОЛЬКО для debt_obligation транзакций
-      // Погашения для заказов уже учтены в amountPaid заказа!
-      // Ищем погашения которые относятся к клиенту напрямую (не к заказу)
-      const debtTxIds = debtTransactions.map(t => t.id.toLowerCase());
-      const paymentTransactions = transactions.filter(t => {
-        const desc = (t.description || '').toLowerCase();
-        const relatedIdLower = (t.relatedId || '').toLowerCase();
-        const isPayment = t.type === 'client_payment' || (t.type === 'income' && desc.includes('погашение'));
-
-        // Погашение относится к клиенту напрямую (relatedId = clientId)
-        // и НЕ к конкретному заказу (иначе amountPaid заказа уже учтено)
-        const isForClientDirectly = t.relatedId === client.id;
-        const isForDebtObligation = debtTxIds.includes(relatedIdLower);
-        const isForKnownOrder = clientOrderIds.includes(relatedIdLower);
-
-        // Учитываем только если:
-        // 1. Связано с клиентом напрямую
-        // 2. ИЛИ связано с debt_obligation транзакцией
-        // 3. И НЕ связано с заказом (заказы используют amountPaid)
-        return isPayment && (isForClientDirectly || isForDebtObligation) && !isForKnownOrder;
-      });
-      paymentTransactions.forEach(t => {
-        // Convert to USD if needed
-        let amountUSD = t.amount;
-        if (t.currency === 'UZS' && t.exchangeRate && t.exchangeRate > 0) {
-          amountUSD = t.amount / t.exchangeRate;
-        }
-        calculatedDebt -= amountUSD;
-      });
-
-      // Also check for client returns that reduce debt
-      const returnTransactions = transactions.filter(t =>
-        t.type === 'client_return' && (t as any).method === 'debt' && t.relatedId === client.id
-      );
-      returnTransactions.forEach(t => {
-        let amountUSD = t.amount;
-        if (t.currency === 'UZS' && t.exchangeRate && t.exchangeRate > 0) {
-          amountUSD = t.amount / t.exchangeRate;
-        }
-        calculatedDebt -= amountUSD;
-      });
-
-      return {
-        ...client,
-        totalDebt: Math.max(0, calculatedDebt) // Ensure debt is never negative
-      };
-    });
-  };
-  */
-
   // Real-time Debt Recalculation Effect
+  // Uses useRef to access latest data without causing re-triggers,
+  // and a running guard to prevent overlapping/cyclic updates.
+  const clientsRef = React.useRef(clients);
+  const ordersRef = React.useRef(orders);
+  const transactionsRef = React.useRef(transactions);
+  const updateClientRef = React.useRef(updateClient);
+  const isRecalculatingRef = React.useRef(false);
+
+  React.useEffect(() => { clientsRef.current = clients; }, [clients]);
+  React.useEffect(() => { ordersRef.current = orders; }, [orders]);
+  React.useEffect(() => { transactionsRef.current = transactions; }, [transactions]);
+  React.useEffect(() => { updateClientRef.current = updateClient; }, [updateClient]);
+
   useEffect(() => {
-    if (clients.length === 0) return;
+    if (clients.length === 0 || orders.length === 0) return;
 
-    // We process clients one by one or in batches if performance implementation is needed
-    // For now, let's just check if we need to update any client
     const checkDebts = async () => {
-      let updatesCount = 0;
+      if (isRecalculatingRef.current) return;
+      isRecalculatingRef.current = true;
 
-      for (const client of clients) {
-        let calculatedDebt = 0;
-        const clientName = (client.name || '').toLowerCase().trim();
-        const companyName = (client.companyName || '').toLowerCase().trim();
+      try {
+        const currentClients = clientsRef.current;
+        const currentOrders = ordersRef.current;
+        const currentTransactions = transactionsRef.current;
+        let updatesCount = 0;
 
-        const clientOrders = orders.filter(o => {
-          const orderClientName = (o.customerName || '').toLowerCase().trim();
-          const matchesClient = o.clientId === client.id ||
-            orderClientName === clientName ||
-            (clientName && orderClientName.includes(clientName)) ||
-            (clientName && clientName.includes(orderClientName)) ||
-            (companyName && orderClientName.includes(companyName)) ||
-            (companyName && companyName.includes(orderClientName));
+        for (const client of currentClients) {
+          let calculatedDebt = 0;
+          const clientName = (client.name || '').toLowerCase().trim();
+          const companyName = (client.companyName || '').toLowerCase().trim();
 
-          const hasUnpaidBalance = ((o.totalAmount || 0) - (o.amountPaid || 0)) > 0.01;
-          const isDebtPayment = o.paymentMethod === 'debt' ||
-            o.paymentStatus === 'unpaid' ||
-            o.paymentStatus === 'partial';
+          // Find unpaid orders for this client
+          const clientOrders = currentOrders.filter(o => {
+            const orderClientName = (o.customerName || '').toLowerCase().trim();
+            const matchesClient = o.clientId === client.id ||
+              orderClientName === clientName ||
+              (clientName && orderClientName.includes(clientName)) ||
+              (clientName && clientName.includes(orderClientName)) ||
+              (companyName && orderClientName.includes(companyName)) ||
+              (companyName && companyName.includes(orderClientName));
 
-          return matchesClient && (isDebtPayment || hasUnpaidBalance);
-        });
-        const clientOrderIds = clientOrders.map(o => o.id.toLowerCase());
+            const hasUnpaidBalance = ((o.totalAmount || 0) - (o.amountPaid || 0)) > 0.01;
+            const isDebtPayment = o.paymentMethod === 'debt' ||
+              o.paymentStatus === 'unpaid' ||
+              o.paymentStatus === 'partial';
 
-        clientOrders.forEach(order => {
-          const paidUSD = order.amountPaid || 0;
-          const openAmount = (order.totalAmount || 0) - paidUSD;
-          calculatedDebt += Math.max(0, openAmount);
-        });
+            return matchesClient && (isDebtPayment || hasUnpaidBalance);
+          });
+          const clientOrderIds = clientOrders.map(o => o.id.toLowerCase());
 
-        const debtTransactions = transactions.filter(t => {
-          if (t.type !== 'debt_obligation') return false;
-          const desc = (t.description || '').toLowerCase();
-          const matchesClient = t.relatedId === client.id ||
-            (clientName && desc.includes(clientName)) ||
-            (companyName && desc.includes(companyName));
-          const relatedToExistingOrder = clientOrderIds.some(orderId =>
-            desc.includes(orderId) || t.relatedId?.toLowerCase() === orderId
+          // Sum unpaid amounts from orders
+          clientOrders.forEach(order => {
+            const paidUSD = order.amountPaid || 0;
+            const openAmount = (order.totalAmount || 0) - paidUSD;
+            calculatedDebt += Math.max(0, openAmount);
+          });
+
+          // Add debt_obligation transactions not linked to counted orders
+          const debtTransactions = currentTransactions.filter(t => {
+            if (t.type !== 'debt_obligation') return false;
+            const desc = (t.description || '').toLowerCase();
+            const matchesClient = t.relatedId === client.id ||
+              (clientName && desc.includes(clientName)) ||
+              (companyName && desc.includes(companyName));
+            const relatedToExistingOrder = clientOrderIds.some(orderId =>
+              desc.includes(orderId) || t.relatedId?.toLowerCase() === orderId
+            );
+            return matchesClient && !relatedToExistingOrder;
+          });
+          debtTransactions.forEach(t => {
+            calculatedDebt += t.amount;
+          });
+
+          // Subtract direct client payments (not linked to specific orders)
+          const debtTxIds = debtTransactions.map(t => t.id.toLowerCase());
+          const paymentTransactions = currentTransactions.filter(t => {
+            const desc = (t.description || '').toLowerCase();
+            const relatedIdLower = (t.relatedId || '').toLowerCase();
+            const isPayment = t.type === 'client_payment' || desc.includes('погашение');
+
+            const isForClientDirectly = t.relatedId === client.id;
+            const isForDebtObligation = debtTxIds.includes(relatedIdLower);
+            const isForKnownOrder = clientOrderIds.includes(relatedIdLower);
+
+            return isPayment && (isForClientDirectly || isForDebtObligation) && !isForKnownOrder;
+          });
+          paymentTransactions.forEach(t => {
+            let amountUSD = t.amount;
+            if (t.currency === 'UZS' && t.exchangeRate && t.exchangeRate > 0) {
+              amountUSD = t.amount / t.exchangeRate;
+            }
+            calculatedDebt -= amountUSD;
+          });
+
+          // Subtract debt-method returns
+          const returnTransactions = currentTransactions.filter(t =>
+            t.type === 'client_return' && t.method === 'debt' && t.relatedId === client.id
           );
-          return matchesClient && !relatedToExistingOrder;
-        });
-        debtTransactions.forEach(t => {
-          calculatedDebt += t.amount;
-        });
+          returnTransactions.forEach(t => {
+            let amountUSD = t.amount;
+            if (t.currency === 'UZS' && t.exchangeRate && t.exchangeRate > 0) {
+              amountUSD = t.amount / t.exchangeRate;
+            }
+            calculatedDebt -= amountUSD;
+          });
 
-        const debtTxIds = debtTransactions.map(t => t.id.toLowerCase());
-        const paymentTransactions = transactions.filter(t => {
-          const desc = (t.description || '').toLowerCase();
-          const relatedIdLower = (t.relatedId || '').toLowerCase();
-          const isPayment = t.type === 'client_payment' || (t.type === 'income' && desc.includes('погашение'));
+          const finalDebt = Math.max(0, calculatedDebt);
 
-          const isForClientDirectly = t.relatedId === client.id;
-          const isForDebtObligation = debtTxIds.includes(relatedIdLower);
-          const isForKnownOrder = clientOrderIds.includes(relatedIdLower);
-
-          return isPayment && (isForClientDirectly || isForDebtObligation) && !isForKnownOrder;
-        });
-        paymentTransactions.forEach(t => {
-          let amountUSD = t.amount;
-          if (t.currency === 'UZS' && t.exchangeRate && t.exchangeRate > 0) {
-            amountUSD = t.amount / t.exchangeRate;
+          if (Math.abs(finalDebt - (client.totalDebt || 0)) > 0.01) {
+            await updateClientRef.current(client.id, { totalDebt: finalDebt });
+            updatesCount++;
           }
-          calculatedDebt -= amountUSD;
-        });
-
-        const returnTransactions = transactions.filter(t =>
-          t.type === 'client_return' && (t as any).method === 'debt' && t.relatedId === client.id
-        );
-        returnTransactions.forEach(t => {
-          let amountUSD = t.amount;
-          if (t.currency === 'UZS' && t.exchangeRate && t.exchangeRate > 0) {
-            amountUSD = t.amount / t.exchangeRate;
-          }
-          calculatedDebt -= amountUSD;
-        });
-
-        const finalDebt = Math.max(0, calculatedDebt);
-
-        // If debt differs significantly (> 0.01), update it in Firebase
-        if (Math.abs(finalDebt - (client.totalDebt || 0)) > 0.01) {
-          // Update Firebase
-          await updateClient(client.id, { totalDebt: finalDebt });
-          updatesCount++;
         }
-      }
 
-      if (updatesCount > 0) {
-        logDev(`📊 Updated debt for ${updatesCount} clients`);
+        if (updatesCount > 0) {
+          logDev(`📊 Updated debt for ${updatesCount} clients`);
+        }
+      } finally {
+        isRecalculatingRef.current = false;
       }
     };
 
-    // Debounce the check to avoid spamming updates during rapid changes
     const timeoutId = setTimeout(checkDebts, 2000);
     return () => clearTimeout(timeoutId);
 
-  }, [clients.length, orders, transactions, clients, updateClient]); // Only re-run if counts change or specific deps
+    // Trigger only on data count changes — NOT on reference changes from our own updates
+  }, [clients.length, orders.length, transactions.length]);
 
   // Вычисление балансов кассы
   const balances = React.useMemo(() => {
@@ -581,17 +475,17 @@ const AppContent: React.FC = () => {
     // Ensure journalEvents is an array before spreading
     const safeEvents = Array.isArray(journalEvents) ? journalEvents : [];
 
-    const correctionEvents = (balances.corrections || []).map(c => ({
+    const correctionEvents: JournalEvent[] = (balances.corrections || []).map(c => ({
       id: `auto-fix-${c.id}`,
-      date: new Date().toISOString(), // Using current date as placeholder
-      type: 'system',
+      date: new Date().toISOString(),
+      type: 'system_event' as const,
       module: 'finance',
       action: 'Авто-коррекция',
       description: `Исправлена ошибка: ${c.reason}. ${c.type} #${c.id}: ${c.originalAmount} -> ${c.correctedAmount}`,
       employeeName: 'System Auto-Fix'
     }));
 
-    return [...safeEvents, ...correctionEvents as any[]].sort((a, b) =>
+    return [...safeEvents, ...correctionEvents].sort((a, b) =>
       new Date(b.date).getTime() - new Date(a.date).getTime()
     );
   }, [journalEvents, balances.corrections]);
@@ -706,10 +600,9 @@ const AppContent: React.FC = () => {
     }
   };
 
-  const handleSaveExpenses = async (newExpenses: Expense[]) => {
+  const handleSaveExpenses = async (newExpenses: Expense[]): Promise<void> => {
     // Firebase Migration logic if needed, but for now we just log
     console.warn('handleSaveExpenses called - ignoring in Firebase mode');
-    return true;
   };
 
   const handleSaveFixedAssets = async (newAssets: FixedAsset[]) => {
@@ -823,12 +716,7 @@ const AppContent: React.FC = () => {
   };
 
   const handleSaveSettings = async (newSettings: AppSettings) => {
-    setSettings(newSettings);
-    // Save to localStorage for persistence
-    localStorage.setItem('metal_erp_settings', JSON.stringify(newSettings));
-
-    // Also try to save to Google Sheets if possible (optional, but good for sync)
-    // For now, local storage is enough for Telegram tokens as they are device-specific or sensitive
+    await saveSettingsToFirestore(newSettings);
     toast.success('Настройки сохранены!');
   };
 
@@ -879,6 +767,7 @@ const AppContent: React.FC = () => {
           onSaveWorkflowOrders={handleSaveWorkflowOrders}
           onSaveProducts={handleSaveProducts}
           onSaveTransactions={handleSaveTransactions}
+          onUpdatePurchase={updatePurchase}
           balances={balances}
         />);
       case 'journal':
@@ -890,7 +779,7 @@ const AppContent: React.FC = () => {
           orders={orders}
           setOrders={setOrders}
           settings={settings}
-          setSettings={setSettings}
+          setSettings={saveSettingsToFirestore}
           expenses={expenses}
           setExpenses={(val) => console.warn('setExpenses ignored (Firebase)', val)}
           employees={employees}
@@ -932,7 +821,7 @@ const AppContent: React.FC = () => {
           onNavigateToProcurement={() => setActiveTab('import')}
         />);
       case 'reports':
-        return renderLazyComponent(<Reports orders={orders} expenses={expenses} products={products} purchases={purchases} settings={settings} transactions={transactions} onAddExpense={handleAddExpense} />);
+        return renderLazyComponent(<Reports orders={orders} expenses={expenses} products={products} purchases={purchases} settings={settings} transactions={transactions} fixedAssets={fixedAssets} onAddExpense={handleAddExpense} />);
       case 'fixedAssets':
         return renderLazyComponent(<FixedAssets
           assets={fixedAssets}
@@ -981,7 +870,7 @@ const AppContent: React.FC = () => {
   // Current Employee Permissions
   const currentEmployee = employees.find(e => e.email.toLowerCase() === user?.email?.toLowerCase());
 
-  const checkPermission = (module: keyof typeof settings.modules) => {
+  const checkPermission = (module: string) => {
     // 0. Dev Mode Bypass
     if (IS_DEV_MODE) return true;
 
@@ -1001,7 +890,7 @@ const AppContent: React.FC = () => {
     // 3. Check specific module permission
     // If permissions object exists and module is explicitly set to true, allow.
     // Otherwise, deny.
-    if (currentEmployee.permissions && currentEmployee.permissions[module] === true) {
+    if (currentEmployee.permissions && (currentEmployee.permissions as Record<string, boolean>)[module] === true) {
       return true;
     }
 

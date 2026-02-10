@@ -1,6 +1,10 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+@theme {
+  --color-slate-850: #1e293b;
+  --color-primary-500: #3b82f6;
+  --color-primary-600: #2563eb;
+}
 
 /* Toast animations */
 @keyframes slide-in-from-right {

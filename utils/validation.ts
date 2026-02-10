@@ -10,7 +10,8 @@ export interface ValidationResult {
 /**
  * Validates email format
  */
-export const validateEmail = (email: string): boolean => {
+export const validateEmail = (email: string | undefined): boolean => {
+  if (!email) return false;
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   return emailRegex.test(email);
 };
@@ -18,8 +19,9 @@ export const validateEmail = (email: string): boolean => {
 /**
  * Validates phone number (basic validation)
  */
-export const validatePhone = (phone: string): boolean => {
+export const validatePhone = (phone: string | undefined): boolean => {
   // Remove spaces, dashes, and parentheses
+  if (!phone) return false;
   const cleaned = phone.replace(/[\s\-\(\)]/g, '');
   // Check if it contains only digits and is at least 9 characters
   return /^\d{9,15}$/.test(cleaned);

@@ -105,21 +105,45 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fi
     // --- PASSIVES (ПАССИВЫ) ---
 
     // 1. VAT Liability (Owed to Government)
-    const vatLiability = safeOrders.reduce((sum, o) => sum + (o.vatAmount || 0), 0);
+    // НДС исходящий (с продаж)
+    const vatOutput = safeOrders.reduce((sum, o) => sum + (o.vatAmount || 0), 0);
+    // НДС входящий (с закупок) — к зачёту
+    const vatInput = safePurchases.reduce((sum, p) => {
+        // totalVatAmountUZS хранится в сумах, конвертируем в USD
+        if (p.totalVatAmountUZS && p.totalVatAmountUZS > 0) {
+            const purchaseRate = p.exchangeRate || settings.defaultExchangeRate || currentRate;
+            return sum + (p.totalVatAmountUZS / purchaseRate);
+        }
+        // Legacy: суммируем НДС из позиций (уже в UZS), конвертируем
+        if (p.items && Array.isArray(p.items)) {
+            const itemsVatUZS = p.items.reduce((s, item) => s + (item.vatAmount || 0), 0);
+            if (itemsVatUZS > 0) {
+                const purchaseRate = p.exchangeRate || settings.defaultExchangeRate || currentRate;
+                return sum + (itemsVatUZS / purchaseRate);
+            }
+        }
+        return sum;
+    }, 0);
+    // Чистый НДС к уплате = исходящий - входящий (не может быть < 0 для баланса)
+    const vatLiability = Math.max(0, vatOutput - vatInput);
 
     // 2. Accounts Payable (Debt to Suppliers) - Кредиторка в USD
     // Если есть новые поля (totalInvoiceAmountUZS), используем их, иначе legacy
     const accountsPayable = safePurchases.reduce((sum, p) => {
         const purchaseRate = p.exchangeRate || settings.defaultExchangeRate || currentRate;
-        
-        // Новая логика: долг в UZS с НДС
-        if (p.totalInvoiceAmountUZS !== undefined) {
+
+        // Новая логика: долг в UZS с НДС (только если сумма в сумах > 0)
+        if (p.totalInvoiceAmountUZS && p.totalInvoiceAmountUZS > 0) {
             const totalDebtUZS = (p.totalInvoiceAmountUZS || 0) - (p.amountPaid || 0);
             return sum + Math.max(0, totalDebtUZS / purchaseRate);
         }
-        
+
         // Legacy: долг в USD
-        const amountPaidUSD = p.amountPaidUSD || (p.amountPaid || 0);
+        // amountPaidUSD — всегда в USD; amountPaid может быть UZS в новой схеме
+        // Используем amountPaidUSD если определён, иначе amountPaid (только для legacy, где amountPaid был в USD)
+        const amountPaidUSD = (p.amountPaidUSD !== undefined && p.amountPaidUSD !== null)
+            ? p.amountPaidUSD
+            : (p.amountPaid || 0);
         return sum + Math.max(0, (p.totalInvoiceAmount || 0) - amountPaidUSD);
     }, 0);
 
@@ -347,15 +371,27 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fi
                             </p>
                         </div>
 
-                        <div className={`flex justify-between items-center p-3 ${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-50'} rounded-xl border ${theme === 'dark' ? 'border-slate-700/50' : 'border-slate-200'}`}>
-                            <div className="flex items-center gap-3">
-                                <div className="w-2 h-10 bg-red-500 rounded-full"></div>
-                                <div>
-                                    <p className={`${t.text} font-medium`}>Обязательства по НДС</p>
-                                    <p className={`text-xs ${t.textMuted}`}>Подлежит уплате в бюджет</p>
+                        <div className={`p-3 ${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-50'} rounded-xl border ${theme === 'dark' ? 'border-slate-700/50' : 'border-slate-200'}`}>
+                            <div className="flex justify-between items-center">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-2 h-10 bg-red-500 rounded-full"></div>
+                                    <div>
+                                        <p className={`${t.text} font-medium`}>Обязательства по НДС</p>
+                                        <p className={`text-xs ${t.textMuted}`}>Исходящий - Входящий = К уплате</p>
+                                    </div>
+                                </div>
+                                <p className="font-mono text-lg text-red-500">{formatCurrency(vatLiability)}</p>
+                            </div>
+                            <div className="ml-5 mt-2 space-y-1">
+                                <div className="flex justify-between items-center text-xs">
+                                    <span className={t.textMuted}>НДС исходящий (продажи)</span>
+                                    <span className="font-mono text-red-400">{formatCurrency(vatOutput)}</span>
+                                </div>
+                                <div className="flex justify-between items-center text-xs">
+                                    <span className={t.textMuted}>НДС входящий (закупки) — к зачёту</span>
+                                    <span className="font-mono text-emerald-400">-{formatCurrency(vatInput)}</span>
                                 </div>
                             </div>
-                            <p className="font-mono text-lg text-red-500">{formatCurrency(vatLiability)}</p>
                         </div>
 
                         <div className={`flex justify-between items-center p-3 ${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-50'} rounded-xl border ${theme === 'dark' ? 'border-slate-700/50' : 'border-slate-200'}`}>
@@ -393,10 +429,10 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fi
                                     ))}
                                 </Pie>
                                 <Tooltip
-                                    contentStyle={{ 
-                                        backgroundColor: theme === 'dark' ? '#0f172a' : '#ffffff', 
-                                        borderColor: theme === 'dark' ? '#334155' : '#e2e8f0', 
-                                        color: theme === 'dark' ? '#f1f5f9' : '#0f172a' 
+                                    contentStyle={{
+                                        backgroundColor: theme === 'dark' ? '#0f172a' : '#ffffff',
+                                        borderColor: theme === 'dark' ? '#334155' : '#e2e8f0',
+                                        color: theme === 'dark' ? '#f1f5f9' : '#0f172a'
                                     }}
                                     formatter={(value: number) => formatCurrency(value)}
                                 />
@@ -445,11 +481,10 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fi
                             <div key={`${c.id}-${idx}`} className={`${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-50'} p-3 rounded-xl flex justify-between items-center border border-amber-500/20`}>
                                 <div>
                                     <div className="flex items-center gap-2">
-                                        <span className={`text-xs font-bold px-2 py-0.5 rounded ${
-                                            c.type === 'order' ? 'bg-blue-500/20 text-blue-500' :
-                                            c.type === 'transaction' ? 'bg-purple-500/20 text-purple-500' :
-                                            'bg-red-500/20 text-red-500'
-                                        }`}>
+                                        <span className={`text-xs font-bold px-2 py-0.5 rounded ${c.type === 'order' ? 'bg-blue-500/20 text-blue-500' :
+                                                c.type === 'transaction' ? 'bg-purple-500/20 text-purple-500' :
+                                                    'bg-red-500/20 text-red-500'
+                                            }`}>
                                             {c.type === 'order' ? 'ЗАКАЗ' : c.type === 'transaction' ? 'ТРАНЗАКЦИЯ' : 'РАСХОД'}
                                         </span>
                                         <span className={`${t.text} font-mono text-sm`}>ID: {c.id}</span>
@@ -485,14 +520,14 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fi
                                 <span className="text-red-500 font-bold font-mono">{formatCurrency(o.totalAmount)}</span>
                             </div>
                         ))}
-                        {largeTransactions.map(t => (
-                            <div key={t.id} className={`${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-50'} p-3 rounded-xl flex justify-between items-center border border-red-500/20`}>
+                        {largeTransactions.map(tx => (
+                            <div key={tx.id} className={`${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-50'} p-3 rounded-xl flex justify-between items-center border border-red-500/20`}>
                                 <div>
-                                    <p className={`${t.text} font-mono text-sm`}>Транзакция: {t.id} ({t.type})</p>
-                                    <p className={`text-xs ${t.textMuted}`}>{t.date} • {t.description}</p>
+                                    <p className={`${t.text} font-mono text-sm`}>Транзакция: {tx.id} ({tx.type})</p>
+                                    <p className={`text-xs ${t.textMuted}`}>{tx.date} • {tx.description}</p>
                                 </div>
                                 <span className="text-red-500 font-bold font-mono">
-                                    {formatCurrency(t.currency === 'UZS' ? num(t.amount) / getRate(t.exchangeRate) : num(t.amount))}
+                                    {formatCurrency(tx.currency === 'UZS' ? num(tx.amount) / getRate(tx.exchangeRate) : num(tx.amount))}
                                 </span>
                             </div>
                         ))}

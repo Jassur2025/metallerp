@@ -435,7 +435,7 @@ export interface JournalEvent {
   module?: string;       // Модуль системы (sales, inventory, crm и т.д.)
 
   // Связанные данные
-  relatedType?: 'order' | 'product' | 'client' | 'expense' | 'purchase' | 'transaction';
+  relatedType?: 'order' | 'product' | 'client' | 'expense' | 'purchase' | 'transaction' | 'workflow';
   relatedId?: string;
 
   // Дополнительные данные (для чеков)

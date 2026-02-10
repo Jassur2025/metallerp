@@ -81,7 +81,7 @@ export const geminiService = {
         }
       });
       
-      const result = JSON.parse(response.text);
+      const result = JSON.parse(response.text ?? '[]');
       return result;
     } catch (error) {
       console.error("Gemini Parse Error:", error);

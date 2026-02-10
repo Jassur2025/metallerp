@@ -19,6 +19,7 @@ export interface ProcurementProps {
   onSaveWorkflowOrders: (workflowOrders: WorkflowOrder[]) => Promise<boolean | void>;
   onSaveProducts?: (products: Product[]) => Promise<void>;
   onSaveTransactions?: (transactions: Transaction[]) => Promise<boolean | void>;
+  onUpdatePurchase?: (id: string, updates: Partial<Purchase>) => Promise<void>;
   // Балансы кассы
   balances?: Balances;
 }

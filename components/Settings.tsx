@@ -1,11 +1,15 @@
 
 import React, { useState } from 'react';
-import { AppSettings, ExpenseCategory, ExpensePnLCategory } from '../types';
+import { AppSettings, CompanyDetails, ExpenseCategory, ExpensePnLCategory } from '../types';
 import { IdGenerator } from '../utils/idGenerator';
 import { Save, Settings as SettingsIcon, AlertCircle, Database, CheckCircle, XCircle, Loader2, Send, Plus, Trash2, Receipt, RefreshCw } from 'lucide-react';
 import { telegramService } from '../services/telegramService';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
+
+const EMPTY_COMPANY: CompanyDetails = {
+  name: '', address: '', phone: '', inn: '', mfo: '', bankName: '', accountNumber: ''
+};
 
 
 
@@ -374,7 +378,7 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
                                 <label className={`block text-sm font-medium ${t.textMuted}`}>Название компании</label>
                                 <input type="text" className={`w-full ${t.input} border ${t.border} rounded-lg px-4 py-3 ${t.text} focus:ring-2 focus:ring-indigo-500 outline-none`}
                                     value={formData.companyDetails?.name || ''}
-                                    onChange={(e) => setFormData({ ...formData, companyDetails: { ...formData.companyDetails, name: e.target.value } as any })}
+                                    onChange={(e) => setFormData({ ...formData, companyDetails: { ...(formData.companyDetails || EMPTY_COMPANY), name: e.target.value } })}
                                     placeholder="ООО 'METAL MASTER'"
                                 />
                             </div>
@@ -382,7 +386,7 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
                                 <label className={`block text-sm font-medium ${t.textMuted}`}>Телефон</label>
                                 <input type="text" className={`w-full ${t.input} border ${t.border} rounded-lg px-4 py-3 ${t.text} focus:ring-2 focus:ring-indigo-500 outline-none`}
                                     value={formData.companyDetails?.phone || ''}
-                                    onChange={(e) => setFormData({ ...formData, companyDetails: { ...formData.companyDetails, phone: e.target.value } as any })}
+                                    onChange={(e) => setFormData({ ...formData, companyDetails: { ...(formData.companyDetails || EMPTY_COMPANY), phone: e.target.value } })}
                                     placeholder="+998 90 123 45 67"
                                 />
                             </div>
@@ -390,7 +394,7 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
                                 <label className={`block text-sm font-medium ${t.textMuted}`}>Юридический адрес</label>
                                 <input type="text" className={`w-full ${t.input} border ${t.border} rounded-lg px-4 py-3 ${t.text} focus:ring-2 focus:ring-indigo-500 outline-none`}
                                     value={formData.companyDetails?.address || ''}
-                                    onChange={(e) => setFormData({ ...formData, companyDetails: { ...formData.companyDetails, address: e.target.value } as any })}
+                                    onChange={(e) => setFormData({ ...formData, companyDetails: { ...(formData.companyDetails || EMPTY_COMPANY), address: e.target.value } })}
                                     placeholder="г. Ташкент, ул. Примерная, 1"
                                 />
                             </div>
@@ -398,7 +402,7 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
                                 <label className={`block text-sm font-medium ${t.textMuted}`}>ИНН (STIR)</label>
                                 <input type="text" className={`w-full ${t.input} border ${t.border} rounded-lg px-4 py-3 ${t.text} focus:ring-2 focus:ring-indigo-500 outline-none`}
                                     value={formData.companyDetails?.inn || ''}
-                                    onChange={(e) => setFormData({ ...formData, companyDetails: { ...formData.companyDetails, inn: e.target.value } as any })}
+                                    onChange={(e) => setFormData({ ...formData, companyDetails: { ...(formData.companyDetails || EMPTY_COMPANY), inn: e.target.value } })}
                                     placeholder="123456789"
                                 />
                             </div>
@@ -406,7 +410,7 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
                                 <label className={`block text-sm font-medium ${t.textMuted}`}>МФО (MFO)</label>
                                 <input type="text" className={`w-full ${t.input} border ${t.border} rounded-lg px-4 py-3 ${t.text} focus:ring-2 focus:ring-indigo-500 outline-none`}
                                     value={formData.companyDetails?.mfo || ''}
-                                    onChange={(e) => setFormData({ ...formData, companyDetails: { ...formData.companyDetails, mfo: e.target.value } as any })}
+                                    onChange={(e) => setFormData({ ...formData, companyDetails: { ...(formData.companyDetails || EMPTY_COMPANY), mfo: e.target.value } })}
                                     placeholder="00123"
                                 />
                             </div>
@@ -414,7 +418,7 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
                                 <label className={`block text-sm font-medium ${t.textMuted}`}>Название Банка</label>
                                 <input type="text" className={`w-full ${t.input} border ${t.border} rounded-lg px-4 py-3 ${t.text} focus:ring-2 focus:ring-indigo-500 outline-none`}
                                     value={formData.companyDetails?.bankName || ''}
-                                    onChange={(e) => setFormData({ ...formData, companyDetails: { ...formData.companyDetails, bankName: e.target.value } as any })}
+                                    onChange={(e) => setFormData({ ...formData, companyDetails: { ...(formData.companyDetails || EMPTY_COMPANY), bankName: e.target.value } })}
                                     placeholder="АКБ 'Kapitalbank'"
                                 />
                             </div>
@@ -422,7 +426,7 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
                                 <label className={`block text-sm font-medium ${t.textMuted}`}>Расчетный счет</label>
                                 <input type="text" className={`w-full ${t.input} border ${t.border} rounded-lg px-4 py-3 ${t.text} focus:ring-2 focus:ring-indigo-500 outline-none font-mono`}
                                     value={formData.companyDetails?.accountNumber || ''}
-                                    onChange={(e) => setFormData({ ...formData, companyDetails: { ...formData.companyDetails, accountNumber: e.target.value } as any })}
+                                    onChange={(e) => setFormData({ ...formData, companyDetails: { ...(formData.companyDetails || EMPTY_COMPANY), accountNumber: e.target.value } })}
                                     placeholder="2020 8000 ..."
                                 />
                             </div>
@@ -430,7 +434,7 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
                                 <label className={`block text-sm font-medium ${t.textMuted}`}>Директор</label>
                                 <input type="text" className={`w-full ${t.input} border ${t.border} rounded-lg px-4 py-3 ${t.text} focus:ring-2 focus:ring-indigo-500 outline-none`}
                                     value={formData.companyDetails?.director || ''}
-                                    onChange={(e) => setFormData({ ...formData, companyDetails: { ...formData.companyDetails, director: e.target.value } as any })}
+                                    onChange={(e) => setFormData({ ...formData, companyDetails: { ...(formData.companyDetails || EMPTY_COMPANY), director: e.target.value } })}
                                     placeholder="Иванов И.И."
                                 />
                             </div>
@@ -438,7 +442,7 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
                                 <label className={`block text-sm font-medium ${t.textMuted}`}>Главный бухгалтер</label>
                                 <input type="text" className={`w-full ${t.input} border ${t.border} rounded-lg px-4 py-3 ${t.text} focus:ring-2 focus:ring-indigo-500 outline-none`}
                                     value={formData.companyDetails?.accountant || ''}
-                                    onChange={(e) => setFormData({ ...formData, companyDetails: { ...formData.companyDetails, accountant: e.target.value } as any })}
+                                    onChange={(e) => setFormData({ ...formData, companyDetails: { ...(formData.companyDetails || EMPTY_COMPANY), accountant: e.target.value } })}
                                     placeholder="Петрова А.А."
                                 />
                             </div>

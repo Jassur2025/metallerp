@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ChevronDown, ChevronRight, History, Wallet, Edit, Save, X, Trash2, Warehouse } from 'lucide-react';
 import type { Product, Purchase, Transaction, PurchaseItem, WarehouseType } from '../../types';
-import { WarehouseLabels } from '../../types';
+import { WarehouseLabels, Unit } from '../../types';
 import { useTheme } from '../../contexts/ThemeContext';
 import { getThemeClasses } from '../../contexts/ThemeContext';
 
@@ -30,8 +30,8 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({
 }) => {
   const { theme } = useTheme();
   const t = getThemeClasses(theme);
-  const totalPaid = purchases.reduce((sum, p) => sum + (p.amountPaid || 0), 0);
-  const totalDebt = purchases.reduce((sum, p) => sum + (Math.max(0, (p.totalInvoiceAmount || 0) - (p.amountPaid || 0))), 0);
+  const totalPaid = purchases.reduce((sum, p) => sum + (p.amountPaidUSD ?? p.amountPaid ?? 0), 0);
+  const totalDebt = purchases.reduce((sum, p) => sum + (Math.max(0, (p.totalInvoiceAmount || 0) - (p.amountPaidUSD ?? p.amountPaid ?? 0))), 0);
 
   // Editing state
   const [editingItem, setEditingItem] = useState<{ purchaseId: string; itemIndex: number } | null>(null);
@@ -60,7 +60,7 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({
       invoicePrice: editPrice,
       landedCost: editPrice,
       totalLineCost: editQty * editPrice,
-      unit: product?.unit || 'шт'
+      unit: product?.unit || Unit.PIECE
     });
     setEditingItem(null);
   };
@@ -99,7 +99,7 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({
               .slice()
               .reverse()
               .map((purchase) => {
-                const debt = (purchase.totalInvoiceAmount || 0) - (purchase.amountPaid || 0);
+                const debt = (purchase.totalInvoiceAmount || 0) - (purchase.amountPaidUSD ?? purchase.amountPaid ?? 0);
                 const isExpanded = expandedPurchaseIds.has(purchase.id);
                 const purchaseWarehouse = purchase.warehouse || 'main';
                 return (
@@ -164,7 +164,7 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({
                         </span>
                       </td>
                       <td className={`px-6 py-4 text-right font-mono ${theme === 'dark' ? 'text-emerald-400' : 'text-emerald-600'}`}>
-                        ${(purchase.amountPaid || 0).toLocaleString()}
+                        ${(purchase.amountPaidUSD ?? purchase.amountPaid ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </td>
                       <td className={`px-6 py-4 text-right font-mono font-bold ${theme === 'dark' ? 'text-red-400' : 'text-red-600'}`}>
                         {debt > 0 ? `$${debt.toLocaleString()}` : '-'}
@@ -191,15 +191,15 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({
                               <div className={`${t.bgCard} rounded-xl border ${t.border} p-4`}>
                                 <div className={`text-[10px] font-bold ${t.textMuted} mb-3 uppercase tracking-wider`}>Детализация оплаты (МИКС)</div>
                                 <div className="flex flex-wrap gap-4">
-                                  {transactions.filter(t => t.relatedId === purchase.id).map(t => (
-                                    <div key={t.id} className={`${t.bg} p-3 rounded-lg border ${t.border} min-w-[140px]`}>
-                                      <div className={`text-[10px] ${t.textMuted} uppercase mb-1`}>{t.method === 'cash' ? 'Наличные' : t.method === 'card' ? 'Карта' : 'Банк'}</div>
-                                      <div className={`text-sm font-mono font-bold ${t.method === 'cash' && t.currency === 'USD' ? (theme === 'dark' ? 'text-emerald-400' : 'text-emerald-600') : (theme === 'dark' ? 'text-blue-400' : 'text-blue-600')}`}>
-                                        {t.currency === 'UZS' ? `${t.amount.toLocaleString()} UZS` : `$${t.amount.toFixed(2)}`}
+                                  {transactions.filter(tx => tx.relatedId === purchase.id).map(tx => (
+                                    <div key={tx.id} className={`${t.bg} p-3 rounded-lg border ${t.border} min-w-[140px]`}>
+                                      <div className={`text-[10px] ${t.textMuted} uppercase mb-1`}>{(tx as any).method === 'cash' ? 'Наличные' : (tx as any).method === 'card' ? 'Карта' : 'Банк'}</div>
+                                      <div className={`text-sm font-mono font-bold ${(tx as any).method === 'cash' && tx.currency === 'USD' ? (theme === 'dark' ? 'text-emerald-400' : 'text-emerald-600') : (theme === 'dark' ? 'text-blue-400' : 'text-blue-600')}`}>
+                                        {tx.currency === 'UZS' ? `${tx.amount.toLocaleString()} UZS` : `$${tx.amount.toFixed(2)}`}
                                       </div>
                                     </div>
                                   ))}
-                                  {transactions.filter(t => t.relatedId === purchase.id).length === 0 && (
+                                  {transactions.filter(tx => tx.relatedId === purchase.id).length === 0 && (
                                     <div className={`text-xs ${theme === 'dark' ? 'text-red-400' : 'text-red-600'}`}>Транзакции не найдены</div>
                                   )}
                                 </div>

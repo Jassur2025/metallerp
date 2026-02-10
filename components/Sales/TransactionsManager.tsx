@@ -27,7 +27,22 @@ interface TransactionsManagerProps {
   exchangeRate: number;
 }
 
-type DisplayItem = (Transaction | Expense) & { _source: 'transaction' | 'expense' };
+interface DisplayItem {
+  id: string;
+  date: string;
+  type: Transaction['type'] | 'expense';
+  method: Transaction['method'];
+  amount: number;
+  currency: 'USD' | 'UZS';
+  exchangeRate?: number;
+  description: string;
+  relatedId?: string;
+  category?: string;
+  _source: 'transaction' | 'expense';
+  _version?: number;
+  updatedAt?: string;
+  paymentMethod?: string;
+}
 
 export const TransactionsManager: React.FC<TransactionsManagerProps> = ({
   transactions,
@@ -47,13 +62,18 @@ export const TransactionsManager: React.FC<TransactionsManagerProps> = ({
   const [editData, setEditData] = useState<Partial<DisplayItem>>({});
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
-  const allItems = useMemo(() => {
-    const transItems = transactions.map(t => ({ ...t, _source: 'transaction' as const }));
-    const expItems = expenses.map(e => ({ 
-      ...e, 
-      type: 'expense' as const, // Expense doesn't have 'type' field, so we add it for compatibility
-      method: e.paymentMethod, // Map paymentMethod to method
-      _source: 'expense' as const 
+  const allItems: DisplayItem[] = useMemo(() => {
+    const transItems: DisplayItem[] = transactions.map(tx => ({
+      id: tx.id, date: tx.date, type: tx.type, method: tx.method,
+      amount: tx.amount, currency: tx.currency, exchangeRate: tx.exchangeRate,
+      description: tx.description, relatedId: tx.relatedId,
+      _source: 'transaction' as const, _version: tx._version, updatedAt: tx.updatedAt
+    }));
+    const expItems: DisplayItem[] = expenses.map(e => ({
+      id: e.id, date: e.date, type: 'expense' as const, method: e.paymentMethod,
+      amount: e.amount, currency: e.currency, exchangeRate: e.exchangeRate,
+      description: e.description, category: e.category,
+      _source: 'expense' as const, _version: e._version, updatedAt: e.updatedAt
     }));
     return [...transItems, ...expItems];
   }, [transactions, expenses]);
@@ -66,18 +86,17 @@ export const TransactionsManager: React.FC<TransactionsManagerProps> = ({
           if (item._source === 'expense') {
              if (filterType !== 'expense') return false;
           } else {
-             if ((item as Transaction).type !== filterType) return false;
+             if (item.type !== filterType) return false;
           }
         }
         
         if (searchTerm) {
           const search = searchTerm.toLowerCase();
-          const typeLabel = item._source === 'expense' ? 'расход' : (item as Transaction).type;
+          const typeLabel = item._source === 'expense' ? 'расход' : item.type;
           return (
             item.description?.toLowerCase().includes(search) ||
             typeLabel.toLowerCase().includes(search) ||
-            (item as any).method?.toLowerCase().includes(search) ||
-            (item as any).paymentMethod?.toLowerCase().includes(search)
+            item.method?.toLowerCase().includes(search)
           );
         }
         return true;
@@ -116,13 +135,13 @@ export const TransactionsManager: React.FC<TransactionsManagerProps> = ({
       // For expense, we need to map back 'method' to 'paymentMethod' if changed
       const updated = expenses.map(e => {
         if (e.id === editingId) {
-          const updatedExp = { ...e, ...editData } as any;
-          // Ensure paymentMethod is updated if method was changed in UI (though we use same field name in editData usually)
-          if (updatedExp.method) updatedExp.paymentMethod = updatedExp.method;
-          delete updatedExp.type; // Remove the artificial type
-          delete updatedExp._source;
-          delete updatedExp.method; // Remove mapped method if it exists as extra
-          return updatedExp as Expense;
+          const updates: Partial<Expense> = {};
+          if (editData.method) updates.paymentMethod = editData.method as Expense['paymentMethod'];
+          if (editData.amount !== undefined) updates.amount = editData.amount;
+          if (editData.currency) updates.currency = editData.currency;
+          if (editData.description) updates.description = editData.description;
+          if (editData.date) updates.date = editData.date;
+          return { ...e, ...updates };
         }
         return e;
       });
@@ -172,11 +191,11 @@ export const TransactionsManager: React.FC<TransactionsManagerProps> = ({
     }
   };
 
-  const formatAmount = (t: Transaction) => {
-    if (t.currency === 'USD') {
-      return `$${t.amount.toLocaleString()}`;
+  const formatAmount = (item: DisplayItem) => {
+    if (item.currency === 'USD') {
+      return `$${item.amount.toLocaleString()}`;
     }
-    return `${t.amount.toLocaleString()} сум`;
+    return `${item.amount.toLocaleString()} сум`;
   };
 
   const isIncome = (type: string) => {
@@ -231,8 +250,8 @@ export const TransactionsManager: React.FC<TransactionsManagerProps> = ({
           <p className={`text-xs ${t.textMuted}`}>Приход (USD)</p>
           <p className="text-lg font-bold text-emerald-500">
             ${allItems
-              .filter(t => isIncome((t as any).type) && t.currency === 'USD')
-              .reduce((sum, t) => sum + t.amount, 0)
+              .filter(tx => isIncome(tx.type) && tx.currency === 'USD')
+              .reduce((sum, tx) => sum + tx.amount, 0)
               .toLocaleString()}
           </p>
         </div>
@@ -240,8 +259,8 @@ export const TransactionsManager: React.FC<TransactionsManagerProps> = ({
           <p className={`text-xs ${t.textMuted}`}>Расход (USD)</p>
           <p className="text-lg font-bold text-red-500">
             ${allItems
-              .filter(t => !isIncome((t as any).type) && t.currency === 'USD')
-              .reduce((sum, t) => sum + t.amount, 0)
+              .filter(tx => !isIncome(tx.type) && tx.currency === 'USD')
+              .reduce((sum, tx) => sum + tx.amount, 0)
               .toLocaleString()}
           </p>
         </div>
@@ -272,9 +291,9 @@ export const TransactionsManager: React.FC<TransactionsManagerProps> = ({
                 </td>
               </tr>
             ) : (
-              filteredTransactions.map(t => (
-                <tr key={t.id} className={`${theme === 'light' ? 'hover:bg-slate-50' : 'hover:bg-slate-700/30'} transition-colors`}>
-                  {editingId === t.id ? (
+              filteredTransactions.map(tx => (
+                <tr key={tx.id} className={`${theme === 'light' ? 'hover:bg-slate-50' : 'hover:bg-slate-700/30'} transition-colors`}>
+                  {editingId === tx.id ? (
                     // Edit Mode
                     <>
                       <td className="px-4 py-2">
@@ -289,7 +308,7 @@ export const TransactionsManager: React.FC<TransactionsManagerProps> = ({
                         <select
                           value={editData.type || ''}
                           disabled={editData._source === 'expense'}
-                          onChange={(e) => setEditData({ ...editData, type: e.target.value as any })}
+                          onChange={(e) => setEditData({ ...editData, type: e.target.value as DisplayItem['type'] })}
                           className={`w-full px-2 py-1 ${t.bgCard} border ${t.border} rounded ${t.text} text-xs ${editData._source === 'expense' ? 'opacity-50 cursor-not-allowed' : ''}`}
                         >
                           <option value="client_payment">Оплата клиента</option>
@@ -301,7 +320,7 @@ export const TransactionsManager: React.FC<TransactionsManagerProps> = ({
                       <td className="px-4 py-2">
                         <select
                           value={editData.method || ''}
-                          onChange={(e) => setEditData({ ...editData, method: e.target.value as any })}
+                          onChange={(e) => setEditData({ ...editData, method: e.target.value as DisplayItem['method'] })}
                           className={`w-full px-2 py-1 ${t.bgCard} border ${t.border} rounded ${t.text} text-xs`}
                         >
                           <option value="cash">Наличные</option>
@@ -356,36 +375,36 @@ export const TransactionsManager: React.FC<TransactionsManagerProps> = ({
                     // View Mode
                     <>
                       <td className={`px-4 py-3 ${t.textSecondary} text-xs`}>
-                        {new Date(t.date).toLocaleDateString()}
+                        {new Date(tx.date).toLocaleDateString()}
                       </td>
                       <td className="px-4 py-3">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${getTypeColor((t as any).type)}`}>
-                          {getTypeLabel((t as any).type)}
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${getTypeColor(tx.type)}`}>
+                          {getTypeLabel(tx.type)}
                         </span>
-                        {(t as any)._source === 'expense' && (t as any).category && (
-                          <div className="text-[10px] opacity-75 mt-1">{(t as any).category}</div>
+                        {tx._source === 'expense' && tx.category && (
+                          <div className="text-[10px] opacity-75 mt-1">{tx.category}</div>
                         )}
                       </td>
                       <td className="px-4 py-3">
                         <div className={`flex items-center gap-1 ${t.textMuted}`}>
-                          {getMethodIcon((t as any).method)}
-                          <span className="text-xs capitalize">{(t as any).method}</span>
+                          {getMethodIcon(tx.method)}
+                          <span className="text-xs capitalize">{tx.method}</span>
                         </div>
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <div className={`flex items-center justify-end gap-1 font-mono ${isIncome((t as any).type) ? 'text-emerald-500' : 'text-red-500'}`}>
-                          {isIncome((t as any).type) ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
-                          {formatAmount(t as any)}
+                        <div className={`flex items-center justify-end gap-1 font-mono ${isIncome(tx.type) ? 'text-emerald-500' : 'text-red-500'}`}>
+                          {isIncome(tx.type) ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
+                          {formatAmount(tx)}
                         </div>
                       </td>
-                      <td className={`px-4 py-3 ${t.textMuted} text-xs max-w-[200px] truncate`} title={t.description}>
-                        {t.description || '-'}
+                      <td className={`px-4 py-3 ${t.textMuted} text-xs max-w-[200px] truncate`} title={tx.description}>
+                        {tx.description || '-'}
                       </td>
                       <td className="px-4 py-3">
-                        {deleteConfirmId === t.id ? (
+                        {deleteConfirmId === tx.id ? (
                           <div className="flex justify-center gap-1">
                             <button
-                              onClick={() => handleDelete(t.id, (t as any)._source)}
+                              onClick={() => handleDelete(tx.id, tx._source)}
                               className="p-1.5 bg-red-500 text-white rounded hover:bg-red-400 transition-colors text-xs"
                             >
                               Да
@@ -400,14 +419,14 @@ export const TransactionsManager: React.FC<TransactionsManagerProps> = ({
                         ) : (
                           <div className="flex justify-center gap-1">
                             <button
-                              onClick={() => handleEdit(t)}
+                              onClick={() => handleEdit(tx)}
                               className="p-1.5 bg-blue-500/20 text-blue-500 rounded hover:bg-blue-500/30 transition-colors"
                               title="Редактировать"
                             >
                               <Edit3 size={14} />
                             </button>
                             <button
-                              onClick={() => setDeleteConfirmId(t.id)}
+                              onClick={() => setDeleteConfirmId(tx.id)}
                               className="p-1.5 bg-red-500/20 text-red-500 rounded hover:bg-red-500/30 transition-colors"
                               title="Удалить"
                             >
