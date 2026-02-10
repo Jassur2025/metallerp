@@ -56,7 +56,8 @@ export const Reports: React.FC<ReportsProps> = ({ orders, expenses, products, pu
 
       // 2. COGS (Today)
       const cogs = todayOrders.reduce((sumOrder, order) => {
-        return sumOrder + order.items.reduce((sumItem, item) => sumItem + (item.quantity * (item.costAtSale || 0)), 0);
+        const items = Array.isArray(order.items) ? order.items : [];
+        return sumOrder + items.reduce((sumItem, item) => sumItem + (item.quantity * (item.costAtSale || 0)), 0);
       }, 0);
 
       // 3. Expenses (Today)

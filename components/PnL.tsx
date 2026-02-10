@@ -60,7 +60,8 @@ export const PnL: React.FC<PnLProps> = ({ orders, expenses, fixedAssets = [], ex
     const revenue = filteredData.orders.reduce((sum, o) => sum + safeNumber(o.subtotalAmount), 0); // Excluding VAT
 
     const cogs = filteredData.orders.reduce((sumOrder, order) => {
-        const orderCost = order.items.reduce((sumItem, item) => {
+        const items = Array.isArray(order.items) ? order.items : [];
+        const orderCost = items.reduce((sumItem, item) => {
             const qty = safeNumber(item.quantity);
             const cost = safeNumber(item.costAtSale);
             return sumItem + (qty * cost);
