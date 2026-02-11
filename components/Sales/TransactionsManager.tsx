@@ -258,6 +258,9 @@ export const TransactionsManager: React.FC<TransactionsManagerProps> = ({
   const isIncome = (type: string) => {
     return type === 'client_payment' || type === 'client_refund';
   };
+  const isNeutral = (type: string) => {
+    return type === 'debt_obligation'; // Informational, not real cash flow
+  };
 
   return (
     <div className={`${t.bgCard} rounded-xl border ${t.border} overflow-hidden`}>
@@ -316,7 +319,7 @@ export const TransactionsManager: React.FC<TransactionsManagerProps> = ({
           <p className={`text-xs ${t.textMuted}`}>Расход (USD)</p>
           <p className="text-lg font-bold text-red-500">
             ${allItems
-              .filter(tx => !isIncome(tx.type) && tx.currency === 'USD')
+              .filter(tx => !isIncome(tx.type) && !isNeutral(tx.type) && tx.currency === 'USD')
               .reduce((sum, tx) => sum + tx.amount, 0)
               .toLocaleString()}
           </p>

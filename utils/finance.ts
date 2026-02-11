@@ -191,21 +191,29 @@ export const calculateBaseTotals = (
     }
   });
 
-  // 3. Process Expenses
-  expenses.forEach(e => {
-    const amt = num(e.amount);
-    const isUSD = e.currency === 'USD';
-    const eRate = getSafeRate(e.exchangeRate, rate);
+  // 3. Process Expenses — SKIPPED
+  // Expenses are stored as Transaction objects with type='expense' in Firebase (via useExpenses hook).
+  // They are already processed in section 2 above. Processing them again here would cause DOUBLE deduction.
 
-    if (e.paymentMethod === 'cash') {
-      if (isUSD) cashUSD -= validateUSD(amt, eRate, { id: e.id, type: 'expense' }, handleCorrection); else cashUZS -= amt;
-    } else if (e.paymentMethod === 'bank') {
-      bankUZS -= (isUSD ? amt * eRate : amt);
-    } else if (e.paymentMethod === 'card') {
-      cardUZS -= (isUSD ? amt * eRate : amt);
-    }
-  });
-
+  // Temporary debug
+  if (cashUZS <= 0 || cashUSD <= 0) {
+    const ordCashUZS = orders.filter(o => o.paymentMethod === 'cash' && o.paymentCurrency === 'UZS');
+    const ordCashUSD = orders.filter(o => o.paymentMethod === 'cash' && o.paymentCurrency !== 'UZS');
+    const trxCashUZSIn = transactions.filter(t => t.type === 'client_payment' && t.currency === 'UZS' && t.method === 'cash');
+    const trxCashUZSOut = transactions.filter(t => (t.type === 'supplier_payment' || t.type === 'expense') && t.currency === 'UZS' && t.method === 'cash');
+    const trxCashUSDIn = transactions.filter(t => t.type === 'client_payment' && t.currency === 'USD' && t.method === 'cash');
+    const trxCashUSDOut = transactions.filter(t => (t.type === 'supplier_payment' || t.type === 'expense') && t.currency === 'USD' && t.method === 'cash');
+    console.warn('[Finance Debug] Balance issue:', {
+      cashUSD: Math.round(cashUSD), cashUZS: Math.round(cashUZS),
+      bankUZS: Math.round(bankUZS), cardUZS: Math.round(cardUZS),
+      'Orders cash UZS': { count: ordCashUZS.length, sum: Math.round(ordCashUZS.reduce((s, o) => s + num(o.totalAmountUZS), 0)) },
+      'Orders cash USD': { count: ordCashUSD.length, sum: Math.round(ordCashUSD.reduce((s, o) => s + num(o.totalAmount), 0)) },
+      'Trx cash UZS in': { count: trxCashUZSIn.length, sum: Math.round(trxCashUZSIn.reduce((s, t) => s + num(t.amount), 0)) },
+      'Trx cash UZS out': { count: trxCashUZSOut.length, sum: Math.round(trxCashUZSOut.reduce((s, t) => s + num(t.amount), 0)) },
+      'Trx cash USD in': { count: trxCashUSDIn.length, sum: Math.round(trxCashUSDIn.reduce((s, t) => s + num(t.amount), 0)) },
+      'Trx cash USD out': { count: trxCashUSDOut.length, sum: Math.round(trxCashUSDOut.reduce((s, t) => s + num(t.amount), 0)) },
+    });
+  }
   return { cashUSD, cashUZS, bankUZS, cardUZS, corrections };
 };
 

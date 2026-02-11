@@ -457,10 +457,10 @@ export const Sales: React.FC<SalesProps> = ({
 
     return {
       balances: {
-        balanceCashUSD: Math.max(0, cashUSD),
-        balanceCashUZS: Math.max(0, cashUZS),
-        balanceBankUZS: Math.max(0, bankUZS),
-        balanceCardUZS: Math.max(0, cardUZS)
+        balanceCashUSD: cashUSD,
+        balanceCashUZS: cashUZS,
+        balanceBankUZS: bankUZS,
+        balanceCardUZS: cardUZS
       },
       debugStats: {
         salesUSD: 0,
