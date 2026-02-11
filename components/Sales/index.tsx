@@ -57,7 +57,9 @@ export const Sales: React.FC<SalesProps> = ({
     (!!currentUserEmail && SUPER_ADMIN_EMAILS.includes(currentUserEmail.toLowerCase())) ||
     currentEmployee?.role === 'accountant' ||
     currentEmployee?.role === 'manager' ||
-    currentEmployee?.role === 'admin';
+    currentEmployee?.role === 'admin' ||
+    currentEmployee?.permissions?.workflow === true ||
+    currentEmployee?.permissions?.sales === true;
 
   // Mode State
   const [mode, setMode] = useState<SalesMode>('sale');
