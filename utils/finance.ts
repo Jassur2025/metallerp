@@ -132,18 +132,27 @@ export const calculateBaseTotals = (
     const isUSD = t.currency === 'USD';
     const tRate = getSafeRate(t.exchangeRate, rate);
     
-    // Extract Order ID: prefer relatedId, fallback to description regex
-    const orderIdMatch = t.description?.match(/ORD-\d+/);
-    const relatedOrderId = t.relatedId || (orderIdMatch ? orderIdMatch[0] : null);
-    const relatedOrder = relatedOrderId ? orders.find(o => o.id === relatedOrderId) : null;
+    // Extract Order ID from description: "Оплата заказа ORD-xxx-yyy-zzz" or "Оплата заказа 1234567890"
+    const orderIdMatch = t.description?.match(/заказа\s+(\S+)/i);
+    const descOrderId = orderIdMatch ? orderIdMatch[1] : null;
     
-    // Only count client_payments if they are for mixed orders or debt repayment (not standard cash/bank orders already counted)
-    // Standard orders are counted above. Mixed orders have payments in transactions.
-    const isMixedPayment = relatedOrder?.paymentMethod === 'mixed';
-    const isDebtPayment = t.type === 'client_payment' && !relatedOrder; // No linked order = standalone debt repayment
+    // Try to find related order: first by relatedId, then by description
+    // Note: relatedId is often clientId (not orderId), so we must also check description
+    let relatedOrder = t.relatedId ? orders.find(o => o.id === t.relatedId) : null;
+    if (!relatedOrder && descOrderId) {
+      relatedOrder = orders.find(o => o.id === descOrderId) || null;
+    }
+    
+    // Count client_payments towards balance ONLY if they are NOT already counted via orders in section 1.
+    // Section 1 counts: cash, bank, card orders directly. So we count transactions for:
+    // - mixed orders (not counted in section 1)
+    // - debt orders (repayments — not counted in section 1)
+    // - standalone repayments (no linked order — e.g. CRM debt repayment by clientId)
+    const isAlreadyCounted = relatedOrder && ['cash', 'bank', 'card'].includes(relatedOrder.paymentMethod);
+    const shouldCount = !isAlreadyCounted;
 
     if (t.type === 'client_payment') {
-      if (isMixedPayment || isDebtPayment) {
+      if (shouldCount) {
         if (t.method === 'cash') {
           if (isUSD) cashUSD += validateUSD(amt, tRate, { id: t.id, type: 'transaction' }, handleCorrection); else cashUZS += amt;
         } else if (t.method === 'bank') {

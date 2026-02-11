@@ -248,16 +248,31 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
             }
         });
         
-        // 2. Найти транзакции погашений — только те, что относятся к долговым заказам или напрямую к клиенту
+        // 2. Найти транзакции погашений — только РЕАЛЬНЫЕ погашения долга
+        // Проблема: ВСЕ client_payment транзакции из Sales имеют relatedId = clientId,
+        // включая оплаты обычных cash/card/bank заказов. Нужно отфильтровать их.
         transactions.forEach(tx => {
             if (tx.type !== 'client_payment') return;
             
-            // a) relatedId = clientId — прямое погашение долга клиента
-            // b) relatedId = ID долгового заказа — оплата по конкретному долговому заказу
-            const isDirectClientPayment = tx.relatedId === clientId;
+            // a) relatedId = ID долгового заказа — точное совпадение
             const isDebtOrderPayment = tx.relatedId ? debtOrderIds.has(tx.relatedId) : false;
             
-            if (!isDirectClientPayment && !isDebtOrderPayment) return;
+            // b) relatedId = clientId — может быть как погашение долга, так и оплата обычного заказа
+            //    Проверяем описание: если есть ID заказа — проверяем, долговой ли он
+            let isDirectDebtRepayment = false;
+            if (tx.relatedId === clientId) {
+                const orderIdInDesc = tx.description?.match(/заказа\s+(\S+)/i);
+                if (orderIdInDesc) {
+                    // Транзакция привязана к конкретному заказу — считаем только если заказ долговой
+                    const orderId = orderIdInDesc[1].replace(/\s*\(.*$/, ''); // убрать "(Workflow)" и т.п.
+                    isDirectDebtRepayment = debtOrderIds.has(orderId);
+                } else {
+                    // Нет ID заказа в описании — это прямое погашение долга (из CRM)
+                    isDirectDebtRepayment = true;
+                }
+            }
+            
+            if (!isDirectDebtRepayment && !isDebtOrderPayment) return;
             
             let amountInUSD = tx.amount || 0;
             if (tx.currency === 'UZS' && tx.exchangeRate) {
@@ -472,12 +487,29 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
         
         // 3. Найти транзакции связанные с долгом клиента
         transactions.forEach(tx => {
-            // Для client_payment: только если relatedId = clientId или relatedId = ID долгового заказа
-            // Для debt_obligation: стандартная проверка
-            const isDebtRelated = tx.relatedId === clientId || (tx.relatedId ? debtOrderIds.has(tx.relatedId) : false);
-            if (tx.type === 'client_payment' && !isDebtRelated) return;
-            if (tx.type === 'debt_obligation' && !isDebtRelated) return;
             if (tx.type !== 'client_payment' && tx.type !== 'debt_obligation') return;
+            
+            // Для debt_obligation: стандартная проверка по relatedId
+            const isDebtRelatedBasic = tx.relatedId === clientId || (tx.relatedId ? debtOrderIds.has(tx.relatedId) : false);
+            if (tx.type === 'debt_obligation' && !isDebtRelatedBasic) return;
+            
+            // Для client_payment: строгая фильтрация — только РЕАЛЬНЫЕ погашения долга
+            if (tx.type === 'client_payment') {
+                const isDebtOrderPayment = tx.relatedId ? debtOrderIds.has(tx.relatedId) : false;
+                let isDirectDebtRepayment = false;
+                if (tx.relatedId === clientId) {
+                    const orderIdInDesc = tx.description?.match(/заказа\s+(\S+)/i);
+                    if (orderIdInDesc) {
+                        // Привязана к заказу — считаем только если заказ долговой
+                        const orderId = orderIdInDesc[1].replace(/\s*\(.*$/, '');
+                        isDirectDebtRepayment = debtOrderIds.has(orderId);
+                    } else {
+                        // Нет ID заказа — прямое погашение долга (из CRM)
+                        isDirectDebtRepayment = true;
+                    }
+                }
+                if (!isDirectDebtRepayment && !isDebtOrderPayment) return;
+            }
             
             // Долг по обязательству
             if (tx.type === 'debt_obligation') {
