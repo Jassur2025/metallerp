@@ -953,15 +953,17 @@ const AppContent: React.FC = () => {
                 theme={settings.theme}
               />
             )}
-            <SidebarItem
-              icon={<Package size={20} />}
-              label="Склад"
-              active={activeTab === 'inventory'}
-              onClick={() => setActiveTab('inventory')}
-              isOpen={isSidebarOpen}
-              onMobileClose={() => setIsSidebarOpen(false)}
-              theme={settings.theme}
-            />
+            {checkPermission('inventory') && (
+              <SidebarItem
+                icon={<Package size={20} />}
+                label="Склад"
+                active={activeTab === 'inventory'}
+                onClick={() => setActiveTab('inventory')}
+                isOpen={isSidebarOpen}
+                onMobileClose={() => setIsSidebarOpen(false)}
+                theme={settings.theme}
+              />
+            )}
             {checkPermission('import') && (
               <SidebarItem
                 icon={<Container size={20} />}
@@ -1028,7 +1030,7 @@ const AppContent: React.FC = () => {
                 theme={settings.theme}
               />
             )}
-            {checkPermission('staff') && (
+            {checkPermission('payroll') && (
               <SidebarItem
                 icon={<DollarSign size={20} />}
                 label="Зарплата"
@@ -1072,15 +1074,17 @@ const AppContent: React.FC = () => {
                 theme={settings.theme}
               />
             )}
-            <SidebarItem
-              icon={<FileText size={20} />}
-              label="Прайс"
-              active={activeTab === 'priceList'}
-              onClick={() => setActiveTab('priceList')}
-              isOpen={isSidebarOpen}
-              onMobileClose={() => setIsSidebarOpen(false)}
-              theme={settings.theme}
-            />
+            {checkPermission('priceList') && (
+              <SidebarItem
+                icon={<FileText size={20} />}
+                label="Прайс"
+                active={activeTab === 'priceList'}
+                onClick={() => setActiveTab('priceList')}
+                isOpen={isSidebarOpen}
+                onMobileClose={() => setIsSidebarOpen(false)}
+                theme={settings.theme}
+              />
+            )}
             <div className="my-4 border-t border-slate-700 mx-4"></div>
             <SidebarItem
               icon={<Settings size={20} />}

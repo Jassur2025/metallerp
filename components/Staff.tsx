@@ -525,8 +525,11 @@ export const Staff: React.FC<StaffProps> = ({ employees: sheetsEmployees, onSave
                                         { key: 'reports', label: 'Отчеты' },
                                         { key: 'crm', label: 'Клиенты' },
                                         { key: 'staff', label: 'Сотрудники' },
+                                        { key: 'payroll', label: 'Зарплата' },
                                         { key: 'fixedAssets', label: 'Осн. Средства' },
                                         { key: 'balance', label: 'Баланс' },
+                                        { key: 'journal', label: 'Журнал' },
+                                        { key: 'priceList', label: 'Прайс' },
                                         { key: 'settings', label: 'Настройки' }
                                     ].map(module => (
                                         <label key={module.key} className="flex items-center gap-2 cursor-pointer group">

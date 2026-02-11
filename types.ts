@@ -378,13 +378,16 @@ export interface Employee extends Versionable {
     inventory?: boolean;
     import?: boolean;
     sales?: boolean;
+    workflow?: boolean;
     reports?: boolean;
     balance?: boolean;
     fixedAssets?: boolean;
     crm?: boolean;
     staff?: boolean;
+    payroll?: boolean;
     journal?: boolean;
     priceList?: boolean;
+    settings?: boolean;
     // Granular permissions
     canViewCostPrice?: boolean;
     canProcessReturns?: boolean;

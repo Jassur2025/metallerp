@@ -226,45 +226,44 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
     };
 
     // Функция для расчёта актуального долга клиента из заказов и транзакций
+    // Единый источник правды: долг = сумма заказов в долг − сумма client_payment транзакций (только по долговым заказам)
     const calculateClientDebt = (client: Client): number => {
         const clientId = client.id;
         
         let totalDebt = 0;
         let totalRepaid = 0;
         
-        // 1. Найти ВСЕ заказы клиента которые БЫЛИ в долг
+        // 1. Найти ВСЕ заказы клиента которые БЫЛИ в долг — берём ПОЛНУЮ сумму заказа
+        const debtOrderIds = new Set<string>();
         orders.forEach(order => {
             if (!orderMatchesClient(order, client)) return;
             
             const wasDebtOrder = order.paymentMethod === 'debt' || 
                                  order.paymentStatus === 'unpaid' || 
-                                 order.paymentStatus === 'partial' ||
-                                 ((order.totalAmount || 0) > (order.amountPaid || 0) + 0.01);
+                                 order.paymentStatus === 'partial';
             
             if (wasDebtOrder) {
-                const paidUSD = getOrderPaidUSD(order);
-                const actualDebt = Math.max(0, (order.totalAmount || 0) - paidUSD);
-                totalDebt += actualDebt;
+                totalDebt += (order.totalAmount || 0);
+                debtOrderIds.add(order.id);
             }
         });
-
-        // 2. Собираем ID заказов клиента для сопоставления транзакций
-        const clientOrderIds: string[] = orders
-            .filter(order => orderMatchesClient(order, client))
-            .map(order => order.id);
         
-        // 3. Найти все транзакции погашений для этого клиента
-        // FIX #7: Убран фильтр по слову "погашение" — все client_payment считаются погашениями
+        // 2. Найти транзакции погашений — только те, что относятся к долговым заказам или напрямую к клиенту
         transactions.forEach(tx => {
-            if (!txMatchesClient(tx, clientId, clientOrderIds)) return;
+            if (tx.type !== 'client_payment') return;
             
-            if (tx.type === 'client_payment') {
-                let amountInUSD = tx.amount || 0;
-                if (tx.currency === 'UZS' && tx.exchangeRate) {
-                    amountInUSD = (tx.amount || 0) / tx.exchangeRate;
-                }
-                totalRepaid += amountInUSD;
+            // a) relatedId = clientId — прямое погашение долга клиента
+            // b) relatedId = ID долгового заказа — оплата по конкретному долговому заказу
+            const isDirectClientPayment = tx.relatedId === clientId;
+            const isDebtOrderPayment = tx.relatedId ? debtOrderIds.has(tx.relatedId) : false;
+            
+            if (!isDirectClientPayment && !isDebtOrderPayment) return;
+            
+            let amountInUSD = tx.amount || 0;
+            if (tx.currency === 'UZS' && tx.exchangeRate) {
+                amountInUSD = (tx.amount || 0) / tx.exchangeRate;
             }
+            totalRepaid += amountInUSD;
         });
         
         return Math.max(0, totalDebt - totalRepaid);
@@ -321,7 +320,7 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
             
             const payments: PaymentRecord[] = repayments.map(toPaymentRecord);
             
-            let totalRepaidUSD = getOrderPaidUSD(order);
+            let totalRepaidUSD = 0;
             repayments.forEach(r => { totalRepaidUSD += txToUSD(r); });
             
             const debtAmount = (order.totalAmount || 0) - totalRepaidUSD;
@@ -440,14 +439,10 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
             
             const wasDebtOrder = order.paymentMethod === 'debt' || 
                                  order.paymentStatus === 'unpaid' || 
-                                 order.paymentStatus === 'partial' ||
-                                 ((order.totalAmount || 0) > (order.amountPaid || 0) + 0.01);
+                                 order.paymentStatus === 'partial';
             
             if (!wasDebtOrder) return;
 
-            const paidUSD = getOrderPaidUSD(order);
-            const actualDebt = Math.max(0, (order.totalAmount || 0) - paidUSD);
-            
             allHistory.push({
                 id: order.id,
                 date: order.date,
@@ -459,47 +454,62 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
                     price: it.priceAtSale || 0
                 })),
                 totalAmount: order.totalAmount || 0,
-                amountPaid: paidUSD,
-                debtChange: actualDebt,
-                balance: actualDebt,
+                amountPaid: 0,
+                debtChange: order.totalAmount || 0,
+                balance: 0,
                 reportNo: order.reportNo,
                 paymentDueDate: order.paymentDueDate
             });
         });
         
-        // 2. Собираем ID заказов клиента
-        const clientOrderIds = orders
-            .filter(order => orderMatchesClient(order, selectedClientForHistory))
-            .map(order => order.id);
+        // 2. Собираем ID долговых заказов клиента (только debt/partial/unpaid)
+        const debtOrderIds = new Set<string>();
+        orders.forEach(order => {
+            if (!orderMatchesClient(order, selectedClientForHistory)) return;
+            const wasDebt = order.paymentMethod === 'debt' || order.paymentStatus === 'unpaid' || order.paymentStatus === 'partial';
+            if (wasDebt) debtOrderIds.add(order.id);
+        });
         
-        // 3. Найти все транзакции связанные с этим клиентом (строгое сопоставление)
+        // 3. Найти транзакции связанные с долгом клиента
         transactions.forEach(tx => {
-            if (!txMatchesClient(tx, clientId, clientOrderIds)) return;
+            // Для client_payment: только если relatedId = clientId или relatedId = ID долгового заказа
+            // Для debt_obligation: стандартная проверка
+            const isDebtRelated = tx.relatedId === clientId || (tx.relatedId ? debtOrderIds.has(tx.relatedId) : false);
+            if (tx.type === 'client_payment' && !isDebtRelated) return;
+            if (tx.type === 'debt_obligation' && !isDebtRelated) return;
+            if (tx.type !== 'client_payment' && tx.type !== 'debt_obligation') return;
             
             // Долг по обязательству
             if (tx.type === 'debt_obligation') {
-                // Проверяем дубликаты (заказ уже добавлен)
-                const alreadyExists = allHistory.some(h => 
+                // Проверяем дубликаты: debt_obligation дублирует заказ
+                // 1. Извлекаем ID заказа из описания "Долг по заказу ORDER_ID"
+                const descOrderMatch = tx.description?.match(/заказу?\s+(\S+)/i);
+                const mentionedOrderId = descOrderMatch ? descOrderMatch[1] : null;
+                
+                // 2. Проверяем: если упомянутый заказ существует в массиве orders — это дубликат
+                const orderExistsInDB = mentionedOrderId 
+                    ? orders.some(o => o.id === mentionedOrderId)
+                    : false;
+                
+                // 3. Также проверяем по relatedId и по уже добавленным записям
+                const alreadyInHistory = allHistory.some(h => 
                     h.id === tx.id || 
-                    (tx.relatedId && h.id === tx.relatedId && h.type === 'order')
+                    (tx.relatedId && h.id === tx.relatedId && h.type === 'order') ||
+                    (mentionedOrderId && h.id === mentionedOrderId && h.type === 'order')
                 );
-                if (alreadyExists) return;
                 
-                const relatedOrder = orders.find(o => tx.relatedId === o.id);
+                if (orderExistsInDB || alreadyInHistory) return;
                 
+                // Только для обязательств БЕЗ соответствующего заказа (начальный долг и т.п.)
                 allHistory.push({
                     id: tx.id,
                     date: tx.date,
                     type: 'order',
-                    description: relatedOrder?.reportNo 
-                        ? `Отчёт №${relatedOrder.reportNo}` 
-                        : (tx.description || 'Начальный долг / Обязательство'),
+                    description: tx.description || 'Начальный долг / Обязательство',
                     totalAmount: tx.amount || 0,
                     amountPaid: 0,
                     debtChange: tx.amount || 0,
                     balance: 0,
-                    reportNo: relatedOrder?.reportNo,
-                    paymentDueDate: relatedOrder?.paymentDueDate
                 });
             }
             // FIX #7: Все client_payment считаются погашениями (убран фильтр по слову "погашение")
