@@ -756,7 +756,7 @@ const AppContent: React.FC = () => {
       case 'dashboard':
         return renderLazyComponent(<Dashboard products={products} orders={orders} clients={clients} transactions={transactions} settings={settings} />);
       case 'inventory':
-        return renderLazyComponent(<Inventory products={products} setProducts={(val) => console.warn('setProducts ignored in Firebase mode', val)} onSaveProducts={handleSaveProducts} />);
+        return renderLazyComponent(<Inventory products={products} setProducts={(val) => console.warn('setProducts ignored in Firebase mode', val)} onSaveProducts={handleSaveProducts} settings={settings} />);
       case 'import':
         return renderLazyComponent(<Procurement
           products={products}

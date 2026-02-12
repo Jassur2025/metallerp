@@ -1,11 +1,11 @@
 
 import React, { useState, useRef, useCallback, useMemo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Product, ProductType, Unit, WarehouseType, WarehouseLabels } from '../types';
+import { Product, ProductType, Unit, WarehouseType, WarehouseLabels, AppSettings } from '../types';
 import { geminiService } from '../services/geminiService';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
-import { Plus, Search, Loader2, BrainCircuit, Trash2, DollarSign, Pencil, TrendingUp, Lock, Warehouse, Building2, Cloud } from 'lucide-react';
+import { Plus, Search, Loader2, BrainCircuit, Trash2, DollarSign, Pencil, TrendingUp, Lock, Warehouse, Building2, Cloud, RefreshCw } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { IdGenerator } from '../utils/idGenerator';
 
@@ -14,9 +14,10 @@ interface InventoryProps {
   products: Product[];
   setProducts: (products: Product[]) => void;
   onSaveProducts?: (products: Product[]) => Promise<void>;
+  settings?: AppSettings;
 }
 
-export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onSaveProducts }) => {
+export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onSaveProducts, settings }) => {
   const { user } = useAuth();
   const toast = useToast();
   const { theme } = useTheme();
@@ -29,6 +30,17 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
 
   // Warehouse filter: 'all' | 'main' | 'cloud'
   const [warehouseFilter, setWarehouseFilter] = useState<'all' | WarehouseType>('all');
+
+  // Currency toggle for display
+  const [displayCurrency, setDisplayCurrency] = useState<'USD' | 'UZS'>('USD');
+  const rate = settings?.defaultExchangeRate || 12800;
+  const fmtPrice = (usd: number) => {
+    if (displayCurrency === 'UZS') {
+      const uzs = usd * rate;
+      return `${uzs.toLocaleString('ru-RU', { maximumFractionDigits: 0 })} сум`;
+    }
+    return `$${usd.toFixed(2)}`;
+  };
 
   // Refs for virtualization
   const tableParentRef = useRef<HTMLDivElement>(null);
@@ -217,8 +229,20 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
           <h2 className={`text-xl sm:text-2xl font-bold ${t.text}`}>Складской Учет</h2>
-          <p className={`text-xs sm:text-sm ${t.textMuted}`}>Управление остатками труб и профиля (Цены в USD)</p>
+          <p className={`text-xs sm:text-sm ${t.textMuted}`}>Управление остатками труб и профиля (Цены в {displayCurrency})</p>
         </div>
+        {/* Currency Toggle */}
+        <button
+          onClick={() => setDisplayCurrency(prev => prev === 'USD' ? 'UZS' : 'USD')}
+          className={`px-4 py-2 rounded-lg text-sm font-bold border transition-all flex items-center gap-2 ${displayCurrency === 'UZS'
+            ? 'bg-amber-500/20 border-amber-500 text-amber-400'
+            : 'bg-emerald-500/20 border-emerald-500 text-emerald-400'
+          }`}
+          title="Переключить валюту"
+        >
+          <RefreshCw size={14} />
+          {displayCurrency === 'USD' ? '$ USD' : 'сум UZS'}
+        </button>
       </div>
 
       {/* Warehouse Tabs & Summary */}
@@ -262,15 +286,15 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
           <div className="flex flex-wrap gap-3 text-sm">
             <div className={`px-3 py-1.5 rounded-lg ${theme === 'dark' ? 'bg-cyan-500/10' : 'bg-cyan-50'} border border-cyan-500/20`}>
               <span className={t.textMuted}>Основной: </span>
-              <span className="font-mono font-bold text-cyan-500">${warehouseTotals.main.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+              <span className="font-mono font-bold text-cyan-500">{displayCurrency === 'UZS' ? `${(warehouseTotals.main * rate).toLocaleString('ru-RU', { maximumFractionDigits: 0 })} сум` : `$${warehouseTotals.main.toLocaleString(undefined, { maximumFractionDigits: 2 })}`}</span>
             </div>
             <div className={`px-3 py-1.5 rounded-lg ${theme === 'dark' ? 'bg-violet-500/10' : 'bg-violet-50'} border border-violet-500/20`}>
               <span className={t.textMuted}>Облачный: </span>
-              <span className="font-mono font-bold text-violet-500">${warehouseTotals.cloud.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+              <span className="font-mono font-bold text-violet-500">{displayCurrency === 'UZS' ? `${(warehouseTotals.cloud * rate).toLocaleString('ru-RU', { maximumFractionDigits: 0 })} сум` : `$${warehouseTotals.cloud.toLocaleString(undefined, { maximumFractionDigits: 2 })}`}</span>
             </div>
             <div className={`px-3 py-1.5 rounded-lg ${theme === 'dark' ? 'bg-emerald-500/10' : 'bg-emerald-50'} border border-emerald-500/20`}>
               <span className={t.textMuted}>Итого ТМЦ: </span>
-              <span className="font-mono font-bold text-emerald-500">${warehouseTotals.total.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+              <span className="font-mono font-bold text-emerald-500">{displayCurrency === 'UZS' ? `${(warehouseTotals.total * rate).toLocaleString('ru-RU', { maximumFractionDigits: 0 })} сум` : `$${warehouseTotals.total.toLocaleString(undefined, { maximumFractionDigits: 2 })}`}</span>
             </div>
           </div>
         </div>
@@ -393,13 +417,13 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
                       </div>
                       <div className="px-6 text-right font-mono text-slate-400">
                         {(user as any)?.permissions?.canViewCostPrice !== false ? (
-                          `$${(product.costPrice || 0).toFixed(2)}`
+                          fmtPrice(product.costPrice || 0)
                         ) : (
                           <span className={`${t.textMuted} flex justify-end gap-1 items-center`}><Lock size={12} /> ***</span>
                         )}
                       </div>
                       <div className={`px-6 text-right font-mono ${t.success}`}>
-                        ${product.pricePerUnit.toFixed(2)}
+                        {fmtPrice(product.pricePerUnit)}
                       </div>
                       <div className="px-6 text-center">
                         <div className="flex items-center justify-center gap-1">
@@ -532,12 +556,12 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
                             <div>
                               <p className={`${t.textMuted} mb-0.5`}>Себест.</p>
                               <p className={`font-mono ${t.textMuted}`}>
-                                {(user as any)?.permissions?.canViewCostPrice !== false ? `$${(product.costPrice || 0).toFixed(2)}` : '***'}
+                                {(user as any)?.permissions?.canViewCostPrice !== false ? fmtPrice(product.costPrice || 0) : '***'}
                               </p>
                             </div>
                             <div>
                               <p className={`${t.textMuted} mb-0.5`}>Цена</p>
-                              <p className={`font-mono ${t.success}`}>${product.pricePerUnit.toFixed(2)}</p>
+                              <p className={`font-mono ${t.success}`}>{fmtPrice(product.pricePerUnit)}</p>
                             </div>
                             <div>
                               <p className={`${t.textMuted} mb-0.5`}>Сталь</p>
@@ -619,15 +643,13 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
                     <div className="relative">
                       <select
                         className={`w-full ${t.bgInput} border rounded-lg px-3 py-2 ${t.text} ${t.borderInput} ${t.focusRing} appearance-none cursor-pointer`}
-                        value={formData.manufacturer || 'INSIGHT UNION'}
+                        value={formData.manufacturer || ''}
                         onChange={e => setFormData({ ...formData, manufacturer: e.target.value })}
                       >
-                        <option value="INSIGHT UNION">INSIGHT UNION</option>
-                        <option value="SOFMET">SOFMET</option>
-                        <option value="TMZ">TMZ (ТМЗ)</option>
-                        <option value="BEKABAD">BEKABAD (Бекабад)</option>
-                        <option value="CHINA">CHINA (Китай)</option>
-                        <option value="RUSSIA">RUSSIA (Россия)</option>
+                        <option value="">— Не указан —</option>
+                        {(settings?.manufacturers || ['INSIGHT UNION', 'SOFMET', 'TMZ (ТМЗ)', 'BEKABAD (Бекабад)', 'CHINA (Китай)', 'RUSSIA (Россия)']).map(m => (
+                          <option key={m} value={m}>{m}</option>
+                        ))}
                       </select>
                       <Building2 size={16} className={`absolute right-3 top-2.5 ${t.textMuted} pointer-events-none`} />
                     </div>
@@ -694,7 +716,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
 
                   {/* Prices Row */}
                   <div className="space-y-1">
-                    <label className={`text-xs font-medium ${t.textMuted}`}>Себестоимость (сум)</label>
+                    <label className={`text-xs font-medium ${t.textMuted}`}>Себестоимость (USD)</label>
                     <div className="relative">
                       <TrendingUp className={`absolute left-2 top-2.5 ${t.textMuted}`} size={14} />
                       <input
@@ -709,7 +731,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
                   </div>
 
                   <div className="space-y-1">
-                    <label className={`text-xs font-medium ${t.textMuted}`}>Цена продажи (сум)</label>
+                    <label className={`text-xs font-medium ${t.textMuted}`}>Цена продажи (USD)</label>
                     <input
                       type="number"
                       className={`w-full ${t.bgInput} border ${t.borderInput} rounded-lg px-3 py-2 ${t.text} outline-none`}

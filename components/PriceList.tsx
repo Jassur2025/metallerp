@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Product, ProductType, AppSettings } from '../types';
-import { Search, FileText, Filter, Package, Save, Percent, Edit, CheckSquare, Square, ChevronDown, ChevronUp } from 'lucide-react';
+import { Search, FileText, Filter, Package, Save, Percent, Edit, CheckSquare, Square, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
 
@@ -24,6 +24,17 @@ export const PriceList: React.FC<PriceListProps> = ({ products, onSaveProducts, 
     // Bulk Update State
     const [bulkValue, setBulkValue] = useState<string>('');
     const [bulkType, setBulkType] = useState<'percent' | 'manual'>('percent');
+
+    // Currency toggle
+    const [displayCurrency, setDisplayCurrency] = useState<'USD' | 'UZS'>('USD');
+    const rate = settings.defaultExchangeRate || 12800;
+    const fmtPrice = (usd: number) => {
+        if (displayCurrency === 'UZS') {
+            const uzs = usd * rate;
+            return `${uzs.toLocaleString('ru-RU', { maximumFractionDigits: 0 })} сум`;
+        }
+        return `$${usd.toFixed(2)}`;
+    };
 
     const filteredProducts = useMemo(() => {
         return products.filter(product => {
@@ -102,8 +113,12 @@ export const PriceList: React.FC<PriceListProps> = ({ products, onSaveProducts, 
         try {
             const updatedProducts = products.map(p => {
                 if (editingPrices[p.id] !== undefined) {
-                    const newPrice = parseFloat(editingPrices[p.id]);
+                    let newPrice = parseFloat(editingPrices[p.id]);
                     if (!isNaN(newPrice)) {
+                        // If editing in UZS mode, convert back to USD for storage
+                        if (displayCurrency === 'UZS') {
+                            newPrice = newPrice / rate;
+                        }
                         return { ...p, pricePerUnit: newPrice };
                     }
                 }
@@ -131,7 +146,19 @@ export const PriceList: React.FC<PriceListProps> = ({ products, onSaveProducts, 
                     </h2>
                     <p className={`${t.textMuted} mt-1`}>Управление ценами на основе себестоимости</p>
                 </div>
-                <button
+                <div className="flex gap-3">
+                    <button
+                        onClick={() => setDisplayCurrency(prev => prev === 'USD' ? 'UZS' : 'USD')}
+                        className={`px-4 py-2 rounded-lg text-sm font-bold border transition-all flex items-center gap-2 ${displayCurrency === 'UZS'
+                            ? 'bg-amber-500/20 border-amber-500 text-amber-400'
+                            : 'bg-emerald-500/20 border-emerald-500 text-emerald-400'
+                        }`}
+                        title="Переключить валюту"
+                    >
+                        <RefreshCw size={14} />
+                        {displayCurrency === 'USD' ? '$ USD' : 'сум UZS'}
+                    </button>
+                    <button
                     onClick={handleSave}
                     disabled={isSaving || Object.keys(editingPrices).length === 0}
                     className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all shadow-lg ${Object.keys(editingPrices).length > 0
@@ -249,9 +276,9 @@ export const PriceList: React.FC<PriceListProps> = ({ products, onSaveProducts, 
                                 </th>
                                 <th className={`p-4 border-b ${t.border}`}>Наименование</th>
                                 <th className={`p-4 border-b ${t.border}`}>Размеры / Сталь</th>
-                                <th className={`p-4 border-b ${t.border} text-right`}>Себест. (USD)</th>
+                                <th className={`p-4 border-b ${t.border} text-right`}>Себест. ({displayCurrency})</th>
                                 <th className={`p-4 border-b ${t.border} text-right`}>Остаток</th>
-                                <th className={`p-4 border-b ${t.border} text-right w-40`}>Цена (USD)</th>
+                                <th className={`p-4 border-b ${t.border} text-right w-40`}>Цена ({displayCurrency})</th>
                                 <th className={`p-4 border-b ${t.border} text-right w-40`}>С НДС ({settings.vatRate}%)</th>
                             </tr>
                         </thead>
@@ -286,7 +313,7 @@ export const PriceList: React.FC<PriceListProps> = ({ products, onSaveProducts, 
                                             <div className={`${t.textMuted} text-[10px]`}>{product.steelGrade}</div>
                                         </td>
                                         <td className={`p-4 text-right font-mono ${t.textMuted} text-sm`}>
-                                            ${(product.costPrice || 0).toFixed(2)}
+                                            {fmtPrice(product.costPrice || 0)}
                                         </td>
                                         <td className="p-4 text-right">
                                             <span className={`font-mono text-sm ${product.quantity > product.minStockLevel ? (theme === 'dark' ? 'text-slate-300' : 'text-slate-700') : 'text-red-400'}`}>
@@ -297,7 +324,7 @@ export const PriceList: React.FC<PriceListProps> = ({ products, onSaveProducts, 
                                         <td className="p-4 text-right">
                                             <div className="flex items-center justify-end gap-2 group">
                                                 <div className="relative">
-                                                    <span className={`absolute left-3 top-1/2 -translate-y-1/2 ${t.textMuted} text-sm`}>$</span>
+                                                    <span className={`absolute left-3 top-1/2 -translate-y-1/2 ${t.textMuted} text-sm`}>{displayCurrency === 'USD' ? '$' : 'с'}</span>
                                                     <input
                                                         type="number"
                                                         step="0.01"
@@ -305,7 +332,7 @@ export const PriceList: React.FC<PriceListProps> = ({ products, onSaveProducts, 
                                                             ? 'border-emerald-500/50 text-emerald-400 ring-2 ring-emerald-500/10'
                                                             : `${t.border} group-hover:border-slate-500 ${t.text}`
                                                             }`}
-                                                        value={editingPrices[product.id] ?? product.pricePerUnit.toFixed(2)}
+                                                        value={editingPrices[product.id] ?? (displayCurrency === 'UZS' ? (product.pricePerUnit * rate).toFixed(0) : product.pricePerUnit.toFixed(2))}
                                                         onChange={(e) => handlePriceChange(product.id, e.target.value)}
                                                     />
                                                 </div>
@@ -313,9 +340,13 @@ export const PriceList: React.FC<PriceListProps> = ({ products, onSaveProducts, 
                                         </td>
                                         <td className="p-4 text-right">
                                             <span className="font-mono text-amber-400 font-bold">
-                                                ${((editingPrices[product.id] !== undefined 
-                                                    ? parseFloat(editingPrices[product.id]) 
-                                                    : product.pricePerUnit) * (1 + settings.vatRate / 100)).toFixed(2)}
+                                                {(() => {
+                                                    const priceUSD = editingPrices[product.id] !== undefined
+                                                        ? (displayCurrency === 'UZS' ? parseFloat(editingPrices[product.id]) / rate : parseFloat(editingPrices[product.id]))
+                                                        : product.pricePerUnit;
+                                                    const withVat = priceUSD * (1 + settings.vatRate / 100);
+                                                    return fmtPrice(withVat);
+                                                })()}
                                             </span>
                                         </td>
                                     </tr>

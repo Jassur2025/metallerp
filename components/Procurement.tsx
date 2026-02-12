@@ -221,6 +221,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
             pricePerUnit: Number(newProductData.pricePerUnit) || 0,
             costPrice: Number(newProductData.costPrice) || 0,
             minStockLevel: Number(newProductData.minStockLevel) || 0,
+            manufacturer: newProductData.manufacturer || undefined,
             origin: newProductData.origin || 'local'
         };
 
@@ -1264,6 +1265,20 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                                 </div>
 
                                 <div className="space-y-2">
+                                    <label className={`text-xs font-medium ${t.textMuted}`}>Производитель</label>
+                                    <select
+                                        className={`w-full ${t.bg} border ${t.border} rounded-lg px-3 py-2 ${t.text} outline-none`}
+                                        value={newProductData.manufacturer || ''}
+                                        onChange={(e) => setNewProductData({ ...newProductData, manufacturer: e.target.value })}
+                                    >
+                                        <option value="">— Не указан —</option>
+                                        {(settings.manufacturers || []).map(m => (
+                                            <option key={m} value={m}>{m}</option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                <div className="space-y-2">
                                     <label className={`text-xs font-medium ${t.textMuted}`}>Размеры *</label>
                                     <input
                                         className={`w-full ${t.bg} border ${t.border} rounded-lg px-3 py-2 ${t.text} outline-none focus:ring-2 focus:ring-indigo-500`}
@@ -1284,7 +1299,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                                 </div>
 
                                 <div className="space-y-2">
-                                    <label className={`text-xs font-medium ${t.textMuted}`}>Цена продажи (сум)</label>
+                                    <label className={`text-xs font-medium ${t.textMuted}`}>Цена продажи (USD)</label>
                                     <input
                                         type="number"
                                         className={`w-full ${t.bg} border ${t.border} rounded-lg px-3 py-2 ${t.text} outline-none focus:ring-2 focus:ring-indigo-500 font-mono`}
