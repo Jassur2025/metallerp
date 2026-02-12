@@ -169,6 +169,7 @@ export const PriceList: React.FC<PriceListProps> = ({ products, onSaveProducts, 
                     <Save size={20} className={isSaving ? 'animate-pulse' : ''} />
                     {isSaving ? 'Сохранение...' : `Сохранить (${Object.keys(editingPrices).length})`}
                 </button>
+                </div>
             </div>
 
             {/* Filters and Search */}
