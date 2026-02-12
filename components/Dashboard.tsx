@@ -420,8 +420,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ products, orders, clients 
                   cx="50%"
                   cy="50%"
                   labelLine={false}
-                  label={({ name, percent }: any) => {
-                    if (!percent || percent < 0.05) return '';
+                  label={({ name, percent }) => {
+                    if (percent < 0.05) return ''; // Hide labels for very small slices
                     return `${name}\n${(percent * 100).toFixed(0)}%`;
                   }}
                   outerRadius={90}

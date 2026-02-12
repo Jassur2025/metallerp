@@ -3,6 +3,7 @@ import {
     collection, 
     doc, 
     getDocs, 
+    getDoc,
     setDoc, 
     addDoc,
     updateDoc, 
@@ -60,10 +61,14 @@ export const orderService = {
      */
     async update(id: string, updates: Partial<Order>): Promise<void> {
         const docRef = doc(db, COLLECTION_NAME, id);
+        // Read current version from the specific document
+        const currentDocSnap = await getDoc(docRef);
+        const currentVersion = currentDocSnap.exists() ? (currentDocSnap.data()?._version || 0) : 0;
+        
         await updateDoc(docRef, {
             ...updates,
             updatedAt: Timestamp.now(),
-            _version: (updates._version || 0) + 1
+            _version: currentVersion + 1
         });
     },
 

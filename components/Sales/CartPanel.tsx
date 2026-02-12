@@ -112,7 +112,7 @@ export const CartPanel: React.FC<CartPanelProps> = ({
 
   const handleRoundTo = (roundedUZS: number) => {
     if (onTotalChange) {
-      const rate = settings.defaultExchangeRate || 12900;
+      const rate = settings.defaultExchangeRate || 12800;
       const newTotalUSD = roundedUZS / rate;
       onTotalChange(newTotalUSD);
     }
@@ -121,7 +121,7 @@ export const CartPanel: React.FC<CartPanelProps> = ({
   const handleCustomRound = () => {
     const value = parseFloat(customRoundedValue);
     if (!isNaN(value) && value > 0 && onTotalChange) {
-      const rate = settings.defaultExchangeRate || 12900;
+      const rate = settings.defaultExchangeRate || 12800;
       onTotalChange(value / rate);
       setCustomRoundedValue('');
     }

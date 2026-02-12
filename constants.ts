@@ -1,7 +1,7 @@
 
 import { Product, ProductType, Unit, Order, Expense, Purchase } from './types';
 
-export const DEFAULT_EXCHANGE_RATE = 12650; // 1 USD = 12650 UZS
+export const DEFAULT_EXCHANGE_RATE = 12800; // 1 USD = 12800 UZS (fallback rate)
 
 export const SUPER_ADMIN_EMAILS = [
   'jasurmc@gmail.com',

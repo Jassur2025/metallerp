@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
-import { Employee, Order, Expense } from '../types';
+import { Employee, Order, Expense, AppSettings } from '../types';
 import { DollarSign, Calendar, Download, Search, User, TrendingUp, Wallet, ArrowDownCircle, ArrowUpCircle, X } from 'lucide-react';
 import { formatCurrency } from '../utils/finance';
 
@@ -8,9 +8,10 @@ interface PayrollProps {
   employees: Employee[];
   orders: Order[];
   expenses: Expense[];
+  settings?: AppSettings;
 }
 
-export const Payroll: React.FC<PayrollProps> = ({ employees, orders, expenses }) => {
+export const Payroll: React.FC<PayrollProps> = ({ employees, orders, expenses, settings }) => {
   const { theme } = useTheme();
   const t = getThemeClasses(theme);
 
@@ -67,7 +68,8 @@ export const Payroll: React.FC<PayrollProps> = ({ employees, orders, expenses })
               orderDate >= startOfMonth &&
               orderDate <= endOfMonth &&
               order.status === 'completed' &&
-              order.sellerName === employee.name // Linking by name for now
+              // Match by sellerId first (reliable), fall back to name
+              (order.sellerId === employee.id || order.sellerName === employee.name)
             );
           });
 
@@ -112,7 +114,15 @@ export const Payroll: React.FC<PayrollProps> = ({ employees, orders, expenses })
             return hasName && isSalaryRelated;
           });
 
-          const advancesTotal = employeeAdvances.reduce((sum, exp) => sum + (exp.amount || 0), 0);
+          const advancesTotal = employeeAdvances.reduce((sum, exp) => {
+            const amount = exp.amount || 0;
+            // Convert UZS advances to USD for consistency
+            if (exp.currency === 'UZS') {
+              const rate = exp.exchangeRate || settings?.defaultExchangeRate || 12800;
+              return sum + (rate > 0 ? amount / rate : 0);
+            }
+            return sum + amount;
+          }, 0);
 
           // 4. Base Salary (Already calculated above)
           

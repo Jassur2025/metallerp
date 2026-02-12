@@ -60,7 +60,7 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fi
         // Курс должен быть реалистичным (например ~12000-13000 UZS за 1 USD)
         // Если курс меньше 100, считаем его некорректным и используем дефолтный
         const defaultRate = num(settings.defaultExchangeRate);
-        const safeDefault = defaultRate > 100 ? defaultRate : 12800; // Примерный курс UZS/USD
+        const safeDefault = defaultRate > 100 ? defaultRate : 12800;
         return r > 100 ? r : safeDefault;
     };
 

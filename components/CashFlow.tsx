@@ -127,8 +127,10 @@ export const CashFlow: React.FC<CashFlowProps> = ({ orders, expenses, settings, 
             }
         });
 
-        // Анализ из расходов
+        // Анализ из расходов (skip those already in rawTransactions to avoid double-counting)
+        const txIds = new Set((rawTransactions || []).map(t => t.id));
         expenses.forEach(e => {
+            if (txIds.has(e.id)) return; // Already counted as transaction below
             const expRate = e.exchangeRate || settings.defaultExchangeRate || rate;
             const amountUZS = e.currency === 'UZS' ? (e.amount || 0) : (e.amount || 0) * expRate;
             const amountUSD = e.currency === 'USD' ? (e.amount || 0) : (e.amount || 0) / expRate;

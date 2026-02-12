@@ -115,13 +115,8 @@ export const transactionService = {
 
         // 2. Debt Obligation -> Updates Client Debt
         if (transaction.type === 'debt_obligation' && transaction.relatedId && transaction.currency === 'USD') {
-            await this.addDebt(transaction.amount, transaction.relatedId, transaction.description);
-            // createPayment/addDebt return Transaction or void. 
-            // addDebt returns void, but we need Transaction. 
-            // Ideally refactor addDebt to return Transaction.
-            // For now, let's just cheat and return what we have with a fake ID if addDebt doesn't return
-            // Actually, let's fix the logic below to standard add if not special.
-            return { id: 'generated-in-add-debt', ...transaction } as Transaction;
+            const debtTxId = await this.addDebt(transaction.amount, transaction.relatedId, transaction.description);
+            return { id: debtTxId, ...transaction } as Transaction;
         }
 
         // 3. Standard add (Expenses, etc)
@@ -184,8 +179,8 @@ export const transactionService = {
     /**
      * Add debt manually (or via order)
      */
-    async addDebt(amountUSD: number, clientId: string, description: string): Promise<void> {
-        await runTransaction(db, async (firebaseTx) => {
+    async addDebt(amountUSD: number, clientId: string, description: string): Promise<string> {
+        return await runTransaction(db, async (firebaseTx) => {
             const clientRef = doc(db, CLIENTS_COLLECTION, clientId);
             const clientDoc = await firebaseTx.get(clientRef);
 
@@ -211,6 +206,8 @@ export const transactionService = {
                 totalDebt: currentDebt + amountUSD,
                 updatedAt: Timestamp.now()
             });
+
+            return newTxRef.id;
         });
     },
 

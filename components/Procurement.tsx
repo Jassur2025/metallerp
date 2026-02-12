@@ -393,7 +393,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
     const checkBalance = (method: PaymentMethod, currency: PaymentCurrency, amountUZS: number): { ok: boolean; message: string } => {
         if (!balances) return { ok: true, message: '' }; // Если балансы не переданы, пропускаем проверку
 
-        const rate = settings.defaultExchangeRate || 12900;
+        const rate = settings.defaultExchangeRate || 12800;
 
         if (method === 'cash') {
             if (currency === 'USD') {
@@ -733,7 +733,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
     const handleRepayDebt = (distribution?: PaymentDistribution) => {
         if (!selectedPurchaseForRepayment) return;
 
-        const rate = settings.defaultExchangeRate || 12900;
+        const rate = settings.defaultExchangeRate || 12800;
         const isLegacy = selectedPurchaseForRepayment.totalInvoiceAmountUZS === undefined || selectedPurchaseForRepayment.totalInvoiceAmountUZS === 0;
         let prevPaidUSD = selectedPurchaseForRepayment.amountPaidUSD;
         if (isLegacy && (prevPaidUSD === undefined || prevPaidUSD === null)) {
@@ -816,11 +816,11 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
 
             if (repaymentCurrency === 'UZS') {
                 amountUZS = repaymentAmount;
-                const safeRate = (rate && rate > 0) ? rate : 12900;
+                const safeRate = (rate && rate > 0) ? rate : 12800;
                 amountUSD = repaymentAmount / safeRate;
             } else {
                 amountUSD = repaymentAmount;
-                const safeRate = (rate && rate > 0) ? rate : 12900;
+                const safeRate = (rate && rate > 0) ? rate : 12800;
                 amountUZS = repaymentAmount * safeRate;
             }
 
@@ -1396,8 +1396,8 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                         setIsRepayModalOpen(true);
                     }}
                     totalAmountUSD={selectedPurchaseForRepayment.totalInvoiceAmount - (selectedPurchaseForRepayment.amountPaidUSD ?? 0)}
-                    totalAmountUZS={(selectedPurchaseForRepayment.totalInvoiceAmount - (selectedPurchaseForRepayment.amountPaidUSD ?? 0)) * (settings.defaultExchangeRate || 12900)}
-                    exchangeRate={settings.defaultExchangeRate || 12900}
+                    totalAmountUZS={(selectedPurchaseForRepayment.totalInvoiceAmount - (selectedPurchaseForRepayment.amountPaidUSD ?? 0)) * (settings.defaultExchangeRate || 12800)}
+                    exchangeRate={settings.defaultExchangeRate || 12800}
                     onConfirm={handleRepayDebt}
                 />
             )}

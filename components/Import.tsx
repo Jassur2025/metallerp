@@ -1,8 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import {
     Purchase, Product, Transaction, ProductType, Unit,
-    PurchaseItem, PurchaseOverheads, AppSettings, Supplier,
-    WarehouseType
+    PurchaseItem, PurchaseOverheads, AppSettings, Supplier
 } from '../types';
 import { IdGenerator } from '../utils/idGenerator';
 import { Plus, Trash2, Save, Calculator, Container, DollarSign, AlertTriangle, Truck, Scale, FileText, History, Wallet, CheckCircle, ChevronDown, ChevronUp, Users, Cloud } from 'lucide-react';
@@ -23,7 +22,7 @@ interface ImportProps {
 
 export const Import: React.FC<ImportProps> = ({ products, setProducts, settings, purchases: legacyPurchases, onSavePurchases, transactions, setTransactions }) => {
     const toast = useToast();
-
+    
     // Firebase hook for purchases
     const {
         purchases,
@@ -32,17 +31,17 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
         updatePurchase,
         migratePurchases
     } = usePurchases({ realtime: true });
-
+    
     // Firebase hook for suppliers
-    const {
-        suppliers,
-        loading: suppliersLoading,
-        addSupplier,
+    const { 
+        suppliers, 
+        loading: suppliersLoading, 
+        addSupplier, 
         updateSupplier,
         getOrCreateSupplier,
-        migrateFromPurchases
+        migrateFromPurchases 
     } = useSuppliers({ realtime: true });
-
+    
     const [activeTab, setActiveTab] = useState<'new' | 'history'>('new');
     const [supplierName, setSupplierName] = useState('');
     const [selectedSupplierId, setSelectedSupplierId] = useState<string>('');
@@ -163,12 +162,7 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
             unit: product.unit,
             invoicePrice: inputInvoicePrice,
             landedCost: inputInvoicePrice, // Placeholder, updated dynamically
-            totalLineCost: inputQty * inputInvoicePrice,
-            // New fields defaulting to simple values for Import (USD based)
-            invoicePriceWithoutVat: inputInvoicePrice,
-            vatAmount: 0,
-            totalLineCostUZS: 0, // Placeholder
-            warehouse: WarehouseType.MAIN
+            totalLineCost: inputQty * inputInvoicePrice
         };
 
         setCart([...cart, newItem]);
@@ -247,7 +241,7 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
             const supplier = await getOrCreateSupplier(supplierName);
             supplierId = supplier.id;
             console.log('[Import] Supplier created/found:', supplier);
-
+            
             // Update supplier stats
             await updateSupplier(supplier.id, {
                 totalPurchases: (supplier.totalPurchases || 0) + totalToPayUSD,
@@ -270,14 +264,7 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
             totalLandedAmount: totals.totalLandedValue,
             paymentMethod: distribution ? 'mixed' : paymentMethod,
             paymentStatus: status as 'paid' | 'unpaid' | 'partial',
-            amountPaid: paidUSD,
-            // New fields for type compliance
-            totalInvoiceAmountUZS: 0,
-            totalVatAmountUZS: 0,
-            totalWithoutVatUZS: 0,
-            exchangeRate: settings.defaultExchangeRate || 1,
-            amountPaidUSD: paidUSD,
-            warehouse: WarehouseType.MAIN
+            amountPaid: paidUSD
         };
 
         // 1. Save Purchase to Firebase
@@ -413,8 +400,7 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
 
     const handleOpenRepayModal = (purchase: Purchase) => {
         setSelectedPurchaseForRepayment(purchase);
-        const paid = purchase.amountPaid || 0;
-        setRepaymentAmount(purchase.totalInvoiceAmount - paid);
+        setRepaymentAmount(purchase.totalInvoiceAmount - purchase.amountPaid);
         setIsRepayModalOpen(true);
     };
 
@@ -437,21 +423,19 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
         // 2. Update Purchase
         const updatedPurchases = purchases.map(p => {
             if (p.id === selectedPurchaseForRepayment.id) {
-                const currentPaid = p.amountPaid || 0;
-                const newAmountPaid = currentPaid + repaymentAmount;
+                const newAmountPaid = p.amountPaid + repaymentAmount;
                 return {
                     ...p,
                     amountPaid: newAmountPaid,
-                    paymentStatus: newAmountPaid >= p.totalInvoiceAmount ? 'paid' : (newAmountPaid > 0 ? 'partial' : 'unpaid')
+                    paymentStatus: newAmountPaid >= p.totalInvoiceAmount ? 'paid' : 'partial'
                 } as Purchase;
             }
             return p;
         });
-
+        
         // 2. Update Purchase in Firebase
-        const startAmountPaid = selectedPurchaseForRepayment.amountPaid || 0;
-        const newAmountPaid = startAmountPaid + repaymentAmount;
-        const newStatus = newAmountPaid >= selectedPurchaseForRepayment.totalInvoiceAmount ? 'paid' : (newAmountPaid > 0 ? 'partial' : 'unpaid');
+        const newAmountPaid = selectedPurchaseForRepayment.amountPaid + repaymentAmount;
+        const newStatus = newAmountPaid >= selectedPurchaseForRepayment.totalInvoiceAmount ? 'paid' : 'partial';
         try {
             await updatePurchase(selectedPurchaseForRepayment.id, {
                 amountPaid: newAmountPaid,
@@ -463,7 +447,7 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
 
         // 3. Update supplier debt in Firebase
         try {
-            const supplier = suppliers.find(s =>
+            const supplier = suppliers.find(s => 
                 s.name.toLowerCase() === selectedPurchaseForRepayment.supplierName.toLowerCase()
             );
             if (supplier) {
@@ -573,7 +557,7 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
                                         onChange={e => {
                                             setSupplierName(e.target.value);
                                             // Find matching supplier
-                                            const found = suppliers.find(s =>
+                                            const found = suppliers.find(s => 
                                                 s.name.toLowerCase() === e.target.value.toLowerCase()
                                             );
                                             setSelectedSupplierId(found?.id || '');
@@ -881,18 +865,18 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
                                 onClick={async () => {
                                     try {
                                         toast.info('Миграция закупок в Firebase...');
-
+                                        
                                         // Get purchases directly from the displayed data
                                         const purchasesToMigrate = purchases.length > 0 ? purchases : legacyPurchases;
-
+                                        
                                         if (purchasesToMigrate.length === 0) {
                                             toast.warning('Нет данных для миграции');
                                             return;
                                         }
-
+                                        
                                         console.log('[Import] Migrating purchases:', purchasesToMigrate.length);
                                         const count = await migratePurchases(purchasesToMigrate);
-
+                                        
                                         if (count > 0) {
                                             toast.success(`Мигрировано ${count} закупок в Firebase!`);
                                             // Also migrate suppliers
@@ -933,8 +917,7 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
                             </thead>
                             <tbody className="divide-y divide-slate-700">
                                 {purchases.slice().reverse().map(purchase => {
-                                    const paid = purchase.amountPaid || 0;
-                                    const debt = purchase.totalInvoiceAmount - paid;
+                                    const debt = purchase.totalInvoiceAmount - purchase.amountPaid;
                                     const isMixed = purchase.paymentMethod === 'mixed';
                                     const isExpanded = expandedPurchases.has(purchase.id);
                                     const purchaseTrx = isMixed && isExpanded ? getPurchaseTransactions(purchase.id) : [];
@@ -970,7 +953,7 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
                                                             purchase.paymentStatus === 'partial' ? 'Частично' : 'Не оплачено'}
                                                     </span>
                                                 </td>
-                                                <td className="px-6 py-4 text-right font-mono text-emerald-400">${paid.toLocaleString()}</td>
+                                                <td className="px-6 py-4 text-right font-mono text-emerald-400">${purchase.amountPaid.toLocaleString()}</td>
                                                 <td className="px-6 py-4 text-right font-mono text-red-400 font-bold">
                                                     {debt > 0 ? `$${debt.toLocaleString()}` : '-'}
                                                 </td>
@@ -1172,8 +1155,8 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
                 isOpen={isSplitModalOpen}
                 onClose={() => setIsSplitModalOpen(false)}
                 totalAmountUSD={totals.totalInvoiceValue}
-                totalAmountUZS={totals.totalInvoiceValue * settings.defaultExchangeRate}
-                exchangeRate={settings.defaultExchangeRate}
+                totalAmountUZS={totals.totalInvoiceValue * settings.exchangeRate}
+                exchangeRate={settings.exchangeRate}
                 onConfirm={finalizePurchase}
             />
         </div>

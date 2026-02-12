@@ -22,7 +22,7 @@ export const VatReport: React.FC<VatReportProps> = ({ purchases, orders, expense
     const [endDate, setEndDate] = useState(lastDay);
 
     // Курс для конвертации USD → UZS (НДС отчёт в национальной валюте)
-    const exchangeRate = settings.defaultExchangeRate || 12650;
+    const exchangeRate = settings.defaultExchangeRate || 12800;
 
     // Форматирование в сумах
     const formatUZS = (usd: number) => {

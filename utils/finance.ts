@@ -1,4 +1,5 @@
 import { Order, Transaction, Expense } from '../types';
+import { DEFAULT_EXCHANGE_RATE } from '../constants';
 
 // Helper to safely parse numbers
 const num = (v: any): number => {
@@ -13,7 +14,7 @@ const num = (v: any): number => {
 // Helper to get a safe exchange rate
 const getSafeRate = (rate: any, defaultRate: number) => {
   const r = num(rate);
-  const safeDefault = defaultRate > 100 ? defaultRate : 12800;
+  const safeDefault = defaultRate > 100 ? defaultRate : DEFAULT_EXCHANGE_RATE;
   return r > 100 ? r : safeDefault;
 };
 
@@ -42,7 +43,7 @@ export const validateUSD = (
   onCorrection?: (details: CorrectionDetails) => void
 ): number => {
   const safeAmount = num(amount);
-  const rate = getSafeRate(currentRate, 12800);
+  const rate = getSafeRate(currentRate, DEFAULT_EXCHANGE_RATE);
 
   // Thresholds
   const SUSPICION_THRESHOLD = 1000000;
@@ -101,7 +102,7 @@ export const calculateBaseTotals = (
   let cardUZS = 0;
   const corrections: CorrectionDetails[] = [];
 
-  const rate = getSafeRate(defaultRate, 12800);
+  const rate = getSafeRate(defaultRate, DEFAULT_EXCHANGE_RATE);
 
   const handleCorrection = (details: CorrectionDetails) => {
     corrections.push(details);
@@ -132,27 +133,18 @@ export const calculateBaseTotals = (
     const isUSD = t.currency === 'USD';
     const tRate = getSafeRate(t.exchangeRate, rate);
     
-    // Extract Order ID from description: "Оплата заказа ORD-xxx-yyy-zzz" or "Оплата заказа 1234567890"
-    const orderIdMatch = t.description?.match(/заказа\s+(\S+)/i);
-    const descOrderId = orderIdMatch ? orderIdMatch[1] : null;
+    // Extract Order ID if present
+    const orderIdMatch = t.description?.match(/ORD-\d+/);
+    const relatedOrderId = orderIdMatch ? orderIdMatch[0] : null;
+    const relatedOrder = relatedOrderId ? orders.find(o => o.id === relatedOrderId) : null;
     
-    // Try to find related order: first by relatedId, then by description
-    // Note: relatedId is often clientId (not orderId), so we must also check description
-    let relatedOrder = t.relatedId ? orders.find(o => o.id === t.relatedId) : null;
-    if (!relatedOrder && descOrderId) {
-      relatedOrder = orders.find(o => o.id === descOrderId) || null;
-    }
-    
-    // Count client_payments towards balance ONLY if they are NOT already counted via orders in section 1.
-    // Section 1 counts: cash, bank, card orders directly. So we count transactions for:
-    // - mixed orders (not counted in section 1)
-    // - debt orders (repayments — not counted in section 1)
-    // - standalone repayments (no linked order — e.g. CRM debt repayment by clientId)
-    const isAlreadyCounted = relatedOrder && ['cash', 'bank', 'card'].includes(relatedOrder.paymentMethod);
-    const shouldCount = !isAlreadyCounted;
+    // Only count client_payments if they are for mixed orders or debt repayment (not standard cash/bank orders already counted)
+    // Standard orders are counted above. Mixed orders have payments in transactions.
+    const isMixedPayment = relatedOrder?.paymentMethod === 'mixed';
+    const isDebtPayment = t.type === 'client_payment' && !relatedOrderId; // Simple heuristic for debt payment
 
     if (t.type === 'client_payment') {
-      if (shouldCount) {
+      if (isMixedPayment || isDebtPayment) {
         if (t.method === 'cash') {
           if (isUSD) cashUSD += validateUSD(amt, tRate, { id: t.id, type: 'transaction' }, handleCorrection); else cashUZS += amt;
         } else if (t.method === 'bank') {
@@ -191,29 +183,27 @@ export const calculateBaseTotals = (
     }
   });
 
-  // 3. Process Expenses — SKIPPED
-  // Expenses are stored as Transaction objects with type='expense' in Firebase (via useExpenses hook).
-  // They are already processed in section 2 above. Processing them again here would cause DOUBLE deduction.
+  // 3. Process Expenses (only those NOT already in transactions)
+  // Since expenses are now stored as transactions (type: 'expense'),
+  // we skip expenses whose IDs already exist in the transactions array
+  // to avoid double-counting.
+  const transactionIds = new Set(transactions.map(t => t.id));
+  expenses.forEach(e => {
+    if (transactionIds.has(e.id)) return; // Already counted in transactions above
 
-  // Temporary debug
-  if (cashUZS <= 0 || cashUSD <= 0) {
-    const ordCashUZS = orders.filter(o => o.paymentMethod === 'cash' && o.paymentCurrency === 'UZS');
-    const ordCashUSD = orders.filter(o => o.paymentMethod === 'cash' && o.paymentCurrency !== 'UZS');
-    const trxCashUZSIn = transactions.filter(t => t.type === 'client_payment' && t.currency === 'UZS' && t.method === 'cash');
-    const trxCashUZSOut = transactions.filter(t => (t.type === 'supplier_payment' || t.type === 'expense') && t.currency === 'UZS' && t.method === 'cash');
-    const trxCashUSDIn = transactions.filter(t => t.type === 'client_payment' && t.currency === 'USD' && t.method === 'cash');
-    const trxCashUSDOut = transactions.filter(t => (t.type === 'supplier_payment' || t.type === 'expense') && t.currency === 'USD' && t.method === 'cash');
-    console.warn('[Finance Debug] Balance issue:', {
-      cashUSD: Math.round(cashUSD), cashUZS: Math.round(cashUZS),
-      bankUZS: Math.round(bankUZS), cardUZS: Math.round(cardUZS),
-      'Orders cash UZS': { count: ordCashUZS.length, sum: Math.round(ordCashUZS.reduce((s, o) => s + num(o.totalAmountUZS), 0)) },
-      'Orders cash USD': { count: ordCashUSD.length, sum: Math.round(ordCashUSD.reduce((s, o) => s + num(o.totalAmount), 0)) },
-      'Trx cash UZS in': { count: trxCashUZSIn.length, sum: Math.round(trxCashUZSIn.reduce((s, t) => s + num(t.amount), 0)) },
-      'Trx cash UZS out': { count: trxCashUZSOut.length, sum: Math.round(trxCashUZSOut.reduce((s, t) => s + num(t.amount), 0)) },
-      'Trx cash USD in': { count: trxCashUSDIn.length, sum: Math.round(trxCashUSDIn.reduce((s, t) => s + num(t.amount), 0)) },
-      'Trx cash USD out': { count: trxCashUSDOut.length, sum: Math.round(trxCashUSDOut.reduce((s, t) => s + num(t.amount), 0)) },
-    });
-  }
+    const amt = num(e.amount);
+    const isUSD = e.currency === 'USD';
+    const eRate = getSafeRate(e.exchangeRate, rate);
+
+    if (e.paymentMethod === 'cash') {
+      if (isUSD) cashUSD -= validateUSD(amt, eRate, { id: e.id, type: 'expense' }, handleCorrection); else cashUZS -= amt;
+    } else if (e.paymentMethod === 'bank') {
+      bankUZS -= (isUSD ? amt * eRate : amt);
+    } else if (e.paymentMethod === 'card') {
+      cardUZS -= (isUSD ? amt * eRate : amt);
+    }
+  });
+
   return { cashUSD, cashUZS, bankUZS, cardUZS, corrections };
 };
 

@@ -90,7 +90,7 @@ export const MobileCartModal: React.FC<MobileCartModalProps> = ({
 
   const handleRoundTo = (roundedUZS: number) => {
     if (onTotalChange) {
-      const rate = settings.defaultExchangeRate || 12900;
+      const rate = settings.defaultExchangeRate || 12800;
       onTotalChange(roundedUZS / rate);
     }
   };

@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { Client, Order, Transaction } from '../types';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Client, Order, Transaction, AppSettings } from '../types';
 import { User } from 'firebase/auth';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
@@ -25,13 +25,14 @@ interface CRMProps {
     setTransactions: (t: Transaction[]) => void;
     onSaveTransactions?: (transactions: Transaction[]) => Promise<boolean | void>;
     currentUser?: User | null;
+    settings?: AppSettings;
 }
 
 type CRMView = 'clients' | 'repaymentStats';
 
 // HistoryItem type imported from ./CRM/DebtHistoryModal
 
-export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders: legacyOrders, onSaveOrders, transactions, setTransactions, onSaveTransactions, currentUser }) => {
+export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders: legacyOrders, onSaveOrders, transactions, setTransactions, onSaveTransactions, currentUser, settings: settingsProp }) => {
     const toast = useToast();
     const { theme } = useTheme();
     const t = getThemeClasses(theme);
@@ -99,8 +100,16 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
     const [repaymentAmount, setRepaymentAmount] = useState<number>(0);
     const [repaymentMethod, setRepaymentMethod] = useState<'cash' | 'bank' | 'card' | 'mixed'>('cash');
     const [repaymentCurrency, setRepaymentCurrency] = useState<'USD' | 'UZS'>('UZS');
-    const [exchangeRate, setExchangeRate] = useState<number>(12800); // Default, should come from settings
+    const [exchangeRate, setExchangeRate] = useState<number>(settingsProp?.defaultExchangeRate || 12800);
     const [selectedOrderForRepayment, setSelectedOrderForRepayment] = useState<string | null>(null); // ID выбранного заказа
+
+    // Keep exchange rate in sync with settings
+    useEffect(() => {
+        if (settingsProp?.defaultExchangeRate && settingsProp.defaultExchangeRate > 100) {
+            setExchangeRate(settingsProp.defaultExchangeRate);
+        }
+    }, [settingsProp?.defaultExchangeRate]);
+
     // Микс-оплата
     const [mixCashUZS, setMixCashUZS] = useState<number>(0);
     const [mixCashUSD, setMixCashUSD] = useState<number>(0);

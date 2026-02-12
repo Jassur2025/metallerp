@@ -23,6 +23,7 @@ export interface SalesProps {
   onSaveTransactions?: (transactions: Transaction[]) => Promise<boolean | void>;
   onSaveProducts?: (products: Product[]) => Promise<void>;
   onSaveExpenses?: (expenses: Expense[]) => Promise<void>;
+  onAddExpense?: (expense: Expense) => Promise<void>;
   onAddJournalEvent?: (event: JournalEvent) => Promise<void>;
   onDeleteTransaction?: (id: string) => Promise<boolean>;
   onDeleteExpense?: (id: string) => Promise<boolean>;

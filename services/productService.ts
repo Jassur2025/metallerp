@@ -114,7 +114,6 @@ export const productService = {
     // Batch create/import (for migration)
     batchCreate: async (products: Product[]): Promise<number> => {
         try {
-            const batch = writeBatch(db);
             let count = 0;
             const CHUNK_SIZE = 450; // Firestore batch limit is 500
 

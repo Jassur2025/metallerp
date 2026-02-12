@@ -31,7 +31,7 @@ export const Sales: React.FC<SalesProps> = ({
   products, setProducts, orders, setOrders, settings, setSettings, expenses, setExpenses,
   employees, onNavigateToStaff, clients, onSaveClients, transactions, setTransactions,
   workflowOrders, onSaveWorkflowOrders, currentUserEmail, onNavigateToProcurement,
-  onSaveOrders, onSaveTransactions, onSaveProducts, onSaveExpenses, onAddJournalEvent,
+  onSaveOrders, onSaveTransactions, onSaveProducts, onSaveExpenses, onAddExpense, onAddJournalEvent,
   onDeleteTransaction, onDeleteExpense
 }) => {
   const { user } = useAuth();
@@ -40,8 +40,15 @@ export const Sales: React.FC<SalesProps> = ({
   const t = getThemeClasses(theme);
 
   // Helper to get next report number and update settings
+  // Use a ref to prevent race conditions when multiple sales happen quickly
+  const reportNoRef = React.useRef<number>(settings.nextReportNo ?? 1);
+  React.useEffect(() => {
+    reportNoRef.current = settings.nextReportNo ?? 1;
+  }, [settings.nextReportNo]);
+
   const getNextReportNo = (): number => {
-    const currentNo = settings.nextReportNo ?? 1;
+    const currentNo = reportNoRef.current;
+    reportNoRef.current = currentNo + 1; // Immediately increment ref to prevent duplicates
     if (setSettings) {
       setSettings({ ...settings, nextReportNo: currentNo + 1 });
     }
@@ -441,7 +448,7 @@ export const Sales: React.FC<SalesProps> = ({
     const r = num(rate);
     // Минимальный реалистичный курс UZS/USD около 12000
     const defaultRate = num(exchangeRate);
-    const safeDefault = defaultRate > 100 ? defaultRate : 12900;
+    const safeDefault = defaultRate > 100 ? defaultRate : 12800;
     return r > 100 ? r : safeDefault;
   };
 
@@ -581,97 +588,102 @@ export const Sales: React.FC<SalesProps> = ({
       paymentDueDate, // Payment deadline for debts
     };
 
-    // Update products
-    const updatedProducts = products.map(p => {
-      const cartItem = cart.find(item => item.productId === p.id);
-      return cartItem ? { ...p, quantity: p.quantity - cartItem.quantity } : p;
-    });
-    // CRITICAL: Save to Sheets FIRST, then update state
-    await onSaveProducts?.(updatedProducts);
-    setProducts(updatedProducts);
+    // Save original products for rollback on error
+    const originalProducts = [...products];
 
-    // Update/Create Client
-    let currentClients = [...clients];
-    let clientIndex = currentClients.findIndex(c => c.name.toLowerCase() === customerName.toLowerCase());
-    let clientId = '';
-
-    if (clientIndex === -1) {
-      const newClient: Client = { id: IdGenerator.client(), name: customerName, phone: '', creditLimit: 0, totalPurchases: 0, totalDebt: 0, notes: 'Автоматически создан при продаже' };
-      currentClients.push(newClient);
-      clientIndex = currentClients.length - 1;
-      clientId = newClient.id;
-    } else {
-      clientId = currentClients[clientIndex].id;
-    }
-
-    // Add clientId to order for proper linking
-    const newOrderWithClient = {
-      ...newOrder,
-      clientId
-    };
-
-    // Update Client Debt (Purchase + Remaining Debt)
-    // Add purchase to totalPurchases
-    // Add remaining part to debt. (If paid fully, result is 0)
-    currentClients[clientIndex] = {
-      ...currentClients[clientIndex],
-      totalPurchases: (currentClients[clientIndex].totalPurchases || 0) + totalAmountUSD,
-      totalDebt: (currentClients[clientIndex].totalDebt || 0) + remainingUSD
-    };
-    await onSaveClients(currentClients);
-
-    // Create Transactions
-    const newTrx: Transaction[] = [];
-    const baseTrx = {
-      id: '', date: new Date().toISOString(), type: 'client_payment' as const,
-      description: `Оплата заказа ${newOrder.id}`, relatedId: clientId
-    };
-
-    if (cashUSD > 0) newTrx.push({ ...baseTrx, id: IdGenerator.transaction(), amount: cashUSD, currency: 'USD', method: 'cash' });
-    if (cashUZS > 0) newTrx.push({ ...baseTrx, id: IdGenerator.transaction(), amount: cashUZS, currency: 'UZS', method: 'cash' });
-    if (cardUZS > 0) newTrx.push({ ...baseTrx, id: IdGenerator.transaction(), amount: cardUZS, currency: 'UZS', method: 'card' });
-    if (bankUZS > 0) newTrx.push({ ...baseTrx, id: IdGenerator.transaction(), amount: bankUZS, currency: 'UZS', method: 'bank' });
-
-    // Debt Obligation
-    if (remainingUSD > 0.05) {
-      newTrx.push({
-        ...baseTrx, id: IdGenerator.transaction(), type: 'debt_obligation', amount: remainingUSD, currency: 'USD', method: 'debt',
-        description: `Долг по заказу ${newOrder.id}`
+    try {
+      // Update products
+      const updatedProducts = products.map(p => {
+        const cartItem = cart.find(item => item.productId === p.id);
+        return cartItem ? { ...p, quantity: p.quantity - cartItem.quantity } : p;
       });
+      await onSaveProducts?.(updatedProducts);
+      setProducts(updatedProducts);
+
+      // Update/Create Client
+      let currentClients = [...clients];
+      let clientIndex = currentClients.findIndex(c => c.name.toLowerCase() === customerName.toLowerCase());
+      let clientId = '';
+
+      if (clientIndex === -1) {
+        const newClient: Client = { id: IdGenerator.client(), name: customerName, phone: '', creditLimit: 0, totalPurchases: 0, totalDebt: 0, notes: 'Автоматически создан при продаже' };
+        currentClients.push(newClient);
+        clientIndex = currentClients.length - 1;
+        clientId = newClient.id;
+      } else {
+        clientId = currentClients[clientIndex].id;
+      }
+
+      // Add clientId to order for proper linking
+      const newOrderWithClient = {
+        ...newOrder,
+        clientId
+      };
+
+      // Update Client Debt (Purchase + Remaining Debt)
+      currentClients[clientIndex] = {
+        ...currentClients[clientIndex],
+        totalPurchases: (currentClients[clientIndex].totalPurchases || 0) + totalAmountUSD,
+        totalDebt: (currentClients[clientIndex].totalDebt || 0) + remainingUSD
+      };
+      await onSaveClients(currentClients);
+
+      // Create Transactions
+      const newTrx: Transaction[] = [];
+      const baseTrx = {
+        id: '', date: new Date().toISOString(), type: 'client_payment' as const,
+        description: `Оплата заказа ${newOrder.id}`, relatedId: clientId
+      };
+
+      if (cashUSD > 0) newTrx.push({ ...baseTrx, id: IdGenerator.transaction(), amount: cashUSD, currency: 'USD', method: 'cash' });
+      if (cashUZS > 0) newTrx.push({ ...baseTrx, id: IdGenerator.transaction(), amount: cashUZS, currency: 'UZS', method: 'cash' });
+      if (cardUZS > 0) newTrx.push({ ...baseTrx, id: IdGenerator.transaction(), amount: cardUZS, currency: 'UZS', method: 'card' });
+      if (bankUZS > 0) newTrx.push({ ...baseTrx, id: IdGenerator.transaction(), amount: bankUZS, currency: 'UZS', method: 'bank' });
+
+      // Debt Obligation
+      if (remainingUSD > 0.05) {
+        newTrx.push({
+          ...baseTrx, id: IdGenerator.transaction(), type: 'debt_obligation', amount: remainingUSD, currency: 'USD', method: 'debt',
+          description: `Долг по заказу ${newOrder.id}`
+        });
+      }
+
+      const updatedTransactions = [...transactions, ...newTrx];
+      await onSaveTransactions?.(updatedTransactions);
+      setTransactions(updatedTransactions);
+
+      // Save order
+      const updatedOrders = [newOrderWithClient, ...orders];
+      await onSaveOrders?.(updatedOrders);
+      setOrders(updatedOrders);
+
+      // Clear form
+      setCart([]);
+      setCustomerName('');
+      setSellerName('');
+      setPaymentMethod('cash');
+      setDiscountPercent(0);
+      setManualTotal(null);
+      setDebtDueDate(''); // Clear debt due date
+      setLastOrder(newOrderWithClient);
+      setSalesPaymentModalOpen(false); // Close if open
+      setSelectedOrderForReceipt(newOrderWithClient);
+      setTimeout(() => setShowReceiptModal(true), 300);
+
+      // Journal
+      await onAddJournalEvent?.({
+        id: IdGenerator.journalEvent(), date: new Date().toISOString(), type: 'employee_action',
+        employeeName: sellerName || 'Администратор', action: 'Создан заказ',
+        description: `Отчёт №${newOrder.reportNo}. Продажа на сумму ${totalAmountUZS.toLocaleString()} сўм ($${totalAmountUSD.toFixed(2)}) клиенту ${customerName}.`,
+        module: 'sales', relatedType: 'order', relatedId: newOrder.id,
+        receiptDetails: { orderId: newOrder.id, customerName, totalAmount: totalAmountUSD, itemsCount: cart.length, paymentMethod, operation: 'created' }
+      });
+    } catch (error) {
+      // Rollback products to original state on failure
+      setProducts(originalProducts);
+      errorDev('finalizeSale failed:', error);
+      toast.error('Ошибка при сохранении заказа! Данные были восстановлены. Попробуйте снова.');
     }
-
-    const updatedTransactions = [...transactions, ...newTrx];
-    // CRITICAL: Save to Sheets FIRST, then update state
-    await onSaveTransactions?.(updatedTransactions);
-    setTransactions(updatedTransactions);
-
-    // Save order
-    const updatedOrders = [newOrderWithClient, ...orders];
-    // CRITICAL: Save to Sheets FIRST, then update state
-    await onSaveOrders?.(updatedOrders);
-    setOrders(updatedOrders);
-
-    // Clear form
-    setCart([]);
-    setCustomerName('');
-    setSellerName('');
-    setPaymentMethod('cash');
-    setDiscountPercent(0);
-    setManualTotal(null);
-    setDebtDueDate(''); // Clear debt due date
-    setLastOrder(newOrderWithClient);
-    setSalesPaymentModalOpen(false); // Close if open
-    setSelectedOrderForReceipt(newOrderWithClient);
-    setTimeout(() => setShowReceiptModal(true), 300);
-
-    // Journal
-    await onAddJournalEvent?.({
-      id: IdGenerator.journalEvent(), date: new Date().toISOString(), type: 'employee_action',
-      employeeName: sellerName || 'Администратор', action: 'Создан заказ',
-      description: `Отчёт №${newOrder.reportNo}. Продажа на сумму ${totalAmountUZS.toLocaleString()} сўм ($${totalAmountUSD.toFixed(2)}) клиенту ${customerName}.`,
-      module: 'sales', relatedType: 'order', relatedId: newOrder.id,
-      receiptDetails: { orderId: newOrder.id, customerName, totalAmount: totalAmountUSD, itemsCount: cart.length, paymentMethod, operation: 'created' }
-    });
   };
 
   // --- Complete Order ---
@@ -781,9 +793,14 @@ export const Sales: React.FC<SalesProps> = ({
       employeeId: selectedEmployeeId || undefined
     };
     const updatedExpenses = [newExpense, ...expenses];
-    // CRITICAL: Save to Sheets FIRST, then update state
-    await onSaveExpenses?.(updatedExpenses);
-    setExpenses(updatedExpenses);
+    // Save to Firebase via dedicated addExpense handler
+    if (onAddExpense) {
+      await onAddExpense(newExpense);
+    } else {
+      // Fallback to legacy batch save
+      await onSaveExpenses?.(updatedExpenses);
+      setExpenses(updatedExpenses);
+    }
     setExpenseDesc(''); setExpenseAmount(''); setWithVat(false); setExpenseVatAmount(''); setSelectedEmployeeId('');
     toast.success('Расход добавлен!');
   };
@@ -798,12 +815,34 @@ export const Sales: React.FC<SalesProps> = ({
     if (qty <= 0) { toast.error('Некорректное количество!'); return; }
     if (returnMethod === 'debt' && !client) { toast.error('Клиент не найден!'); return; }
 
-    // Update Stock
-    const updatedProducts = products.map(p => p.id === product.id ? { ...p, quantity: p.quantity + qty } : p);
+    // Find the last order for this product to get the actual sale price
+    const lastOrder = orders.find(o => 
+      o.status === 'completed' && 
+      o.items.some(item => item.productId === product.id) &&
+      (client ? (o.clientId === client.id || o.customerName.toLowerCase() === client.name.toLowerCase()) : true)
+    );
+    const orderItem = lastOrder?.items.find(item => item.productId === product.id);
+    
+    // Use the actual sale price from the order, fallback to current price
+    const returnPricePerUnit = orderItem?.priceAtSale ?? product.pricePerUnit;
+    const returnCostPerUnit = orderItem?.costAtSale ?? product.costPrice;
+
+    // Update Stock & Recalculate Weighted Average Cost (WAVG)
+    const updatedProducts = products.map(p => {
+      if (p.id === product.id) {
+        const newQuantity = p.quantity + qty;
+        // Recalculate WAVG: (existing_value + returned_value) / new_total_qty
+        const existingValue = p.quantity * p.costPrice;
+        const returnedValue = qty * returnCostPerUnit;
+        const newCostPrice = newQuantity > 0 ? (existingValue + returnedValue) / newQuantity : p.costPrice;
+        return { ...p, quantity: newQuantity, costPrice: newCostPrice };
+      }
+      return p;
+    });
     setProducts(updatedProducts);
     onSaveProducts?.(updatedProducts);
 
-    const returnAmountUSD = qty * product.pricePerUnit;
+    const returnAmountUSD = qty * returnPricePerUnit;
 
     if (returnMethod === 'debt' && client) {
       const updatedClients = clients.map(c => c.id === client.id ? { ...c, totalDebt: Math.max(0, (c.totalDebt || 0) - returnAmountUSD) } : c);
@@ -1083,7 +1122,7 @@ export const Sales: React.FC<SalesProps> = ({
                   {(orders || [])
                     .filter(o => o.paymentMethod !== 'mixed' && o.paymentMethod !== 'debt')
                     .map(o => {
-                      const rate = num(o.exchangeRate) > 100 ? num(o.exchangeRate) : 12900;
+                      const rate = num(o.exchangeRate) > 100 ? num(o.exchangeRate) : 12800;
                       let paidUSD = num(o.amountPaid);
                       if (paidUSD > 100000) paidUSD = paidUSD / rate;
                       let totalUSD = num(o.totalAmount);
@@ -1135,7 +1174,7 @@ export const Sales: React.FC<SalesProps> = ({
                     ${(orders || [])
                       .filter(o => o.paymentMethod === 'cash' && o.paymentCurrency !== 'UZS')
                       .reduce((sum, o) => {
-                        const rate = num(o.exchangeRate) > 100 ? num(o.exchangeRate) : 12900;
+                        const rate = num(o.exchangeRate) > 100 ? num(o.exchangeRate) : 12800;
                         let paidUSD = num(o.amountPaid);
                         if (paidUSD > 100000) paidUSD = paidUSD / rate;
                         let totalUSD = num(o.totalAmount);

@@ -244,7 +244,7 @@ export const Workflow: React.FC<WorkflowProps> = ({
     const missing = getMissingItems(wf.items);
     if (missing.length > 0) {
       toast.warning('Недостаточно остатков. Заявка отправлена в закуп.');
-      const next = workflowOrders.map(o => o.id === wf.id ? { ...o, status: 'sent_to_procurement' as const } : o);
+      const next = workflowOrders.map(o => o.id === wf.id ? { ...o, status: 'sent_to_procurement' } : o);
       await saveWorkflowOrders(next);
       onNavigateToProcurement?.();
       return;
@@ -334,7 +334,7 @@ export const Workflow: React.FC<WorkflowProps> = ({
 
     // Update workflow status
     const nextWorkflow = workflowOrders.map(o =>
-      o.id === wf.id ? { ...o, status: 'completed' as const, convertedToOrderId: newOrder.id, convertedAt: new Date().toISOString() } : o
+      o.id === wf.id ? { ...o, status: 'completed', convertedToOrderId: newOrder.id, convertedAt: new Date().toISOString() } : o
     );
     await saveWorkflowOrders(nextWorkflow);
 

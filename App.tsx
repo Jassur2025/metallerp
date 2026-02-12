@@ -173,6 +173,7 @@ const AppContent: React.FC = () => {
   const {
     expenses,
     addExpense,
+    updateExpense,
     deleteExpense,
     migrateLegacyExpenses
   } = useExpenses();
@@ -798,6 +799,7 @@ const AppContent: React.FC = () => {
           onSaveTransactions={handleSaveTransactions}
           onSaveProducts={handleSaveProducts}
           onSaveExpenses={handleSaveExpenses}
+          onAddExpense={handleAddExpense}
           onAddJournalEvent={handleAddJournalEvent}
           onDeleteTransaction={deleteTransaction}
           onDeleteExpense={deleteExpense}
@@ -825,7 +827,7 @@ const AppContent: React.FC = () => {
           onNavigateToProcurement={() => setActiveTab('import')}
         />);
       case 'reports':
-        return renderLazyComponent(<Reports orders={orders} expenses={expenses} products={products} purchases={purchases} settings={settings} transactions={transactions} fixedAssets={fixedAssets} onAddExpense={handleAddExpense} />);
+        return renderLazyComponent(<Reports orders={orders} expenses={expenses} products={products} purchases={purchases} settings={settings} transactions={transactions} fixedAssets={fixedAssets} onAddExpense={handleAddExpense} onUpdateExpense={updateExpense} onDeleteExpense={deleteExpense} />);
       case 'fixedAssets':
         return renderLazyComponent(<FixedAssets
           assets={fixedAssets}
@@ -846,11 +848,12 @@ const AppContent: React.FC = () => {
           setTransactions={(val) => console.warn('setTransactions ignored (Firebase)', val)}
           onSaveTransactions={handleSaveTransactions}
           currentUser={user}
+          settings={settings}
         />);
       case 'staff':
         return renderLazyComponent(<Staff employees={employees} onSave={handleSaveEmployees} />);
       case 'payroll':
-        return renderLazyComponent(<Payroll employees={employees} orders={orders} expenses={expenses} />);
+        return renderLazyComponent(<Payroll employees={employees} orders={orders} expenses={expenses} settings={settings} />);
       case 'balance':
         return renderLazyComponent(<Balance
           orders={orders}

@@ -8,7 +8,7 @@ interface ThemeContextType {
 
 const ThemeContext = createContext<ThemeContextType>({ theme: 'dark' });
 
-export const ThemeProvider: React.FC<{ theme?: Theme; children: React.ReactNode }> = ({ theme = 'dark', children }) => {
+export const ThemeProvider: React.FC<{ theme: Theme; children: React.ReactNode }> = ({ theme, children }) => {
   return (
     <ThemeContext.Provider value={{ theme }}>
       {children}
