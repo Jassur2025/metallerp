@@ -99,6 +99,7 @@ export const Sales: React.FC<SalesProps> = ({
   const [withVat, setWithVat] = useState(false);
   const [expenseVatAmount, setExpenseVatAmount] = useState('');
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>('');
+  const [isExpenseSubmitting, setIsExpenseSubmitting] = useState(false);
 
   // Return State
   const [returnClientName, setReturnClientName] = useState('');
@@ -544,15 +545,20 @@ export const Sales: React.FC<SalesProps> = ({
 
   const removeFromCart = (id: string) => setCart(cart.filter(item => item.productId !== id));
 
-  // Totals
-  // Totals
+  // Totals — IFRS 15: discount applies to net amount (before VAT)
   const subtotalUSD = cart.reduce((sum, item) => sum + item.total, 0);
-  const vatAmountUSD = subtotalUSD * (settings.vatRate / 100);
-  const originalTotalUSD = subtotalUSD + vatAmountUSD;
+  
+  // Apply discount to subtotal BEFORE calculating VAT (IFRS 15 - Transaction Price)
+  const discountedSubtotal = manualTotal !== null
+    ? manualTotal / (1 + settings.vatRate / 100) // Reverse-calculate net from manual total
+    : subtotalUSD * (1 - (discountPercent || 0) / 100);
+  
+  const vatAmountUSD = discountedSubtotal * (settings.vatRate / 100);
+  const originalTotalUSD = subtotalUSD + (subtotalUSD * (settings.vatRate / 100));
 
   const totalAmountUSD = manualTotal !== null
     ? manualTotal
-    : originalTotalUSD * (1 - (discountPercent || 0) / 100);
+    : discountedSubtotal + vatAmountUSD;
 
   const discountAmount = originalTotalUSD - totalAmountUSD;
 
@@ -582,7 +588,7 @@ export const Sales: React.FC<SalesProps> = ({
       customerName,
       sellerId: sellerEmployee?.id || currentEmployee?.id, // Employee ID for KPI
       sellerName: sellerName || currentEmployee?.name || 'Администратор',
-      items: [...cart], subtotalAmount: subtotalUSD, vatRateSnapshot: settings.vatRate, vatAmount: vatAmountUSD,
+      items: [...cart], subtotalAmount: discountedSubtotal, vatRateSnapshot: settings.vatRate, vatAmount: vatAmountUSD,
       totalAmount: totalAmountUSD, exchangeRate, totalAmountUZS, status: 'completed', paymentMethod: method, paymentStatus, amountPaid: totalPaidUSD,
       paymentCurrency: method === 'cash' ? (paymentCurrency || 'USD') : 'USD', // Fallback
       paymentDueDate, // Payment deadline for debts
@@ -783,26 +789,34 @@ export const Sales: React.FC<SalesProps> = ({
 
   // --- Expense Logic ---
   const handleAddExpense = async () => {
-    if (!expenseDesc || !expenseAmount) return;
-    const newExpense: Expense = {
-      id: IdGenerator.expense(), date: new Date().toISOString(), description: expenseDesc,
-      amount: parseFloat(expenseAmount), category: expenseCategory, paymentMethod: expenseMethod,
-      currency: expenseCurrency,
-      exchangeRate: exchangeRate > 0 ? exchangeRate : settings.defaultExchangeRate,
-      vatAmount: withVat && expenseVatAmount ? parseFloat(expenseVatAmount) : 0,
-      employeeId: selectedEmployeeId || undefined
-    };
-    const updatedExpenses = [newExpense, ...expenses];
-    // Save to Firebase via dedicated addExpense handler
-    if (onAddExpense) {
-      await onAddExpense(newExpense);
-    } else {
-      // Fallback to legacy batch save
-      await onSaveExpenses?.(updatedExpenses);
-      setExpenses(updatedExpenses);
+    if (!expenseDesc || !expenseAmount || isExpenseSubmitting) return;
+    setIsExpenseSubmitting(true);
+    try {
+      const newExpense: Expense = {
+        id: IdGenerator.expense(), date: new Date().toISOString(), description: expenseDesc,
+        amount: parseFloat(expenseAmount), category: expenseCategory, paymentMethod: expenseMethod,
+        currency: expenseCurrency,
+        exchangeRate: exchangeRate > 0 ? exchangeRate : settings.defaultExchangeRate,
+        vatAmount: withVat && expenseVatAmount ? parseFloat(expenseVatAmount) : 0,
+        employeeId: selectedEmployeeId || undefined
+      };
+      // Save to Firebase via dedicated addExpense handler
+      if (onAddExpense) {
+        await onAddExpense(newExpense);
+      } else {
+        // Fallback to legacy batch save
+        const updatedExpenses = [newExpense, ...expenses];
+        await onSaveExpenses?.(updatedExpenses);
+        setExpenses(updatedExpenses);
+      }
+      setExpenseDesc(''); setExpenseAmount(''); setWithVat(false); setExpenseVatAmount(''); setSelectedEmployeeId('');
+      toast.success('Расход добавлен!');
+    } catch (err) {
+      errorDev('Ошибка при добавлении расхода:', err);
+      toast.error('Ошибка при добавлении расхода');
+    } finally {
+      setIsExpenseSubmitting(false);
     }
-    setExpenseDesc(''); setExpenseAmount(''); setWithVat(false); setExpenseVatAmount(''); setSelectedEmployeeId('');
-    toast.success('Расход добавлен!');
   };
 
   // --- Return Logic ---
@@ -1097,6 +1111,7 @@ export const Sales: React.FC<SalesProps> = ({
               withVat={withVat} setWithVat={setWithVat}
               expenseVatAmount={expenseVatAmount} setExpenseVatAmount={setExpenseVatAmount}
               onSubmit={handleAddExpense}
+              isSubmitting={isExpenseSubmitting}
               expenseCategories={settings.expenseCategories}
               employees={employees}
               selectedEmployeeId={selectedEmployeeId}
@@ -1199,7 +1214,7 @@ export const Sales: React.FC<SalesProps> = ({
                 onSaveExpenses={onSaveExpenses}
                 onDeleteExpense={onDeleteExpense}
                 onAddJournalEvent={onAddJournalEvent}
-                currentUserEmail={currentUserEmail}
+                currentUserEmail={currentUserEmail || undefined}
                 exchangeRate={exchangeRate}
               />
             </div>

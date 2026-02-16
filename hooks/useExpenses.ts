@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
 import { Expense, Transaction } from '../types';
 import { useTransactions } from './useTransactions';
 import { useToast } from '../contexts/ToastContext';
@@ -13,6 +13,9 @@ export const useExpenses = () => {
     } = useTransactions({ realtime: true });
 
     const toast = useToast();
+
+    // Guard against duplicate expense creation (double-click, network retry, etc.)
+    const lastExpenseRef = useRef<{ key: string; timestamp: number } | null>(null);
 
     // Derived state: Filter transactions to get Expenses
     const expenses = useMemo(() => {
@@ -36,6 +39,15 @@ export const useExpenses = () => {
     // Add Expense
     const addExpense = useCallback(async (expense: Omit<Expense, 'id'>) => {
         try {
+            // Dedup guard: prevent creating identical expense within 5 seconds
+            const expenseKey = `${expense.amount}|${expense.currency}|${expense.description}|${expense.category}`;
+            const now = Date.now();
+            if (lastExpenseRef.current && lastExpenseRef.current.key === expenseKey && (now - lastExpenseRef.current.timestamp) < 5000) {
+                console.warn('Duplicate expense blocked (same content within 5s)');
+                return null;
+            }
+            lastExpenseRef.current = { key: expenseKey, timestamp: now };
+
             const tx: Omit<Transaction, 'id'> = {
                 type: 'expense',
                 amount: expense.amount,

@@ -187,8 +187,11 @@ export const Balance: React.FC<BalanceProps> = ({ products, orders, expenses, fi
     // Gross Profit
     const grossProfit = revenue - cogs;
 
-    // Net Profit = Gross Profit - Operating Expenses
-    const netProfit = grossProfit - totalExpensesAll;
+    // Depreciation (IAS 16 - must be included in P&L and Balance)
+    const totalDepreciation = safeFixedAssets.reduce((sum, fa) => sum + (fa.accumulatedDepreciation || 0), 0);
+
+    // Net Profit = Gross Profit - Operating Expenses - Depreciation
+    const netProfit = grossProfit - totalExpensesAll - totalDepreciation;
 
     // 5. Retained Earnings (Balancing Item)
     // This is what makes Assets = Liabilities + Equity

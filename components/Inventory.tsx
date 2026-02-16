@@ -209,6 +209,27 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
     };
   }, [products]);
 
+  // IAS 2.9: NRV Check - Inventory valued at lower of cost and Net Realisable Value
+  // NRV = Selling Price - Estimated Costs to Sell
+  const nrvWarnings = useMemo(() => {
+    return products.filter(p => {
+      if (!p.quantity || p.quantity <= 0) return false;
+      // NRV = selling price (pricePerUnit) is already the expected selling price
+      // If costPrice > pricePerUnit, inventory should be written down
+      return (p.costPrice || 0) > (p.pricePerUnit || 0) && (p.pricePerUnit || 0) > 0;
+    }).map(p => ({
+      id: p.id,
+      name: p.name,
+      dimensions: p.dimensions,
+      quantity: p.quantity,
+      costPrice: p.costPrice,
+      nrv: p.pricePerUnit, // Selling price as proxy for NRV
+      writeDownPerUnit: (p.costPrice || 0) - (p.pricePerUnit || 0),
+      totalWriteDown: ((p.costPrice || 0) - (p.pricePerUnit || 0)) * (p.quantity || 0),
+      warehouse: p.warehouse
+    }));
+  }, [products]);
+
   // Virtualizers for desktop and mobile
   const tableVirtualizer = useVirtualizer({
     count: sortedProducts.length,
@@ -299,6 +320,33 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
           </div>
         </div>
       </div>
+
+      {/* IAS 2.9 NRV Warning Banner */}
+      {nrvWarnings.length > 0 && (
+        <div className={`p-4 rounded-xl border ${theme === 'dark' ? 'bg-amber-500/10 border-amber-500/30' : 'bg-amber-50 border-amber-300'}`}>
+          <h4 className="text-amber-500 font-bold text-sm mb-2 flex items-center gap-2">
+            ⚠️ IAS 2 — Товары ниже себестоимости ({nrvWarnings.length} шт.)
+          </h4>
+          <p className={`text-xs ${t.textMuted} mb-2`}>
+            Себестоимость превышает цену продажи. Требуется уценка до ЧСР (Чистая Стоимость Реализации).
+          </p>
+          <div className="space-y-1 max-h-32 overflow-y-auto">
+            {nrvWarnings.map(w => (
+              <div key={w.id} className={`flex justify-between items-center text-xs ${t.text} px-2 py-1 rounded ${theme === 'dark' ? 'bg-slate-800/50' : 'bg-white'}`}>
+                <span>{w.name} {w.dimensions} ({w.quantity} шт.)</span>
+                <span className="text-red-500 font-mono">
+                  Себестоимость: ${w.costPrice.toFixed(2)} → Цена: ${w.nrv.toFixed(2)} | Убыток: ${w.totalWriteDown.toFixed(2)}
+                </span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-2 text-right">
+            <span className="text-amber-500 font-bold text-sm font-mono">
+              Итого уценка: ${nrvWarnings.reduce((s, w) => s + w.totalWriteDown, 0).toFixed(2)}
+            </span>
+          </div>
+        </div>
+      )}
 
       {((user as any)?.permissions?.canEditProducts !== false) && (
         <button

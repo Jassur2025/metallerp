@@ -327,7 +327,10 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
         let itemsWithLandedCost: PurchaseItem[] = [];
 
         if (procurementType === 'import') {
-            totalOverheads = overheads.logistics + overheads.customsDuty + overheads.other;
+            // IAS 2.10: Cost of purchase includes import duties, non-recoverable taxes,
+            // transport, handling, and other costs directly attributable to acquisition.
+            // importVat is a non-recoverable import tax that should be included in cost.
+            totalOverheads = overheads.logistics + overheads.customsDuty + overheads.importVat + overheads.other;
             totalLandedValue = totalInvoiceValue + totalOverheads;
 
             itemsWithLandedCost = cart.map(item => {

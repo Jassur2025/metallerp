@@ -155,14 +155,19 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
             return;
         }
 
+        const vatRate = settings.vatRate || 12;
+
         const newItem: PurchaseItem = {
             productId: productId,
             productName: product.name,
             quantity: inputQty,
             unit: product.unit,
             invoicePrice: inputInvoicePrice,
+            invoicePriceWithoutVat: inputInvoicePrice / (1 + vatRate / 100),
+            vatAmount: inputInvoicePrice - (inputInvoicePrice / (1 + vatRate / 100)),
             landedCost: inputInvoicePrice, // Placeholder, updated dynamically
-            totalLineCost: inputQty * inputInvoicePrice
+            totalLineCost: inputQty * inputInvoicePrice,
+            totalLineCostUZS: inputQty * inputInvoicePrice
         };
 
         setCart([...cart, newItem]);
@@ -253,6 +258,8 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
             toast.error(`Ошибка сохранения поставщика: ${err}`);
         }
 
+        const rate = settings.defaultExchangeRate || 12800;
+
         const purchase: Purchase = {
             id: IdGenerator.purchase(),
             date: new Date(date).toISOString(),
@@ -260,11 +267,16 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
             status: 'completed',
             items: totals.itemsWithLandedCost,
             overheads,
+            totalInvoiceAmountUZS: totals.totalInvoiceValue * rate,
+            totalVatAmountUZS: (totals.totalInvoiceValue * rate) - ((totals.totalInvoiceValue * rate) / (1 + (settings.vatRate || 12) / 100)),
+            totalWithoutVatUZS: (totals.totalInvoiceValue * rate) / (1 + (settings.vatRate || 12) / 100),
             totalInvoiceAmount: totals.totalInvoiceValue,
             totalLandedAmount: totals.totalLandedValue,
+            exchangeRate: rate,
             paymentMethod: distribution ? 'mixed' : paymentMethod,
             paymentStatus: status as 'paid' | 'unpaid' | 'partial',
-            amountPaid: paidUSD
+            amountPaid: paidUSD * rate,
+            amountPaidUSD: paidUSD
         };
 
         // 1. Save Purchase to Firebase
@@ -1155,8 +1167,8 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
                 isOpen={isSplitModalOpen}
                 onClose={() => setIsSplitModalOpen(false)}
                 totalAmountUSD={totals.totalInvoiceValue}
-                totalAmountUZS={totals.totalInvoiceValue * settings.exchangeRate}
-                exchangeRate={settings.exchangeRate}
+                totalAmountUZS={totals.totalInvoiceValue * (settings.defaultExchangeRate || 12800)}
+                exchangeRate={settings.defaultExchangeRate || 12800}
                 onConfirm={finalizePurchase}
             />
         </div>

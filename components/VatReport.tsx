@@ -47,9 +47,29 @@ export const VatReport: React.FC<VatReportProps> = ({ purchases, orders, expense
             return d >= start && d <= end && e.vatAmount && e.vatAmount > 0;
         });
 
+        // 1. Input VAT (from Purchases — both import duties and purchase invoice VAT)
+        // IAS 12 / Local Tax Code: Input VAT from purchases is recoverable and offsets output VAT
         const importVat = filteredPurchases.reduce((sum, p) => sum + (p.overheads?.importVat || 0), 0);
+        
+        // Purchase invoice VAT (totalVatAmountUZS stored in UZS, convert to USD)
+        const purchaseVat = filteredPurchases.reduce((sum, p) => {
+            if (p.totalVatAmountUZS && p.totalVatAmountUZS > 0) {
+                const purchaseRate = p.exchangeRate || (settings.defaultExchangeRate || 12800);
+                return sum + (p.totalVatAmountUZS / purchaseRate);
+            }
+            // Legacy: per-item VAT (UZS)
+            if (p.items && Array.isArray(p.items)) {
+                const itemsVatUZS = p.items.reduce((s, item) => s + (item.vatAmount || 0), 0);
+                if (itemsVatUZS > 0) {
+                    const purchaseRate = p.exchangeRate || (settings.defaultExchangeRate || 12800);
+                    return sum + (itemsVatUZS / purchaseRate);
+                }
+            }
+            return sum;
+        }, 0);
+        
         const expenseVat = filteredExpenses.reduce((sum, e) => sum + (e.vatAmount || 0), 0);
-        const totalImportVat = importVat + expenseVat;
+        const totalImportVat = importVat + purchaseVat + expenseVat;
 
         const totalCustomsDuty = filteredPurchases.reduce((sum, p) => sum + (p.overheads?.customsDuty || 0), 0);
 
@@ -66,15 +86,19 @@ export const VatReport: React.FC<VatReportProps> = ({ purchases, orders, expense
 
         // 5. Registry (Combined List)
         const registry = [
-            ...filteredPurchases.map(p => ({
-                id: p.id,
-                date: p.date,
-                type: 'import' as const,
-                counterparty: p.supplierName,
-                amount: p.totalLandedAmount || 0,
-                vatIn: p.overheads?.importVat || 0,
-                vatOut: 0
-            })),
+            ...filteredPurchases.map(p => {
+                const pRate = p.exchangeRate || (settings.defaultExchangeRate || 12800);
+                const invoiceVatUSD = (p.totalVatAmountUZS || 0) / pRate;
+                return {
+                    id: p.id,
+                    date: p.date,
+                    type: 'import' as const,
+                    counterparty: p.supplierName,
+                    amount: p.totalLandedAmount || 0,
+                    vatIn: (p.overheads?.importVat || 0) + invoiceVatUSD,
+                    vatOut: 0
+                };
+            }),
             ...filteredExpenses.map(e => ({
                 id: e.id,
                 date: e.date,

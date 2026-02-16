@@ -19,6 +19,7 @@ interface ExpenseFormProps {
   expenseVatAmount: string;
   setExpenseVatAmount: (val: string) => void;
   onSubmit: () => void;
+  isSubmitting?: boolean;
   expenseCategories?: ExpenseCategory[];
   employees?: Employee[];
   selectedEmployeeId?: string;
@@ -41,6 +42,7 @@ export const ExpenseForm: React.FC<ExpenseFormProps> = ({
   expenseVatAmount,
   setExpenseVatAmount,
   onSubmit,
+  isSubmitting = false,
   expenseCategories = [],
   employees = [],
   selectedEmployeeId,
@@ -234,9 +236,14 @@ export const ExpenseForm: React.FC<ExpenseFormProps> = ({
 
         <button
           onClick={onSubmit}
-          className="w-full bg-red-600 hover:bg-red-500 text-white py-4 rounded-xl font-bold text-lg shadow-lg shadow-red-600/20 transition-all mt-4"
+          disabled={isSubmitting}
+          className={`w-full py-4 rounded-xl font-bold text-lg shadow-lg transition-all mt-4 ${
+            isSubmitting
+              ? 'bg-gray-500 text-gray-300 cursor-not-allowed shadow-none'
+              : 'bg-red-600 hover:bg-red-500 text-white shadow-red-600/20'
+          }`}
         >
-          Добавить Расход
+          {isSubmitting ? 'Сохранение...' : 'Добавить Расход'}
         </button>
       </div>
     </div>

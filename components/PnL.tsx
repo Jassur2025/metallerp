@@ -127,16 +127,35 @@ export const PnL: React.FC<PnLProps> = ({ orders, expenses, fixedAssets = [], ex
             data[m].opexTotal += amountUSD;
         });
 
-        // Depreciation from fixed assets
+        // Depreciation from fixed assets (IAS 16 - straight-line method)
         fixedAssets.forEach(fa => {
             if (safeNumber(fa.depreciationRate) === 0) return;
             const purchaseDate = new Date(fa.purchaseDate);
-            const monthlyDep = (safeNumber(fa.purchaseCost) * safeNumber(fa.depreciationRate) / 100) / 12;
+            const purchaseCost = safeNumber(fa.purchaseCost);
+            const residualValue = 0; // IAS 16.6 - residual value (configurable in future)
+            const depreciableAmount = Math.max(0, purchaseCost - residualValue);
+            const monthlyDep = (depreciableAmount * safeNumber(fa.depreciationRate) / 100) / 12;
+            // Maximum total depreciation = depreciable amount
+            const maxTotalDep = depreciableAmount;
+
+            // Calculate cumulative depreciation up to beginning of selected year
+            let cumulativeDep = 0;
+            const yearStart = new Date(selectedYear, 0, 1);
+            if (purchaseDate < yearStart) {
+                // Months from purchase to start of selected year
+                const monthsBeforeYear = (yearStart.getFullYear() - purchaseDate.getFullYear()) * 12 
+                    + (yearStart.getMonth() - purchaseDate.getMonth());
+                cumulativeDep = Math.min(monthlyDep * Math.max(0, monthsBeforeYear), maxTotalDep);
+            }
 
             for (let m = 0; m < 12; m++) {
                 const endOfMonth = new Date(selectedYear, m + 1, 0);
                 if (purchaseDate <= endOfMonth) {
-                    data[m].depreciation += monthlyDep;
+                    // IAS 16.55: Don't depreciate beyond depreciable amount
+                    const remainingDepreciable = Math.max(0, maxTotalDep - cumulativeDep);
+                    const actualDep = Math.min(monthlyDep, remainingDepreciable);
+                    data[m].depreciation += actualDep;
+                    cumulativeDep += actualDep;
                 }
             }
         });

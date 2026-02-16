@@ -91,6 +91,8 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
         }
 
         // Создаём транзакцию расхода только на оплаченную сумму
+        // IAS 16: Покупка ОС — это капитализация (актив), а не расход периода.
+        // Тип 'supplier_payment' корректно отражает отток денежных средств без искажения P&L.
         if (setTransactions && onSaveTransactions && paid > 0) {
             // Рассчитываем сумму в валюте оплаты
             const transactionAmount = currency === 'UZS' ? paid * rate : paid;
@@ -98,7 +100,7 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
             const newTransaction: Transaction = {
                 id: IdGenerator.transaction(),
                 date: purchaseDate,
-                type: 'expense',
+                type: 'supplier_payment',
                 amount: transactionAmount,
                 currency: currency,
                 exchangeRate: currency === 'UZS' ? rate : undefined,
@@ -145,15 +147,32 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
     const runMonthlyDepreciation = () => {
         if (!confirm('Рассчитать амортизацию за 1 месяц для всех активов?')) return;
 
+        const now = new Date();
+        const currentMonth = now.getFullYear() * 12 + now.getMonth(); // Unique month index
+
         const updatedAssets = assets.map(asset => {
             if (asset.depreciationRate === 0 || asset.currentValue <= 0) return asset;
 
-            // Monthly Rate = Annual Rate / 12
-            const monthlyRate = asset.depreciationRate / 100 / 12;
-            const depreciationAmount = asset.purchaseCost * monthlyRate;
+            // IAS 16.55: Depreciation begins when asset is available for use.
+            // We use purchaseDate as proxy. Skip if purchased after current month.
+            const purchaseDate = new Date(asset.purchaseDate);
+            const purchaseMonth = purchaseDate.getFullYear() * 12 + purchaseDate.getMonth();
+            if (purchaseMonth > currentMonth) return asset; // Not yet in service
 
-            // Ensure we don't depreciate below 0
-            const actualDepreciation = Math.min(depreciationAmount, asset.currentValue);
+            // IAS 16.6: Depreciable amount = cost - residual value
+            // Residual value assumed 0 for simplicity (can add field later)
+            const residualValue = 0;
+            const depreciableAmount = Math.max(0, asset.purchaseCost - residualValue);
+
+            // Monthly Rate = Annual Rate / 12 (straight-line)
+            const monthlyRate = asset.depreciationRate / 100 / 12;
+            const depreciationAmount = depreciableAmount * monthlyRate;
+
+            // Don't depreciate below residual value
+            const maxDepreciation = Math.max(0, asset.currentValue - residualValue);
+            const actualDepreciation = Math.min(depreciationAmount, maxDepreciation);
+
+            if (actualDepreciation <= 0) return asset; // Fully depreciated
 
             return {
                 ...asset,
@@ -167,7 +186,7 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
         if (onSaveAssets) {
             onSaveAssets(updatedAssets);
         }
-        toast.success('Амортизация успешно начислена!');
+        toast.success('Амортизация успешно начислена! (IAS 16 — прямолинейный метод)');
     };
 
     const openRevaluation = (asset: FixedAsset) => {
@@ -180,13 +199,28 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
         if (!selectedAsset || !revalValue) return;
 
         const newValue = parseFloat(revalValue);
+        if (newValue < 0) {
+            toast.warning('Стоимость не может быть отрицательной');
+            return;
+        }
+
         const updatedAssets = assets.map(a => {
             if (a.id === selectedAsset.id) {
-                // Adjust accumulated depreciation based on new value? 
-                // Or just reset current value and keep historical cost?
-                // Usually revaluation changes the Book Value. 
-                // Let's set Current Value to New Value.
-                return { ...a, currentValue: newValue };
+                // IAS 16.35: On revaluation, accumulated depreciation is restated proportionally
+                // or eliminated against gross carrying amount (we use the elimination method).
+                // New carrying amount = revalued amount
+                // Accumulated depreciation adjusted: accDep += (oldBookValue - newValue)
+                const oldBookValue = a.currentValue || 0;
+                const revaluationDiff = newValue - oldBookValue;
+                
+                // Adjust accumulated depreciation (elimination method per IAS 16.35(b))
+                const newAccDep = Math.max(0, (a.accumulatedDepreciation || 0) - revaluationDiff);
+                
+                return { 
+                    ...a, 
+                    currentValue: newValue,
+                    accumulatedDepreciation: newAccDep
+                };
             }
             return a;
         });
