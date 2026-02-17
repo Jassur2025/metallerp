@@ -3,7 +3,7 @@ import { Product, WorkflowOrder, OrderItem, Order, Client, Transaction, AppSetti
 import { IdGenerator } from '../utils/idGenerator';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
-import { Plus, Trash2, Search, ClipboardList, BadgeCheck, Send, AlertTriangle, Wallet, Building2, CreditCard, XCircle, RotateCcw, Edit3 } from 'lucide-react';
+import { Plus, Trash2, Search, ClipboardList, BadgeCheck, Send, AlertTriangle, Wallet, Building2, CreditCard, XCircle, RotateCcw, Edit3, LayoutGrid, List } from 'lucide-react';
 
 interface WorkflowProps {
   products: Product[];
@@ -77,6 +77,13 @@ export const Workflow: React.FC<WorkflowProps> = ({
   const [exchangeRate, setExchangeRate] = useState(settings.defaultExchangeRate || 12800);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [paymentCurrency, setPaymentCurrency] = useState<Currency>('UZS');
+  const [wfViewMode, setWfViewMode] = useState<'grid' | 'list'>(() => {
+    try { return (localStorage.getItem('erp_wf_product_view') as 'grid' | 'list') || 'grid'; } catch { return 'grid'; }
+  });
+  const toggleWfView = (mode: 'grid' | 'list') => {
+    setWfViewMode(mode);
+    try { localStorage.setItem('erp_wf_product_view', mode); } catch {}
+  };
 
   const toUZS = (usd: number) => Math.round(usd * (exchangeRate || 1));
 
@@ -550,41 +557,106 @@ export const Workflow: React.FC<WorkflowProps> = ({
         <div className="flex-1 grid grid-cols-1 lg:grid-cols-4 gap-4 min-h-0">
           {/* Product List - 3 columns */}
           <div className="lg:col-span-3 flex flex-col min-h-0">
-            <div className="relative mb-3 flex-shrink-0">
-              <Search className={`absolute left-3 top-1/2 -translate-y-1/2 ${t.textMuted}`} size={16} />
-              <input
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className={`w-full ${t.bgInput} border ${t.borderInput} rounded-lg pl-9 pr-4 py-2 ${t.text} outline-none ${t.focusRing} text-sm ${t.textPlaceholder}`}
-                placeholder="Поиск товара..."
-              />
+            <div className="flex gap-2 mb-3 flex-shrink-0">
+              <div className="relative flex-1">
+                <Search className={`absolute left-3 top-1/2 -translate-y-1/2 ${t.textMuted}`} size={16} />
+                <input
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className={`w-full ${t.bgInput} border ${t.borderInput} rounded-lg pl-9 pr-4 py-2 ${t.text} outline-none ${t.focusRing} text-sm ${t.textPlaceholder}`}
+                  placeholder="Поиск товара..."
+                />
+              </div>
+              <div className={`flex ${t.bgInput} border ${t.borderInput} rounded-lg overflow-hidden`}>
+                <button
+                  onClick={() => toggleWfView('grid')}
+                  className={`px-2 py-2 transition-colors ${wfViewMode === 'grid'
+                    ? (theme === 'light' ? 'bg-blue-50 text-blue-600' : 'bg-primary-500/20 text-primary-400')
+                    : `${t.textMuted}`}`}
+                  title="Сетка"
+                >
+                  <LayoutGrid size={16} />
+                </button>
+                <button
+                  onClick={() => toggleWfView('list')}
+                  className={`px-2 py-2 transition-colors ${wfViewMode === 'list'
+                    ? (theme === 'light' ? 'bg-blue-50 text-blue-600' : 'bg-primary-500/20 text-primary-400')
+                    : `${t.textMuted}`}`}
+                  title="Список"
+                >
+                  <List size={16} />
+                </button>
+              </div>
             </div>
 
             <div className="flex-1 overflow-y-auto custom-scrollbar pr-2" style={{ maxHeight: 'calc(100vh - 220px)' }}>
-              <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2">
-                {filteredProducts.slice(0, 60).map(p => (
-                  <div key={p.id} className={`${t.bgCard} border ${t.border} rounded-lg p-2 transition-colors ${theme === 'light' ? 'hover:border-[#1A73E8]/50 hover:shadow-md' : 'hover:border-primary-500/50'}`}>
-                    <div className="flex justify-between items-start mb-1">
-                      <div className="flex-1 min-w-0">
-                        <div className={`font-medium text-xs truncate ${t.text}`}>{p.name}</div>
-                        <div className={`text-[10px] truncate ${t.textMuted}`}>{p.dimensions} • {p.steelGrade}</div>
+              {/* === GRID VIEW === */}
+              {wfViewMode === 'grid' && (
+                <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2">
+                  {filteredProducts.slice(0, 60).map(p => (
+                    <div key={p.id} className={`${t.bgCard} border ${t.border} rounded-lg p-2 transition-colors cursor-pointer ${theme === 'light' ? 'hover:border-[#1A73E8]/50 hover:shadow-md' : 'hover:border-primary-500/50'} group`}
+                      onClick={() => addToCart(p)}
+                    >
+                      <div className="flex justify-between items-start mb-1">
+                        <div className="flex-1 min-w-0">
+                          <div className={`font-medium text-xs truncate ${t.text}`}>{p.name}</div>
+                          <div className={`text-[10px] truncate ${t.textMuted}`}>{p.dimensions} • {p.steelGrade}</div>
+                        </div>
+                        <div className="text-right ml-1">
+                          <div className={`${t.success} font-mono font-bold text-xs`}>${p.pricePerUnit.toFixed(2)}</div>
+                        </div>
                       </div>
-                      <div className="text-right ml-1">
-                        <div className={`${t.success} font-mono font-bold text-xs`}>${p.pricePerUnit.toFixed(2)}</div>
+                      <div className="flex items-center justify-between">
+                        <span className={`text-[10px] ${t.textMuted}`}>Ост: {p.quantity}</span>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); addToCart(p); }}
+                          className={`${theme === 'light' ? 'bg-slate-100 hover:bg-[#1A73E8] hover:text-white text-slate-700' : 'bg-slate-700 hover:bg-primary-600 text-white'} px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 transition-colors`}
+                        >
+                          <Plus size={10} /> Добавить
+                        </button>
                       </div>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span className={`text-[10px] ${t.textMuted}`}>Ост: {p.quantity}</span>
+                  ))}
+                </div>
+              )}
+
+              {/* === LIST VIEW === */}
+              {wfViewMode === 'list' && (
+                <div className={`${t.bgCard} border ${t.border} rounded-lg overflow-hidden`}>
+                  {/* Header */}
+                  <div className={`grid grid-cols-[1fr_100px_60px_80px_60px_36px] gap-2 px-3 py-1.5 ${theme === 'light' ? 'bg-slate-50 border-b border-slate-200' : 'bg-slate-800/60 border-b border-slate-700'} text-[10px] font-semibold uppercase ${t.textMuted}`}>
+                    <span>Товар</span>
+                    <span>Размер</span>
+                    <span>Сталь</span>
+                    <span className="text-right">Цена</span>
+                    <span className="text-right">Ост.</span>
+                    <span></span>
+                  </div>
+                  {filteredProducts.slice(0, 60).map((p, i) => (
+                    <div
+                      key={p.id}
+                      onClick={() => addToCart(p)}
+                      className={`grid grid-cols-[1fr_100px_60px_80px_60px_36px] gap-2 items-center px-3 py-1.5 transition-colors cursor-pointer group
+                        ${i % 2 === 0 ? '' : (theme === 'light' ? 'bg-slate-50/50' : 'bg-slate-800/30')}
+                        ${theme === 'light' ? 'hover:bg-blue-50' : 'hover:bg-slate-700/40'}`}
+                    >
+                      <span className={`text-xs font-medium ${t.text} truncate`}>{p.name}</span>
+                      <span className={`text-xs font-bold font-mono ${t.text}`}>{p.dimensions}</span>
+                      <span className={`text-[10px] ${t.textMuted}`}>{p.steelGrade}</span>
+                      <span className={`text-xs font-bold font-mono ${t.success} text-right`}>${p.pricePerUnit.toFixed(2)}</span>
+                      <span className={`text-[10px] ${t.textMuted} text-right`}>{p.quantity}</span>
                       <button
-                        onClick={() => addToCart(p)}
-                        className={`${theme === 'light' ? 'bg-slate-100 hover:bg-[#1A73E8] hover:text-white text-slate-700' : 'bg-slate-700 hover:bg-primary-600 text-white'} px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 transition-colors`}
+                        onClick={(e) => { e.stopPropagation(); addToCart(p); }}
+                        className={`w-6 h-6 rounded flex items-center justify-center transition-all opacity-0 group-hover:opacity-100
+                          ${theme === 'light' ? 'bg-blue-50 text-blue-500 hover:bg-blue-100' : 'bg-primary-500/20 text-primary-400 hover:bg-primary-500/30'}`}
+                        title="Добавить"
                       >
-                        <Plus size={10} /> Добавить
+                        <Plus size={12} />
                       </button>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 

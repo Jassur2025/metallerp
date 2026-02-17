@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Employee, UserRole } from '../types';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
-import { Plus, Search, Edit2, Phone, Mail, Briefcase, Calendar, DollarSign, User, Shield, CheckCircle, XCircle, Trash2, Database, RefreshCw, Upload, Cloud } from 'lucide-react';
+import { Plus, Search, Edit2, Phone, Mail, Briefcase, Calendar, DollarSign, User, Shield, CheckCircle, XCircle, Trash2, Database, RefreshCw, Upload, Cloud, LayoutGrid, List } from 'lucide-react';
 import { IdGenerator } from '../utils/idGenerator';
 import { useEmployees } from '../hooks/useEmployees';
 
@@ -53,6 +53,13 @@ export const Staff: React.FC<StaffProps> = ({ employees: sheetsEmployees, onSave
     const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive'>('all');
     const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
     const [isMigrating, setIsMigrating] = useState(false);
+    const [staffViewMode, setStaffViewMode] = useState<'grid' | 'list'>(() => {
+        try { return (localStorage.getItem('erp_staff_view') as 'grid' | 'list') || 'grid'; } catch { return 'grid'; }
+    });
+    const toggleStaffView = (mode: 'grid' | 'list') => {
+        setStaffViewMode(mode);
+        try { localStorage.setItem('erp_staff_view', mode); } catch {}
+    };
 
     // Form State
     const [formData, setFormData] = useState<Partial<Employee>>({
@@ -263,9 +270,31 @@ export const Staff: React.FC<StaffProps> = ({ employees: sheetsEmployees, onSave
                     <option value="active">Активные</option>
                     <option value="inactive">Неактивные</option>
                 </select>
+                {/* View Toggle */}
+                <div className={`flex ${t.bgCard} border ${t.border} rounded-lg overflow-hidden`}>
+                    <button
+                        onClick={() => toggleStaffView('grid')}
+                        className={`px-3 py-2 transition-colors ${staffViewMode === 'grid'
+                            ? (theme === 'light' ? 'bg-blue-50 text-blue-600' : 'bg-purple-500/20 text-purple-400')
+                            : `${t.textMuted}`}`}
+                        title="Сетка"
+                    >
+                        <LayoutGrid size={18} />
+                    </button>
+                    <button
+                        onClick={() => toggleStaffView('list')}
+                        className={`px-3 py-2 transition-colors ${staffViewMode === 'list'
+                            ? (theme === 'light' ? 'bg-blue-50 text-blue-600' : 'bg-purple-500/20 text-purple-400')
+                            : `${t.textMuted}`}`}
+                        title="Список"
+                    >
+                        <List size={18} />
+                    </button>
+                </div>
             </div>
 
-            {/* Employees Grid */}
+            {/* === GRID VIEW === */}
+            {staffViewMode === 'grid' && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 pb-4">
                 {filteredEmployees.map(employee => (
                     <div key={employee.id} className={`${t.bgCard} rounded-xl border ${t.border} p-5 hover:border-purple-500/50 transition-all shadow-lg`}>
@@ -328,6 +357,72 @@ export const Staff: React.FC<StaffProps> = ({ employees: sheetsEmployees, onSave
                     </div>
                 ))}
             </div>
+            )}
+
+            {/* === LIST VIEW === */}
+            {staffViewMode === 'list' && (
+            <div className={`${t.bgCard} border ${t.border} rounded-xl overflow-hidden pb-4`}>
+                {/* Table Header */}
+                <div className={`grid grid-cols-[1fr_160px_120px_100px_100px_80px] gap-3 px-4 py-2.5 ${theme === 'light' ? 'bg-slate-50 border-b border-slate-200' : 'bg-slate-800/60 border-b border-slate-700'} text-[11px] font-semibold uppercase ${t.textMuted} sticky top-0 z-10`}>
+                    <span>Сотрудник</span>
+                    <span>Email</span>
+                    <span>Телефон</span>
+                    <span>Роль</span>
+                    <span>Принят</span>
+                    <span className="text-right">Действия</span>
+                </div>
+                {filteredEmployees.map((employee, i) => (
+                    <div
+                        key={employee.id}
+                        className={`grid grid-cols-[1fr_160px_120px_100px_100px_80px] gap-3 items-center px-4 py-3 transition-colors group
+                            ${i % 2 === 0 ? '' : (theme === 'light' ? 'bg-slate-50/50' : 'bg-slate-800/30')}
+                            ${theme === 'light' ? 'hover:bg-purple-50/60' : 'hover:bg-slate-700/40'}`}
+                    >
+                        {/* Name + avatar + position */}
+                        <div className="flex items-center gap-3 min-w-0">
+                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
+                                {employee.name.charAt(0).toUpperCase()}
+                            </div>
+                            <div className="min-w-0">
+                                <div className={`text-sm font-medium ${t.text} truncate`}>{employee.name}</div>
+                                <div className={`text-[10px] ${t.textMuted} truncate`}>{employee.position}</div>
+                            </div>
+                        </div>
+                        {/* Email */}
+                        <span className={`text-xs ${t.textMuted} truncate`}>{employee.email}</span>
+                        {/* Phone */}
+                        <span className={`text-xs ${t.textMuted} font-mono`}>{employee.phone || '—'}</span>
+                        {/* Role */}
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${ROLE_COLORS[employee.role]} inline-flex items-center gap-1 w-fit`}>
+                            <Shield size={10} />
+                            {ROLE_LABELS[employee.role]}
+                        </span>
+                        {/* Hire date */}
+                        <span className={`text-xs ${t.textMuted}`}>{new Date(employee.hireDate).toLocaleDateString('ru-RU')}</span>
+                        {/* Actions */}
+                        <div className="flex items-center justify-end gap-1">
+                            <span className={`flex items-center text-[10px] mr-1 ${employee.status === 'active' ? 'text-emerald-400' : 'text-red-400'}`}>
+                                {employee.status === 'active' ? <CheckCircle size={12} /> : <XCircle size={12} />}
+                            </span>
+                            <button
+                                onClick={() => handleOpenModal(employee)}
+                                className={`p-1.5 rounded-lg ${theme === 'dark' ? 'hover:bg-slate-600' : 'hover:bg-slate-200'} ${t.textMuted} transition-colors`}
+                                title="Редактировать"
+                            >
+                                <Edit2 size={14} />
+                            </button>
+                            <button
+                                onClick={() => handleDelete(employee.id)}
+                                className={`p-1.5 rounded-lg hover:bg-red-500/20 text-red-400 hover:text-red-300 transition-colors`}
+                                title="Удалить"
+                            >
+                                <Trash2 size={14} />
+                            </button>
+                        </div>
+                    </div>
+                ))}
+            </div>
+            )}
 
             {filteredEmployees.length === 0 && (
                 <div className="text-center py-12 text-slate-500">
