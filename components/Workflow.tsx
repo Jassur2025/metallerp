@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { Product, WorkflowOrder, OrderItem, Order, Client, Transaction, AppSettings, Employee, JournalEvent } from '../types';
+import React, { useMemo, useState, useRef, useCallback } from 'react';
+import { Product, WorkflowOrder, OrderItem, Order, Client, Transaction, AppSettings, Employee, JournalEvent, WarehouseLabels, WarehouseType } from '../types';
 import { IdGenerator } from '../utils/idGenerator';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
@@ -84,6 +84,89 @@ export const Workflow: React.FC<WorkflowProps> = ({
     setWfViewMode(mode);
     try { localStorage.setItem('erp_wf_product_view', mode); } catch {}
   };
+
+  // === Column resize logic ===
+  const defaultColWidths = [100, 100, 60, 90, 90, 80, 60, 36];
+  const [colWidths, setColWidths] = useState<number[]>(() => {
+    try {
+      const saved = localStorage.getItem('erp_wf_col_widths_v2');
+      if (saved) { const parsed = JSON.parse(saved); if (Array.isArray(parsed) && parsed.length === 8) return parsed; }
+    } catch {}
+    return [...defaultColWidths];
+  });
+  const resizingCol = useRef<number | null>(null);
+  const resizeStartX = useRef(0);
+  const resizeStartW = useRef(0);
+
+  const onResizeStart = useCallback((e: React.MouseEvent, colIndex: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    resizingCol.current = colIndex;
+    resizeStartX.current = e.clientX;
+    resizeStartW.current = colWidths[colIndex];
+
+    const onMouseMove = (ev: MouseEvent) => {
+      if (resizingCol.current === null) return;
+      const delta = ev.clientX - resizeStartX.current;
+      const newWidth = Math.max(30, resizeStartW.current + delta);
+      setColWidths(prev => {
+        const next = [...prev];
+        next[resizingCol.current!] = newWidth;
+        return next;
+      });
+    };
+    const onMouseUp = () => {
+      resizingCol.current = null;
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      setColWidths(prev => {
+        try { localStorage.setItem('erp_wf_col_widths_v2', JSON.stringify(prev)); } catch {}
+        return prev;
+      });
+    };
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  }, [colWidths]);
+
+  const colTemplate = colWidths.map((w, i) => i === 0 ? `minmax(${w}px, 1fr)` : `${w}px`).join(' ');
+  // === End column resize logic ===
+
+  // === Split pane resize (product list vs cart) ===
+  const [splitPercent, setSplitPercent] = useState<number>(() => {
+    try { const v = localStorage.getItem('erp_wf_split'); if (v) return Math.max(30, Math.min(80, Number(v))); } catch {}
+    return 60;
+  });
+  const splitContainerRef = useRef<HTMLDivElement>(null);
+  const onSplitStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const container = splitContainerRef.current;
+    if (!container) return;
+    const onMouseMove = (ev: MouseEvent) => {
+      const rect = container.getBoundingClientRect();
+      const pct = ((ev.clientX - rect.left) / rect.width) * 100;
+      const clamped = Math.max(30, Math.min(80, pct));
+      setSplitPercent(clamped);
+    };
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      setSplitPercent(prev => {
+        try { localStorage.setItem('erp_wf_split', String(Math.round(prev))); } catch {}
+        return prev;
+      });
+    };
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  }, []);
+  // === End split pane resize ===
 
   const toUZS = (usd: number) => Math.round(usd * (exchangeRate || 1));
 
@@ -554,9 +637,9 @@ export const Workflow: React.FC<WorkflowProps> = ({
             </button>
           </div>
         )}
-        <div className="flex-1 grid grid-cols-1 lg:grid-cols-4 gap-4 min-h-0">
-          {/* Product List - 3 columns */}
-          <div className="lg:col-span-3 flex flex-col min-h-0">
+        <div ref={splitContainerRef} className="flex-1 flex min-h-0 gap-0">
+          {/* Product List */}
+          <div className="flex flex-col min-h-0 min-w-0" style={{ width: `${splitPercent}%` }}>
             <div className="flex gap-2 mb-3 flex-shrink-0">
               <div className="relative flex-1">
                 <Search className={`absolute left-3 top-1/2 -translate-y-1/2 ${t.textMuted}`} size={16} />
@@ -601,6 +684,13 @@ export const Workflow: React.FC<WorkflowProps> = ({
                         <div className="flex-1 min-w-0">
                           <div className={`font-medium text-xs truncate ${t.text}`}>{p.name}</div>
                           <div className={`text-[10px] truncate ${t.textMuted}`}>{p.dimensions} • {p.steelGrade}</div>
+                          {(p.manufacturer || p.warehouse) && (
+                            <div className={`text-[10px] truncate ${t.textMuted}`}>
+                              {p.manufacturer && <span>{p.manufacturer}</span>}
+                              {p.manufacturer && p.warehouse && <span> • </span>}
+                              {p.warehouse && <span>{WarehouseLabels[p.warehouse]}</span>}
+                            </div>
+                          )}
                         </div>
                         <div className="text-right ml-1">
                           <div className={`${t.success} font-mono font-bold text-xs`}>${p.pricePerUnit.toFixed(2)}</div>
@@ -622,29 +712,41 @@ export const Workflow: React.FC<WorkflowProps> = ({
 
               {/* === LIST VIEW === */}
               {wfViewMode === 'list' && (
-                <div className={`${t.bgCard} border ${t.border} rounded-lg overflow-hidden`}>
+                <div className={`${t.bgCard} border ${t.border} rounded-lg overflow-hidden`} style={{ overflowX: 'auto' }}>
                   {/* Header */}
-                  <div className={`grid grid-cols-[1fr_100px_60px_80px_60px_36px] gap-2 px-3 py-1.5 ${theme === 'light' ? 'bg-slate-50 border-b border-slate-200' : 'bg-slate-800/60 border-b border-slate-700'} text-[10px] font-semibold uppercase ${t.textMuted}`}>
-                    <span>Товар</span>
-                    <span>Размер</span>
-                    <span>Сталь</span>
-                    <span className="text-right">Цена</span>
-                    <span className="text-right">Ост.</span>
-                    <span></span>
+                  <div
+                    className={`grid gap-0 px-3 py-1.5 ${theme === 'light' ? 'bg-slate-50 border-b border-slate-200' : 'bg-slate-800/60 border-b border-slate-700'} text-[10px] font-semibold uppercase ${t.textMuted}`}
+                    style={{ gridTemplateColumns: colTemplate, minWidth: colWidths.reduce((a, b) => a + b, 0) }}
+                  >
+                    {['Товар', 'Размер', 'Сталь', 'Произв.', 'Склад', 'Цена', 'Ост.', ''].map((label, idx) => (
+                      <span key={idx} className={`relative select-none px-1 ${idx >= 5 && idx <= 6 ? 'text-right' : ''}`}>
+                        {label}
+                        {idx < 7 && (
+                          <span
+                            onMouseDown={e => onResizeStart(e, idx)}
+                            className="absolute right-0 top-0 h-full w-[5px] cursor-col-resize z-10 hover:bg-blue-400/30"
+                            style={{ touchAction: 'none' }}
+                          />
+                        )}
+                      </span>
+                    ))}
                   </div>
                   {filteredProducts.slice(0, 60).map((p, i) => (
                     <div
                       key={p.id}
                       onClick={() => addToCart(p)}
-                      className={`grid grid-cols-[1fr_100px_60px_80px_60px_36px] gap-2 items-center px-3 py-1.5 transition-colors cursor-pointer group
+                      className={`grid gap-0 items-center px-3 py-1.5 transition-colors cursor-pointer group
                         ${i % 2 === 0 ? '' : (theme === 'light' ? 'bg-slate-50/50' : 'bg-slate-800/30')}
                         ${theme === 'light' ? 'hover:bg-blue-50' : 'hover:bg-slate-700/40'}`}
+                      style={{ gridTemplateColumns: colTemplate, minWidth: colWidths.reduce((a, b) => a + b, 0) }}
                     >
-                      <span className={`text-xs font-medium ${t.text} truncate`}>{p.name}</span>
-                      <span className={`text-xs font-bold font-mono ${t.text}`}>{p.dimensions}</span>
-                      <span className={`text-[10px] ${t.textMuted}`}>{p.steelGrade}</span>
-                      <span className={`text-xs font-bold font-mono ${t.success} text-right`}>${p.pricePerUnit.toFixed(2)}</span>
-                      <span className={`text-[10px] ${t.textMuted} text-right`}>{p.quantity}</span>
+                      <span className={`text-xs font-medium ${t.text} truncate px-1`}>{p.name}</span>
+                      <span className={`text-xs font-bold font-mono ${t.text} truncate px-1`}>{p.dimensions}</span>
+                      <span className={`text-[10px] ${t.textMuted} truncate px-1`}>{p.steelGrade}</span>
+                      <span className={`text-[10px] ${t.textMuted} truncate px-1`}>{p.manufacturer || '—'}</span>
+                      <span className={`text-[10px] ${t.textMuted} truncate px-1`}>{p.warehouse ? WarehouseLabels[p.warehouse] : '—'}</span>
+                      <span className={`text-xs font-bold font-mono ${t.success} text-right truncate px-1`}>${p.pricePerUnit.toFixed(2)}</span>
+                      <span className={`text-[10px] ${t.textMuted} text-right truncate px-1`}>{p.quantity}</span>
                       <button
                         onClick={(e) => { e.stopPropagation(); addToCart(p); }}
                         className={`w-6 h-6 rounded flex items-center justify-center transition-all opacity-0 group-hover:opacity-100
@@ -660,8 +762,17 @@ export const Workflow: React.FC<WorkflowProps> = ({
             </div>
           </div>
 
-          {/* Cart - 1 column */}
-          <div className={`${t.bgCard} border ${t.border} rounded-xl overflow-hidden flex flex-col min-h-0 ${t.shadow}`} style={{ maxHeight: 'calc(100vh - 160px)' }}>
+          {/* Draggable divider */}
+          <div
+            onMouseDown={onSplitStart}
+            className={`flex-shrink-0 w-[6px] cursor-col-resize group flex items-center justify-center hover:bg-blue-400/20 transition-colors mx-1 rounded`}
+            title="Перетащите для изменения размера"
+          >
+            <div className={`w-[2px] h-8 rounded-full ${theme === 'light' ? 'bg-slate-300 group-hover:bg-blue-400' : 'bg-slate-600 group-hover:bg-primary-400'} transition-colors`} />
+          </div>
+
+          {/* Cart */}
+          <div className={`${t.bgCard} border ${t.border} rounded-xl overflow-hidden flex flex-col min-h-0 min-w-0 ${t.shadow}`} style={{ width: `${100 - splitPercent}%`, maxHeight: 'calc(100vh - 160px)' }}>
             <div className={`p-3 border-b ${t.border} ${t.bgPanelAlt} flex-shrink-0 flex items-center justify-between`}>
               <div className={`${t.text} font-bold text-sm`}>Заявка ({cart.length})</div>
               {/* Переключатель валюты отображения */}
