@@ -1,8 +1,10 @@
 import React, { useState, useMemo } from 'react';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
 import { Employee, Order, Expense, AppSettings } from '../types';
+import { DEFAULT_EXCHANGE_RATE } from '../constants';
 import { DollarSign, Calendar, Download, Search, User, TrendingUp, Wallet, ArrowDownCircle, ArrowUpCircle, X } from 'lucide-react';
 import { formatCurrency } from '../utils/finance';
+import { logger } from '../utils/logger';
 
 interface PayrollProps {
   employees: Employee[];
@@ -11,7 +13,7 @@ interface PayrollProps {
   settings?: AppSettings;
 }
 
-export const Payroll: React.FC<PayrollProps> = ({ employees, orders, expenses, settings }) => {
+export const Payroll: React.FC<PayrollProps> = React.memo(({ employees, orders, expenses, settings }) => {
   const { theme } = useTheme();
   const t = getThemeClasses(theme);
 
@@ -118,7 +120,7 @@ export const Payroll: React.FC<PayrollProps> = ({ employees, orders, expenses, s
             const amount = exp.amount || 0;
             // Convert UZS advances to USD for consistency
             if (exp.currency === 'UZS') {
-              const rate = exp.exchangeRate || settings?.defaultExchangeRate || 12800;
+              const rate = exp.exchangeRate || settings?.defaultExchangeRate || DEFAULT_EXCHANGE_RATE;
               return sum + (rate > 0 ? amount / rate : 0);
             }
             return sum + amount;
@@ -142,7 +144,7 @@ export const Payroll: React.FC<PayrollProps> = ({ employees, orders, expenses, s
             daysWorked
           };
         } catch (err) {
-          console.error('Error calculating payroll for employee:', employee.name, err);
+          logger.error('Payroll', 'Error calculating payroll for employee:', employee.name, err);
           return null;
         }
       })
@@ -474,4 +476,4 @@ export const Payroll: React.FC<PayrollProps> = ({ employees, orders, expenses, s
       )}
     </div>
   );
-};
+});

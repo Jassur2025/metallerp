@@ -10,6 +10,8 @@
  * - Counter for same-millisecond uniqueness
  */
 
+import { logger } from './logger';
+
 // Counter for same-millisecond uniqueness
 let counter = 0;
 let lastTimestamp = 0;
@@ -115,6 +117,12 @@ export const IdGenerator = {
   
   /** Fixed Asset ID: AST-xxx */
   fixedAsset: () => generateId('AST'),
+
+  /** Supplier ID: SUP-xxx */
+  supplier: () => generateId('SUP'),
+
+  /** Note ID: NTE-xxx */
+  note: () => generateId('NTE'),
 };
 
 /**
@@ -133,7 +141,7 @@ export function isValidId(id: string, expectedPrefix?: string): boolean {
   // Check for old-style numeric IDs (Date.now() pattern)
   const isOldStyle = /^\d{13,}$/.test(id);
   if (isOldStyle) {
-    console.warn(`[IdGenerator] Old-style ID detected: ${id}. Consider migrating.`);
+    logger.warn('IdGenerator', `Old-style ID detected: ${id}. Consider migrating.`);
   }
   
   return true;

@@ -3,24 +3,29 @@ import {
     Purchase, Product, Transaction, ProductType, Unit,
     PurchaseItem, PurchaseOverheads, AppSettings, Supplier
 } from '../types';
+import { DEFAULT_EXCHANGE_RATE } from '../constants';
 import { IdGenerator } from '../utils/idGenerator';
-import { Plus, Trash2, Save, Calculator, Container, DollarSign, AlertTriangle, Truck, Scale, FileText, History, Wallet, CheckCircle, ChevronDown, ChevronUp, Users, Cloud } from 'lucide-react';
+import { Plus, Trash2, Save, Calculator, Container, DollarSign, AlertTriangle, Truck, Scale, FileText, Users } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { PaymentSplitModal, PaymentDistribution } from './Sales/PaymentSplitModal';
 import { useSuppliers } from '../hooks/useSuppliers';
 import { usePurchases } from '../hooks/usePurchases';
+import { logger } from '../utils/logger';
+import { PurchaseHistoryTab } from './Import/PurchaseHistoryTab';
+import { ImportRepaymentModal } from './Import/ImportRepaymentModal';
+import { ProductCreateModal } from './Import/ProductCreateModal';
 
 interface ImportProps {
     products: Product[];
     setProducts: (products: Product[]) => void;
     settings: AppSettings;
-    purchases: Purchase[]; // Legacy - ignored, using Firebase
-    onSavePurchases: (purchases: Purchase[]) => void; // Legacy
+    purchases: Purchase[];
+    onSavePurchases: (purchases: Purchase[]) => void;
     transactions: Transaction[];
     setTransactions: (t: Transaction[]) => void;
 }
 
-export const Import: React.FC<ImportProps> = ({ products, setProducts, settings, purchases: legacyPurchases, onSavePurchases, transactions, setTransactions }) => {
+export const Import: React.FC<ImportProps> = ({ products, setProducts, settings, transactions, setTransactions }) => {
     const toast = useToast();
     
     // Firebase hook for purchases
@@ -28,8 +33,7 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
         purchases,
         loading: purchasesLoading,
         addPurchase,
-        updatePurchase,
-        migratePurchases
+        updatePurchase
     } = usePurchases({ realtime: true });
     
     // Firebase hook for suppliers
@@ -38,41 +42,13 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
         loading: suppliersLoading, 
         addSupplier, 
         updateSupplier,
-        getOrCreateSupplier,
-        migrateFromPurchases 
+        getOrCreateSupplier
     } = useSuppliers({ realtime: true });
     
     const [activeTab, setActiveTab] = useState<'new' | 'history'>('new');
     const [supplierName, setSupplierName] = useState('');
     const [selectedSupplierId, setSelectedSupplierId] = useState<string>('');
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-
-    // Auto-migrate purchases from Google Sheets (one-time)
-    useEffect(() => {
-        if (!purchasesLoading && purchases.length === 0 && legacyPurchases.length > 0) {
-            console.log('[Import] Migrating purchases from Sheets:', legacyPurchases.length);
-            migratePurchases(legacyPurchases).then(count => {
-                if (count > 0) {
-                    toast.success(`Мигрировано ${count} закупок в Firebase`);
-                }
-            }).catch(err => {
-                console.error('Purchase migration error:', err);
-            });
-        }
-    }, [purchasesLoading, purchases.length, legacyPurchases.length, migratePurchases, toast]);
-
-    // Auto-migrate suppliers from purchases (one-time)
-    useEffect(() => {
-        if (!suppliersLoading && suppliers.length === 0 && purchases.length > 0) {
-            migrateFromPurchases(purchases).then(count => {
-                if (count > 0) {
-                    toast.success(`Мигрировано ${count} поставщиков в Firebase`);
-                }
-            }).catch(err => {
-                console.error('Supplier migration error:', err);
-            });
-        }
-    }, [suppliersLoading, suppliers.length, purchases.length, migrateFromPurchases, toast]);
 
     // Payment Logic
     const [paymentMethod, setPaymentMethod] = useState<'cash' | 'bank' | 'debt' | 'mixed'>('cash');
@@ -99,8 +75,6 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
     // Repayment Modal
     const [isRepayModalOpen, setIsRepayModalOpen] = useState(false);
     const [selectedPurchaseForRepayment, setSelectedPurchaseForRepayment] = useState<Purchase | null>(null);
-    const [repaymentAmount, setRepaymentAmount] = useState<number>(0);
-    const [expandedPurchases, setExpandedPurchases] = useState<Set<string>>(new Set());
 
     // --- Logic to Add Item ---
     const handleAddItem = () => {
@@ -242,10 +216,10 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
         // Get or create supplier in Firebase
         let supplierId = selectedSupplierId;
         try {
-            console.log('[Import] Creating supplier:', supplierName);
+            logger.debug('Import', 'Creating supplier:', supplierName);
             const supplier = await getOrCreateSupplier(supplierName);
             supplierId = supplier.id;
-            console.log('[Import] Supplier created/found:', supplier);
+            logger.debug('Import', 'Supplier created/found:', supplier);
             
             // Update supplier stats
             await updateSupplier(supplier.id, {
@@ -254,11 +228,11 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
             });
             toast.success(`Поставщик "${supplierName}" сохранён в Firebase`);
         } catch (err) {
-            console.error('Error updating supplier:', err);
+            logger.error('Import', 'Error updating supplier:', err);
             toast.error(`Ошибка сохранения поставщика: ${err}`);
         }
 
-        const rate = settings.defaultExchangeRate || 12800;
+        const rate = settings.defaultExchangeRate || DEFAULT_EXCHANGE_RATE;
 
         const purchase: Purchase = {
             id: IdGenerator.purchase(),
@@ -282,9 +256,9 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
         // 1. Save Purchase to Firebase
         try {
             await addPurchase(purchase);
-            console.log('[Import] Purchase saved to Firebase:', purchase.id);
+            logger.debug('Import', 'Purchase saved to Firebase:', purchase.id);
         } catch (err) {
-            console.error('Error saving purchase to Firebase:', err);
+            logger.error('Import', 'Error saving purchase to Firebase:', err);
             toast.error('Ошибка сохранения закупки');
             return;
         }
@@ -412,11 +386,10 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
 
     const handleOpenRepayModal = (purchase: Purchase) => {
         setSelectedPurchaseForRepayment(purchase);
-        setRepaymentAmount(purchase.totalInvoiceAmount - purchase.amountPaid);
         setIsRepayModalOpen(true);
     };
 
-    const handleRepayDebt = async () => {
+    const handleRepayDebt = async (repaymentAmount: number) => {
         if (!selectedPurchaseForRepayment || repaymentAmount <= 0) return;
 
         // 1. Create Transaction
@@ -426,24 +399,11 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
             type: 'supplier_payment',
             amount: repaymentAmount,
             currency: 'USD',
-            method: 'cash', // Default
+            method: 'cash',
             description: `Погашение долга поставщику: ${selectedPurchaseForRepayment.supplierName} (Закупка #${selectedPurchaseForRepayment.id})`,
             relatedId: selectedPurchaseForRepayment.id
         };
         setTransactions([...transactions, newTransaction]);
-
-        // 2. Update Purchase
-        const updatedPurchases = purchases.map(p => {
-            if (p.id === selectedPurchaseForRepayment.id) {
-                const newAmountPaid = p.amountPaid + repaymentAmount;
-                return {
-                    ...p,
-                    amountPaid: newAmountPaid,
-                    paymentStatus: newAmountPaid >= p.totalInvoiceAmount ? 'paid' : 'partial'
-                } as Purchase;
-            }
-            return p;
-        });
         
         // 2. Update Purchase in Firebase
         const newAmountPaid = selectedPurchaseForRepayment.amountPaid + repaymentAmount;
@@ -454,7 +414,7 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
                 paymentStatus: newStatus
             });
         } catch (err) {
-            console.error('Error updating purchase:', err);
+            logger.error('Import', 'Error updating purchase:', err);
         }
 
         // 3. Update supplier debt in Firebase
@@ -468,34 +428,17 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
                 });
             }
         } catch (err) {
-            console.error('Error updating supplier debt:', err);
+            logger.error('Import', 'Error updating supplier debt:', err);
         }
 
         setIsRepayModalOpen(false);
         toast.success('Оплата поставщику проведена успешно!');
     };
 
-    const toggleExpand = (purchaseId: string) => {
-        const next = new Set(expandedPurchases);
-        if (next.has(purchaseId)) next.delete(purchaseId);
-        else next.add(purchaseId);
-        setExpandedPurchases(next);
-    };
-
-    const getPurchaseTransactions = (purchaseId: string) => {
-        return transactions.filter(t => t.relatedId === purchaseId);
-    };
-
-    // Filter unpaid purchases
-    const unpaidPurchases = purchases.filter(p => p.paymentStatus !== 'paid');
-
     // Quick Product Create State
     const [isProductModalOpen, setIsProductModalOpen] = useState(false);
-    const [newProduct, setNewProduct] = useState<Partial<Product>>({
-        name: '', type: 'Прочее' as ProductType, unit: 'шт' as Unit, dimensions: '-', steelGrade: '-', origin: 'import'
-    });
 
-    const handleCreateProduct = () => {
+    const handleCreateProduct = (newProduct: Partial<Product>) => {
         if (!newProduct.name) {
             toast.warning('Введите название товара');
             return;
@@ -518,7 +461,6 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
         setProducts([...products, product]);
         setSelectedProductId(product.id);
         setIsProductModalOpen(false);
-        setNewProduct({ name: '', type: 'Прочее' as ProductType, unit: 'шт' as Unit, dimensions: '-', steelGrade: '-', origin: 'import' });
         toast.success(`Товар "${product.name}" создан!`);
     };
 
@@ -865,310 +807,38 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
                     </div>
                 </div>
             ) : (
-                <div className="flex-1 bg-slate-800 rounded-xl border border-slate-700 shadow-lg overflow-hidden flex flex-col">
-                    <div className="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-900/50">
-                        <h3 className="font-bold text-white flex items-center gap-2">
-                            <History size={18} className="text-slate-400" /> История закупок и Долги
-                            {purchasesLoading && <span className="text-xs text-primary-400">(загрузка...)</span>}
-                        </h3>
-                        <div className="flex items-center gap-2">
-                            {/* Always show migration button */}
-                            <button
-                                onClick={async () => {
-                                    try {
-                                        toast.info('Миграция закупок в Firebase...');
-                                        
-                                        // Get purchases directly from the displayed data
-                                        const purchasesToMigrate = purchases.length > 0 ? purchases : legacyPurchases;
-                                        
-                                        if (purchasesToMigrate.length === 0) {
-                                            toast.warning('Нет данных для миграции');
-                                            return;
-                                        }
-                                        
-                                        console.log('[Import] Migrating purchases:', purchasesToMigrate.length);
-                                        const count = await migratePurchases(purchasesToMigrate);
-                                        
-                                        if (count > 0) {
-                                            toast.success(`Мигрировано ${count} закупок в Firebase!`);
-                                            // Also migrate suppliers
-                                            const supCount = await migrateFromPurchases(purchasesToMigrate);
-                                            if (supCount > 0) {
-                                                toast.success(`Мигрировано ${supCount} поставщиков!`);
-                                            }
-                                        } else {
-                                            toast.info('Все закупки уже в Firebase');
-                                        }
-                                    } catch (err) {
-                                        console.error('Migration error:', err);
-                                        toast.error('Ошибка миграции: ' + String(err));
-                                    }
-                                }}
-                                className="flex items-center gap-2 px-3 py-1.5 bg-primary-600 hover:bg-primary-500 text-white rounded-lg text-sm transition-colors"
-                            >
-                                <Cloud size={16} /> Мигрировать в Firebase
-                            </button>
-                            <span className="text-xs text-slate-500">
-                                Показано: {purchases.length} | Legacy: {legacyPurchases.length}
-                            </span>
-                        </div>
-                    </div>
-                    <div className="flex-1 overflow-y-auto">
-                        <table className="w-full text-left text-sm">
-                            <thead className="bg-slate-900 text-xs uppercase text-slate-400 font-medium sticky top-0">
-                                <tr>
-                                    <th className="px-6 py-4">Дата</th>
-                                    <th className="px-6 py-4">Поставщик</th>
-                                    <th className="px-6 py-4 text-right">Сумма (Inv.)</th>
-                                    <th className="px-6 py-4 text-center">Метод</th>
-                                    <th className="px-6 py-4 text-center">Статус</th>
-                                    <th className="px-6 py-4 text-right">Оплачено</th>
-                                    <th className="px-6 py-4 text-right">Долг</th>
-                                    <th className="px-6 py-4"></th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-700">
-                                {purchases.slice().reverse().map(purchase => {
-                                    const debt = purchase.totalInvoiceAmount - purchase.amountPaid;
-                                    const isMixed = purchase.paymentMethod === 'mixed';
-                                    const isExpanded = expandedPurchases.has(purchase.id);
-                                    const purchaseTrx = isMixed && isExpanded ? getPurchaseTransactions(purchase.id) : [];
-
-                                    return (
-                                        <React.Fragment key={purchase.id}>
-                                            <tr className="hover:bg-slate-700/30 transition-colors">
-                                                <td className="px-6 py-4 text-slate-300">{new Date(purchase.date).toLocaleDateString()}</td>
-                                                <td className="px-6 py-4 font-medium text-white">{purchase.supplierName}</td>
-                                                <td className="px-6 py-4 text-right font-mono text-slate-300">${purchase.totalInvoiceAmount.toLocaleString()}</td>
-                                                <td className="px-6 py-4 text-center">
-                                                    <button
-                                                        disabled={!isMixed}
-                                                        onClick={() => isMixed && toggleExpand(purchase.id)}
-                                                        className={`flex items-center gap-1 mx-auto px-2 py-0.5 rounded text-[10px] font-bold uppercase transition-all ${purchase.paymentMethod === 'cash' ? 'bg-emerald-500/20 text-emerald-400' :
-                                                            purchase.paymentMethod === 'bank' ? 'bg-blue-500/20 text-blue-400' :
-                                                                purchase.paymentMethod === 'mixed' ? 'bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 cursor-pointer' :
-                                                                    'bg-red-500/20 text-red-400'
-                                                            }`}
-                                                    >
-                                                        {purchase.paymentMethod === 'cash' ? 'Наличные' :
-                                                            purchase.paymentMethod === 'bank' ? 'Банк' :
-                                                                purchase.paymentMethod === 'mixed' ? 'МИКС' : 'Долг'}
-                                                        {isMixed && (isExpanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />)}
-                                                    </button>
-                                                </td>
-                                                <td className="px-6 py-4 text-center">
-                                                    <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${purchase.paymentStatus === 'paid' ? 'bg-emerald-500/20 text-emerald-400' :
-                                                        purchase.paymentStatus === 'partial' ? 'bg-amber-500/20 text-amber-400' :
-                                                            'bg-red-500/20 text-red-400'
-                                                        }`}>
-                                                        {purchase.paymentStatus === 'paid' ? 'Оплачено' :
-                                                            purchase.paymentStatus === 'partial' ? 'Частично' : 'Не оплачено'}
-                                                    </span>
-                                                </td>
-                                                <td className="px-6 py-4 text-right font-mono text-emerald-400">${purchase.amountPaid.toLocaleString()}</td>
-                                                <td className="px-6 py-4 text-right font-mono text-red-400 font-bold">
-                                                    {debt > 0 ? `$${debt.toLocaleString()}` : '-'}
-                                                </td>
-                                                <td className="px-6 py-4 text-right">
-                                                    {debt > 0 && (
-                                                        <button
-                                                            onClick={() => handleOpenRepayModal(purchase)}
-                                                            className="text-xs bg-slate-700 hover:bg-emerald-600 text-white px-3 py-1.5 rounded transition-colors flex items-center gap-1 ml-auto"
-                                                        >
-                                                            <Wallet size={14} /> Оплатить
-                                                        </button>
-                                                    )}
-                                                </td>
-                                            </tr>
-                                            {/* Details row */}
-                                            {isExpanded && isMixed && (
-                                                <tr className="bg-slate-800/50">
-                                                    <td colSpan={8} className="px-6 py-3">
-                                                        <div className="bg-slate-900/50 rounded-lg p-3 border border-slate-700 ml-10">
-                                                            <div className="text-[10px] font-bold text-slate-400 mb-2 uppercase">Детализация оплаты (МИКС)</div>
-                                                            {purchaseTrx.length === 0 ? (
-                                                                <div className="text-xs text-red-400">Транзакции не найдены</div>
-                                                            ) : (
-                                                                <div className="flex flex-wrap gap-4">
-                                                                    {purchaseTrx.map(t => (
-                                                                        <div key={t.id} className="bg-slate-800 p-2 rounded-lg border border-slate-700">
-                                                                            <div className="text-[10px] text-slate-500 uppercase">{t.method === 'cash' ? 'Наличные' : t.method === 'card' ? 'Карта' : 'Банк'}</div>
-                                                                            <div className={`text-sm font-mono font-bold ${t.method === 'cash' && t.currency === 'USD' ? 'text-emerald-400' : 'text-blue-400'}`}>
-                                                                                {t.currency === 'UZS' ? `${t.amount.toLocaleString()} UZS` : `$${t.amount.toFixed(2)}`}
-                                                                            </div>
-                                                                        </div>
-                                                                    ))}
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            )}
-                                        </React.Fragment>
-                                    );
-                                })}
-                                {purchases.length === 0 && (
-                                    <tr>
-                                        <td colSpan={7} className="px-6 py-12 text-center text-slate-500">
-                                            История закупок пуста.
-                                        </td>
-                                    </tr>
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
+                <PurchaseHistoryTab
+                    purchases={purchases}
+                    purchasesLoading={purchasesLoading}
+                    transactions={transactions}
+                    onOpenRepayModal={handleOpenRepayModal}
+                />
             )}
 
             {/* Repayment Modal */}
             {isRepayModalOpen && selectedPurchaseForRepayment && (
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-slate-800 rounded-2xl w-full max-w-sm border border-slate-700 shadow-2xl animate-scale-in">
-                        <div className="p-6 border-b border-slate-700 flex justify-between items-center">
-                            <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                                <Wallet className="text-emerald-500" /> Оплата поставщику
-                            </h3>
-                            <button onClick={() => setIsRepayModalOpen(false)} className="text-slate-400 hover:text-white">
-                                <Plus size={24} className="rotate-45" />
-                            </button>
-                        </div>
-                        <div className="p-6 space-y-6">
-                            <div className="bg-slate-900 p-4 rounded-xl border border-slate-700">
-                                <p className="text-sm text-slate-400 mb-1">Поставщик</p>
-                                <p className="text-lg font-bold text-white">{selectedPurchaseForRepayment.supplierName}</p>
-                                <div className="mt-3 flex justify-between items-end">
-                                    <span className="text-sm text-slate-500">Остаток долга:</span>
-                                    <span className="text-xl font-mono font-bold text-red-400">
-                                        ${(selectedPurchaseForRepayment.totalInvoiceAmount - selectedPurchaseForRepayment.amountPaid).toLocaleString()}
-                                    </span>
-                                </div>
-                            </div>
-
-                            <div className="space-y-2">
-                                <label className="text-sm font-medium text-slate-400">Сумма оплаты ($)</label>
-                                <div className="relative">
-                                    <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-                                    <input
-                                        type="number"
-                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg pl-10 pr-4 py-3 text-white text-lg font-mono focus:ring-2 focus:ring-emerald-500 outline-none"
-                                        value={repaymentAmount || ''}
-                                        onChange={e => setRepaymentAmount(Number(e.target.value))}
-                                        max={selectedPurchaseForRepayment.totalInvoiceAmount - selectedPurchaseForRepayment.amountPaid}
-                                    />
-                                </div>
-                            </div>
-
-                            <button
-                                onClick={handleRepayDebt}
-                                disabled={repaymentAmount <= 0}
-                                className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 disabled:text-slate-500 text-white py-3 rounded-xl font-bold transition-colors shadow-lg shadow-emerald-600/20"
-                            >
-                                Подтвердить оплату
-                            </button>
-                        </div>
-                    </div>
-                </div>
+                <ImportRepaymentModal
+                    purchase={selectedPurchaseForRepayment}
+                    onClose={() => setIsRepayModalOpen(false)}
+                    onRepay={handleRepayDebt}
+                />
             )}
 
             {/* Quick Product Create Modal */}
             {isProductModalOpen && (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
-                    <div className="bg-slate-800 rounded-2xl w-full max-w-lg border border-slate-700 shadow-2xl animate-scale-in">
-                        <div className="p-6 border-b border-slate-700 flex justify-between items-center">
-                            <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                                <Plus className="text-emerald-500" /> Создать новый товар
-                            </h3>
-                            <button onClick={() => setIsProductModalOpen(false)} className="text-slate-400 hover:text-white text-2xl">&times;</button>
-                        </div>
-                        <div className="p-6 space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-slate-400 mb-1">Название товара *</label>
-                                <input
-                                    type="text"
-                                    placeholder="Например: Труба 80x80x3"
-                                    className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-emerald-500 outline-none"
-                                    value={newProduct.name || ''}
-                                    onChange={e => setNewProduct({ ...newProduct, name: e.target.value })}
-                                />
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-400 mb-1">Тип</label>
-                                    <select
-                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-emerald-500 outline-none"
-                                        value={newProduct.type || 'Прочее'}
-                                        onChange={e => setNewProduct({ ...newProduct, type: e.target.value as ProductType })}
-                                    >
-                                        <option value="Труба">Труба</option>
-                                        <option value="Профиль">Профиль</option>
-                                        <option value="Лист">Лист</option>
-                                        <option value="Балка">Балка</option>
-                                        <option value="Прочее">Прочее</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-400 mb-1">Ед. измерения</label>
-                                    <select
-                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-emerald-500 outline-none"
-                                        value={newProduct.unit || 'шт'}
-                                        onChange={e => setNewProduct({ ...newProduct, unit: e.target.value as Unit })}
-                                    >
-                                        <option value="м">метр</option>
-                                        <option value="т">тонна</option>
-                                        <option value="шт">шт</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <div className="grid grid-cols-3 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-400 mb-1">Размеры</label>
-                                    <input
-                                        type="text"
-                                        placeholder="50x50"
-                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-emerald-500 outline-none"
-                                        value={newProduct.dimensions || ''}
-                                        onChange={e => setNewProduct({ ...newProduct, dimensions: e.target.value })}
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-400 mb-1">Марка стали</label>
-                                    <input
-                                        type="text"
-                                        placeholder="St3sp"
-                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-emerald-500 outline-none"
-                                        value={newProduct.steelGrade || ''}
-                                        onChange={e => setNewProduct({ ...newProduct, steelGrade: e.target.value })}
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-400 mb-1">Происхождение</label>
-                                    <select
-                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-emerald-500 outline-none"
-                                        value={newProduct.origin || 'import'}
-                                        onChange={e => setNewProduct({ ...newProduct, origin: e.target.value as 'import' | 'local' })}
-                                    >
-                                        <option value="import">Импорт</option>
-                                        <option value="local">Местный</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <button
-                                onClick={handleCreateProduct}
-                                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-3 rounded-xl font-bold shadow-lg shadow-emerald-600/20 transition-all"
-                            >
-                                Создать Товар
-                            </button>
-                        </div>
-                    </div>
-                </div>
+                <ProductCreateModal
+                    onClose={() => setIsProductModalOpen(false)}
+                    onCreate={handleCreateProduct}
+                />
             )}
+
             {/* Mixed Payment Modal */}
             <PaymentSplitModal
                 isOpen={isSplitModalOpen}
                 onClose={() => setIsSplitModalOpen(false)}
                 totalAmountUSD={totals.totalInvoiceValue}
-                totalAmountUZS={totals.totalInvoiceValue * (settings.defaultExchangeRate || 12800)}
-                exchangeRate={settings.defaultExchangeRate || 12800}
+                totalAmountUZS={totals.totalInvoiceValue * (settings.defaultExchangeRate || DEFAULT_EXCHANGE_RATE)}
+                exchangeRate={settings.defaultExchangeRate || DEFAULT_EXCHANGE_RATE}
                 onConfirm={finalizePurchase}
             />
         </div>

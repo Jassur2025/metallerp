@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 interface NetworkStatus {
   isOnline: boolean;
@@ -17,6 +17,10 @@ export function useNetworkStatus(): NetworkStatus {
     lastOnline: null,
     connectionType: getConnectionType(),
   });
+
+  // Use ref to avoid stale closure in interval callback
+  const isOnlineRef = useRef(status.isOnline);
+  isOnlineRef.current = status.isOnline;
 
   useEffect(() => {
     const handleOnline = () => {
@@ -38,7 +42,6 @@ export function useNetworkStatus(): NetworkStatus {
     // Проверяем реальное подключение периодически
     const checkConnection = async () => {
       try {
-        // Пробуем fetch к Google для проверки реального интернета
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 5000);
         
@@ -50,11 +53,11 @@ export function useNetworkStatus(): NetworkStatus {
         
         clearTimeout(timeoutId);
         
-        if (!status.isOnline) {
+        if (!isOnlineRef.current) {
           handleOnline();
         }
       } catch {
-        if (status.isOnline) {
+        if (isOnlineRef.current) {
           handleOffline();
         }
       }
@@ -71,7 +74,7 @@ export function useNetworkStatus(): NetworkStatus {
       window.removeEventListener('offline', handleOffline);
       clearInterval(interval);
     };
-  }, [status.isOnline]);
+  }, []);
 
   return status;
 }

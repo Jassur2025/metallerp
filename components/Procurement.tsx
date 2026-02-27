@@ -1,21 +1,23 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { Product, Purchase, PurchaseItem, PurchaseOverheads, Transaction, WorkflowOrder, OrderItem, ProductType, Unit, WarehouseType } from '../types';
 import { IdGenerator } from '../utils/idGenerator';
-import { Plus, DollarSign, Wallet, CreditCard, Building2, Banknote, AlertTriangle } from 'lucide-react';
+import { DEFAULT_EXCHANGE_RATE } from '../constants';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
 import { PaymentSplitModal, PaymentDistribution } from './Sales/PaymentSplitModal';
+import { CancelWorkflowModal } from './CancelWorkflowModal';
 
 import type { ProcurementProps, ProcurementTab, ProcurementType, PaymentMethod, PaymentCurrency, Totals, Balances } from './Procurement/types';
 import { TopBar } from './Procurement/TopBar';
 import { NewPurchaseView } from './Procurement/NewPurchaseView';
 import { WorkflowTab } from './Procurement/WorkflowTab';
 import { HistoryTab } from './Procurement/HistoryTab';
+import { RepaymentModal } from './Procurement/RepaymentModal';
+import { NewProductModal } from './Procurement/NewProductModal';
+import { logger } from '../utils/logger';
+import { getMissingItems } from '../utils/inventoryHelpers';
 
-const isDev = import.meta.env.DEV;
-const logDev = (...args: unknown[]) => { if (isDev) console.log(...args); };
-
-export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts, settings, purchases, onSavePurchases, transactions, setTransactions, workflowOrders, onSaveWorkflowOrders, onSaveProducts, onSaveTransactions, onUpdatePurchase, balances }) => {
+export const Procurement: React.FC<ProcurementProps> = ({ products, settings, purchases, onSavePurchases, transactions, workflowOrders, onSaveWorkflowOrders, onSaveProducts, onSaveTransactions, onUpdatePurchase, balances }) => {
     const toast = useToast();
     const { theme } = useTheme();
     const t = getThemeClasses(theme);
@@ -61,14 +63,14 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
 
     // Expanded purchase rows in history
     const [expandedPurchaseIds, setExpandedPurchaseIds] = useState<Set<string>>(new Set());
-    const togglePurchaseExpand = (id: string) => {
+    const togglePurchaseExpand = useCallback((id: string) => {
         setExpandedPurchaseIds(prev => {
             const next = new Set(prev);
             if (next.has(id)) next.delete(id);
             else next.add(id);
             return next;
         });
-    };
+    }, []);
 
     // New Product Modal (allow adding products directly from procurement)
     const [isNewProductModalOpen, setIsNewProductModalOpen] = useState(false);
@@ -87,59 +89,17 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
     // Workflow Cancel Modal
     const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
     const [workflowToCancel, setWorkflowToCancel] = useState<WorkflowOrder | null>(null);
-    const [cancelReason, setCancelReason] = useState('');
 
-    const openCancelModal = (wf: WorkflowOrder) => {
+    const openCancelModal = useCallback((wf: WorkflowOrder) => {
         setWorkflowToCancel(wf);
-        setCancelReason('');
         setIsCancelModalOpen(true);
-    };
-
-    const confirmCancelWorkflow = async () => {
-        if (!workflowToCancel) return;
-        if (!cancelReason.trim()) {
-            toast.warning('Укажите причину аннулирования');
-            return;
-        }
-
-        const updated = workflowOrders.map(o =>
-            o.id === workflowToCancel.id
-                ? {
-                    ...o,
-                    status: 'cancelled' as const,
-                    cancellationReason: cancelReason.trim(),
-                    cancelledBy: 'Закуп',
-                    cancelledAt: new Date().toISOString()
-                }
-                : o
-        );
-
-        await onSaveWorkflowOrders(updated);
-        toast.success('Заказ аннулирован');
-        setIsCancelModalOpen(false);
-        setWorkflowToCancel(null);
-        setCancelReason('');
-    };
+    }, []);
 
     React.useEffect(() => {
         localStorage.setItem('procurement_active_tab', activeTab);
     }, [activeTab]);
 
-    const getMissingItems = (items: OrderItem[]) => {
-        const missing: { item: OrderItem; available: number; missingQty: number }[] = [];
-        items.forEach(it => {
-            const p = products.find(pp => pp.id === it.productId);
-            const available = p?.quantity ?? 0;
-            const need = it.quantity;
-            const missingQty = Math.max(0, need - available);
-            if (!p || missingQty > 0) {
-                missing.push({ item: it, available, missingQty });
-            }
-        });
-        return missing;
-    };
-
-    const isFullyInStock = (wf: WorkflowOrder) => getMissingItems(wf.items).length === 0;
+    const isFullyInStock = (wf: WorkflowOrder) => getMissingItems(wf.items, products).length === 0;
 
     const workflowQueue = useMemo(() => {
         return workflowOrders
@@ -148,7 +108,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
     }, [workflowOrders]);
 
     const createDraftPurchaseFromWorkflow = (wf: WorkflowOrder) => {
-        const missing = getMissingItems(wf.items);
+        const missing = getMissingItems(wf.items, products);
         if (missing.length === 0) {
             toast.info('Все позиции уже есть в остатках. Можно отправить заявку в кассу.');
             return;
@@ -228,7 +188,6 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
         const updated = [...products, product];
         // CRITICAL: Save to Sheets FIRST, then update state
         await onSaveProducts?.(updated);
-        setProducts(updated);
         setSelectedProductId(product.id);
         setIsNewProductModalOpen(false);
         toast.success('Товар добавлен. Теперь можно добавить его в закупку.');
@@ -256,7 +215,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
             invoicePriceWithoutVat: inputPrice / (1 + (settings.vatRate || 12) / 100),
             vatAmount: inputPrice - (inputPrice / (1 + (settings.vatRate || 12) / 100)),
             landedCost: inputPrice, // Will be updated dynamically for Import, same as price for Local
-            totalLineCost: inputQty * inputPrice / (settings.defaultExchangeRate || 12800), // USD estimate
+            totalLineCost: inputQty * inputPrice / (settings.defaultExchangeRate || DEFAULT_EXCHANGE_RATE), // USD estimate
             totalLineCostUZS: inputQty * inputPrice
         };
 
@@ -268,9 +227,9 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
         setInputPrice(0);
     };
 
-    const removeItem = (productId: string) => {
-        setCart(cart.filter(item => item.productId !== productId));
-    };
+    const removeItem = useCallback((productId: string) => {
+        setCart(prev => prev.filter(item => item.productId !== productId));
+    }, []);
 
     // Функции редактирования количества и цены в cart
     const updateCartItemQty = (productId: string, qty: number) => {
@@ -307,7 +266,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
     // --- Calculation Logic ---
     // Закупка в UZS с НДС, в ТМЦ приходит без НДС
     const totals: Totals = useMemo(() => {
-        const rate = settings.defaultExchangeRate || 12800;
+        const rate = settings.defaultExchangeRate || DEFAULT_EXCHANGE_RATE;
         const vatRate = settings.vatRate || 12;
 
         // Сумма в UZS (с НДС) - для кредиторки поставщику
@@ -397,7 +356,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
     const checkBalance = (method: PaymentMethod, currency: PaymentCurrency, amountUZS: number): { ok: boolean; message: string } => {
         if (!balances) return { ok: true, message: '' }; // Если балансы не переданы, пропускаем проверку
 
-        const rate = settings.defaultExchangeRate || 12800;
+        const rate = settings.defaultExchangeRate || DEFAULT_EXCHANGE_RATE;
 
         if (method === 'cash') {
             if (currency === 'USD') {
@@ -426,7 +385,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
     const finalizeProcurement = async (distribution?: PaymentDistribution) => {
         if (!supplierName || cart.length === 0) return;
 
-        const rate = settings.defaultExchangeRate || 12800;
+        const rate = settings.defaultExchangeRate || DEFAULT_EXCHANGE_RATE;
         const totalToPayUZS = totals.totalInvoiceValueUZS; // Оплата в UZS с НДС
 
         // Проверка баланса перед оплатой (если не в долг и не смешанная)
@@ -602,7 +561,6 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
 
         // CRITICAL: Save to Sheets FIRST, then update state
         if (onSaveProducts) await onSaveProducts(nextProducts);
-        setProducts(nextProducts);
 
         // Reset
         setCart([]);
@@ -737,7 +695,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
     const handleRepayDebt = (distribution?: PaymentDistribution) => {
         if (!selectedPurchaseForRepayment) return;
 
-        const rate = settings.defaultExchangeRate || 12800;
+        const rate = settings.defaultExchangeRate || DEFAULT_EXCHANGE_RATE;
         const isLegacy = selectedPurchaseForRepayment.totalInvoiceAmountUZS === undefined || selectedPurchaseForRepayment.totalInvoiceAmountUZS === 0;
         let prevPaidUSD = selectedPurchaseForRepayment.amountPaidUSD;
         if (isLegacy && (prevPaidUSD === undefined || prevPaidUSD === null)) {
@@ -820,11 +778,11 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
 
             if (repaymentCurrency === 'UZS') {
                 amountUZS = repaymentAmount;
-                const safeRate = (rate && rate > 0) ? rate : 12800;
+                const safeRate = (rate && rate > 0) ? rate : DEFAULT_EXCHANGE_RATE;
                 amountUSD = repaymentAmount / safeRate;
             } else {
                 amountUSD = repaymentAmount;
-                const safeRate = (rate && rate > 0) ? rate : 12800;
+                const safeRate = (rate && rate > 0) ? rate : DEFAULT_EXCHANGE_RATE;
                 amountUZS = repaymentAmount * safeRate;
             }
 
@@ -903,7 +861,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                     // Legacy: amountPaid holds USD value
                     currentPaidUSD = currentPaidUSD ?? p.amountPaid ?? 0;
                     // Recalculate UZS equivalent for consistency (using current rate or purchase rate)
-                    const pRate = p.exchangeRate || 12800;
+                    const pRate = p.exchangeRate || DEFAULT_EXCHANGE_RATE;
                     currentPaidUZS = (currentPaidUSD * pRate);
                 } else {
                     // New: just ensure safe numbers
@@ -931,7 +889,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                         amountPaid: newAmountPaidUZS,
                         amountPaidUSD: newAmountPaidUSD,
                         paymentStatus: isPaid ? 'paid' as const : 'partial' as const
-                    }).catch(err => console.error("Failed to update purchase directly", err));
+                    }).catch(err => logger.error('Procurement', 'Failed to update purchase directly', err));
                 }
 
                 return updatedPurchase;
@@ -990,7 +948,6 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                 <WorkflowTab
                     workflowQueue={workflowQueue}
                     products={products}
-                    getMissingItems={getMissingItems}
                     createDraftPurchaseFromWorkflow={createDraftPurchaseFromWorkflow}
                     sendWorkflowToCash={sendWorkflowToCash}
                     onCancelWorkflow={openCancelModal}
@@ -1009,349 +966,35 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
             )}
 
             {/* Repayment Modal */}
-            {isRepayModalOpen && selectedPurchaseForRepayment && (
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className={`${t.bgCard} rounded-2xl w-full max-w-sm border ${t.border} shadow-2xl animate-scale-in`}>
-                        <div className={`p-6 border-b ${t.border} flex justify-between items-center`}>
-                            <h3 className={`text-xl font-bold ${t.text} flex items-center gap-2`}>
-                                <Wallet className="text-emerald-500" /> Оплата поставщику
-                            </h3>
-                            <button onClick={() => setIsRepayModalOpen(false)} className={`${t.textMuted} hover:${t.text}`}>
-                                <Plus size={24} className="rotate-45" />
-                            </button>
-                        </div>
-                        <div className="p-6 space-y-6">
-                            <div className={`${t.bg} p-4 rounded-xl border ${t.border}`}>
-                                {(() => {
-                                    // Calculate paidUSD for display (reusing legacy logic)
-                                    const isLegacy = selectedPurchaseForRepayment.totalInvoiceAmountUZS === undefined || selectedPurchaseForRepayment.totalInvoiceAmountUZS === 0;
-                                    let purchasePaidUSD = selectedPurchaseForRepayment.amountPaidUSD;
-                                    if (isLegacy && (purchasePaidUSD === undefined || purchasePaidUSD === null)) {
-                                        purchasePaidUSD = selectedPurchaseForRepayment.amountPaid || 0;
-                                    } else {
-                                        purchasePaidUSD = purchasePaidUSD ?? 0;
-                                    }
-                                    return (
-                                        <>
-                                            <p className={`text-sm ${t.textMuted} mb-1`}>Поставщик</p>
-                                            <p className={`text-lg font-bold ${t.text}`}>{selectedPurchaseForRepayment.supplierName}</p>
-                                            <div className="mt-3 flex justify-between items-end">
-                                                <span className={`text-sm ${t.textMuted}`}>Остаток долга:</span>
-                                                <span className="text-xl font-mono font-bold text-red-400">
-                                                    ${(selectedPurchaseForRepayment.totalInvoiceAmount - (purchasePaidUSD || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                                </span>
-                                            </div>
-                                        </>
-                                    );
-                                })()}
-                            </div>
-
-                            {/* Available Balances */}
-                            {
-                                balances && (
-                                    <div className={`${t.bg} p-3 rounded-xl border ${t.border}`}>
-                                        <p className={`text-xs font-medium ${t.textMuted} mb-2`}>Доступно в кассах:</p>
-                                        <div className="grid grid-cols-2 gap-2 text-xs">
-                                            <div className="flex justify-between">
-                                                <span className={t.textMuted}>Нал USD:</span>
-                                                <span className="text-emerald-400 font-mono">${balances.cashUSD.toLocaleString()}</span>
-                                            </div>
-                                            <div className="flex justify-between">
-                                                <span className={t.textMuted}>Нал сум:</span>
-                                                <span className="text-blue-400 font-mono">{balances.cashUZS.toLocaleString()}</span>
-                                            </div>
-                                            <div className="flex justify-between">
-                                                <span className={t.textMuted}>Карта:</span>
-                                                <span className="text-purple-400 font-mono">{balances.cardUZS.toLocaleString()}</span>
-                                            </div>
-                                            <div className="flex justify-between">
-                                                <span className={t.textMuted}>Р/С:</span>
-                                                <span className="text-amber-400 font-mono">{balances.bankUZS.toLocaleString()}</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )
-                            }
-
-                            {/* Payment Method Selector */}
-                            <div className="space-y-2">
-                                <label className={`text-sm font-medium ${t.textMuted}`}>Способ оплаты</label>
-                                <div className="grid grid-cols-4 gap-2">
-                                    <button
-                                        onClick={() => {
-                                            setRepaymentMethod('cash');
-                                            // Cash supports USD and UZS, keeping current if valid, else default USD
-                                        }}
-                                        className={`p-3 rounded-xl border flex flex-col items-center gap-2 transition-all ${repaymentMethod === 'cash'
-                                            ? 'bg-emerald-600/20 border-emerald-500 text-emerald-400'
-                                            : `${t.bg} ${t.border} ${t.textMuted} hover:${t.bgHover}`
-                                            }`}
-                                    >
-                                        <Banknote size={20} />
-                                        <span className="text-xs font-bold">Нал</span>
-                                    </button>
-                                    <button
-                                        onClick={() => {
-                                            setRepaymentMethod('card');
-                                            setRepaymentCurrency('UZS'); // Card - Only Sum
-                                        }}
-                                        className={`p-3 rounded-xl border flex flex-col items-center gap-2 transition-all ${repaymentMethod === 'card'
-                                            ? 'bg-indigo-600/20 border-indigo-500 text-indigo-400'
-                                            : `${t.bg} ${t.border} ${t.textMuted} hover:${t.bgHover}`
-                                            }`}
-                                    >
-                                        <CreditCard size={20} />
-                                        <span className="text-xs font-bold">Карта</span>
-                                    </button>
-                                    <button
-                                        onClick={() => {
-                                            setRepaymentMethod('bank');
-                                            setRepaymentCurrency('UZS'); // Cashless - Only Sum
-                                        }}
-                                        className={`p-3 rounded-xl border flex flex-col items-center gap-2 transition-all ${repaymentMethod === 'bank'
-                                            ? 'bg-blue-600/20 border-blue-500 text-blue-400'
-                                            : `${t.bg} ${t.border} ${t.textMuted} hover:${t.bgHover}`
-                                            }`}
-                                    >
-                                        <Building2 size={20} />
-                                        <span className="text-xs font-bold">Р/С</span>
-                                    </button>
-                                    <button
-                                        onClick={() => {
-                                            setIsRepayModalOpen(false);
-                                            setIsRepaymentSplitModalOpen(true);
-                                        }}
-                                        className={`p-3 rounded-xl border flex flex-col items-center gap-2 transition-all bg-gradient-to-br from-purple-600/20 to-pink-600/20 border-purple-500/50 text-purple-400 hover:border-purple-400`}
-                                    >
-                                        <Wallet size={20} />
-                                        <span className="text-xs font-bold">Микс</span>
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* Currency Selector */}
-                            <div className="space-y-2">
-                                <label className={`text-sm font-medium ${t.textMuted}`}>Валюта</label>
-                                <div className={`flex ${t.bg} rounded-lg p-1 border ${t.border}`}>
-                                    {repaymentMethod === 'cash' ? (
-                                        <>
-                                            <button
-                                                onClick={() => {
-                                                    setRepaymentCurrency('USD');
-                                                    const isLeg = selectedPurchaseForRepayment.totalInvoiceAmountUZS === undefined || selectedPurchaseForRepayment.totalInvoiceAmountUZS === 0;
-                                                    let pUSD = selectedPurchaseForRepayment.amountPaidUSD;
-                                                    if (isLeg && (pUSD === undefined || pUSD === null)) pUSD = selectedPurchaseForRepayment.amountPaid || 0;
-                                                    else pUSD = pUSD ?? 0;
-                                                    setRepaymentAmount(Math.max(0, selectedPurchaseForRepayment.totalInvoiceAmount - pUSD));
-                                                }}
-                                                className={`flex-1 py-1.5 rounded-md text-sm font-bold transition-all ${repaymentCurrency === 'USD' ? `${t.bgCard} ${t.text} shadow` : `${t.textMuted} hover:${t.text}`
-                                                    }`}
-                                            >
-                                                USD ($)
-                                            </button>
-                                            <button
-                                                onClick={() => {
-                                                    setRepaymentCurrency('UZS');
-                                                    const isLeg = selectedPurchaseForRepayment.totalInvoiceAmountUZS === undefined || selectedPurchaseForRepayment.totalInvoiceAmountUZS === 0;
-                                                    let pUSD = selectedPurchaseForRepayment.amountPaidUSD;
-                                                    if (isLeg && (pUSD === undefined || pUSD === null)) pUSD = selectedPurchaseForRepayment.amountPaid || 0;
-                                                    else pUSD = pUSD ?? 0;
-                                                    const debtUSD = Math.max(0, selectedPurchaseForRepayment.totalInvoiceAmount - pUSD);
-                                                    setRepaymentAmount(Math.round(debtUSD * settings.defaultExchangeRate));
-                                                }}
-                                                className={`flex-1 py-1.5 rounded-md text-sm font-bold transition-all ${repaymentCurrency === 'UZS' ? `${t.bgCard} ${t.text} shadow` : `${t.textMuted} hover:${t.text}`
-                                                    }`}
-                                            >
-                                                UZS (сум)
-                                            </button>
-                                        </>
-                                    ) : (
-                                        <button
-                                            className={`flex-1 py-1.5 rounded-md text-sm font-bold ${t.bgCard} ${t.text} shadow cursor-not-allowed opacity-50`}
-                                            disabled
-                                        >
-                                            UZS (сум) — Только сумы
-                                        </button>
-                                    )}
-                                </div>
-                            </div>
-
-                            <div className="space-y-2">
-                                <div className="flex justify-between">
-                                    <label className={`text-sm font-medium ${t.textMuted}`}>Сумма оплаты ({repaymentCurrency})</label>
-                                    {repaymentCurrency === 'UZS' && (
-                                        <span className={`text-xs ${t.textMuted} self-center`}>
-                                            Курс: {settings.defaultExchangeRate.toLocaleString()}
-                                        </span>
-                                    )}
-                                </div>
-                                <div className="relative">
-                                    {repaymentCurrency === 'USD' ? (
-                                        <DollarSign className={`absolute left-3 top-1/2 -translate-y-1/2 ${t.textMuted}`} size={18} />
-                                    ) : (
-                                        <span className={`absolute left-3 top-1/2 -translate-y-1/2 ${t.textMuted} font-bold text-xs`}>UZS</span>
-                                    )}
-                                    <input
-                                        type="number"
-                                        className={`w-full ${t.bg} border ${t.border} rounded-lg pl-12 pr-4 py-3 ${t.text} text-lg font-mono focus:ring-2 focus:ring-emerald-500 outline-none`}
-                                        value={repaymentAmount || ''}
-                                        onChange={e => setRepaymentAmount(Number(e.target.value))}
-                                        max={selectedPurchaseForRepayment.totalInvoiceAmount - (selectedPurchaseForRepayment.amountPaidUSD ?? selectedPurchaseForRepayment.amountPaid ?? 0)}
-                                    />
-                                </div>
-                                {repaymentCurrency === 'UZS' && repaymentAmount > 0 && (
-                                    <p className="text-xs text-right text-emerald-400">
-                                        ≈ ${(repaymentAmount / settings.defaultExchangeRate).toLocaleString(undefined, { maximumFractionDigits: 2 })} USD
-                                    </p>
-                                )}
-                            </div>
-
-                            <button
-                                onClick={() => handleRepayDebt()}
-                                disabled={repaymentAmount <= 0}
-                                className={`w-full bg-emerald-600 hover:bg-emerald-500 disabled:${t.bgHover} disabled:${t.textMuted} text-white py-3 rounded-xl font-bold transition-colors shadow-lg shadow-emerald-600/20`}
-                            >
-                                Подтвердить оплату
-                            </button>
-                        </div>
-                    </div>
-                </div>
+            {selectedPurchaseForRepayment && (
+                <RepaymentModal
+                    isOpen={isRepayModalOpen}
+                    purchase={selectedPurchaseForRepayment}
+                    repaymentAmount={repaymentAmount}
+                    setRepaymentAmount={setRepaymentAmount}
+                    repaymentMethod={repaymentMethod}
+                    setRepaymentMethod={setRepaymentMethod}
+                    repaymentCurrency={repaymentCurrency}
+                    setRepaymentCurrency={setRepaymentCurrency}
+                    balances={balances}
+                    settings={settings}
+                    t={t}
+                    onClose={() => setIsRepayModalOpen(false)}
+                    onConfirm={() => handleRepayDebt()}
+                    onOpenMixed={() => { setIsRepayModalOpen(false); setIsRepaymentSplitModalOpen(true); }}
+                />
             )}
 
             {/* New Product Modal */}
-            {isNewProductModalOpen && (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className={`${t.bgCard} rounded-2xl w-full max-w-2xl border ${t.border} shadow-2xl overflow-hidden`}>
-                        <div className={`p-6 border-b ${t.border} flex justify-between items-center ${t.bg}`}>
-                            <h3 className={`text-xl font-bold ${t.text}`}>Новый товар</h3>
-                            <button onClick={() => setIsNewProductModalOpen(false)} className={`${t.textMuted} hover:${t.text}`}>
-                                ✕
-                            </button>
-                        </div>
-
-                        <div className="p-6 space-y-4">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div className="space-y-2 md:col-span-2">
-                                    <label className={`text-xs font-medium ${t.textMuted}`}>Название *</label>
-                                    <input
-                                        className={`w-full ${t.bg} border ${t.border} rounded-lg px-3 py-2 ${t.text} outline-none focus:ring-2 focus:ring-indigo-500`}
-                                        value={newProductData.name || ''}
-                                        onChange={(e) => setNewProductData({ ...newProductData, name: e.target.value })}
-                                        placeholder="Например: Труба"
-                                    />
-                                </div>
-
-                                <div className="space-y-2">
-                                    <label className={`text-xs font-medium ${t.textMuted}`}>Тип</label>
-                                    <select
-                                        className={`w-full ${t.bg} border ${t.border} rounded-lg px-3 py-2 ${t.text} outline-none`}
-                                        value={newProductData.type}
-                                        onChange={(e) => setNewProductData({ ...newProductData, type: e.target.value as ProductType })}
-                                    >
-                                        {Object.values(ProductType).map(t => (
-                                            <option key={t} value={t}>{t}</option>
-                                        ))}
-                                    </select>
-                                </div>
-
-                                <div className="space-y-2">
-                                    <label className={`text-xs font-medium ${t.textMuted}`}>Ед. изм.</label>
-                                    <select
-                                        className={`w-full ${t.bg} border ${t.border} rounded-lg px-3 py-2 ${t.text} outline-none`}
-                                        value={newProductData.unit}
-                                        onChange={(e) => setNewProductData({ ...newProductData, unit: e.target.value as Unit })}
-                                    >
-                                        {Object.values(Unit).map(u => (
-                                            <option key={u} value={u}>{u}</option>
-                                        ))}
-                                    </select>
-                                </div>
-
-                                <div className="space-y-2">
-                                    <label className={`text-xs font-medium ${t.textMuted}`}>Производитель</label>
-                                    <select
-                                        className={`w-full ${t.bg} border ${t.border} rounded-lg px-3 py-2 ${t.text} outline-none`}
-                                        value={newProductData.manufacturer || ''}
-                                        onChange={(e) => setNewProductData({ ...newProductData, manufacturer: e.target.value })}
-                                    >
-                                        <option value="">— Не указан —</option>
-                                        {(settings.manufacturers || []).map(m => (
-                                            <option key={m} value={m}>{m}</option>
-                                        ))}
-                                    </select>
-                                </div>
-
-                                <div className="space-y-2">
-                                    <label className={`text-xs font-medium ${t.textMuted}`}>Размеры *</label>
-                                    <input
-                                        className={`w-full ${t.bg} border ${t.border} rounded-lg px-3 py-2 ${t.text} outline-none focus:ring-2 focus:ring-indigo-500`}
-                                        value={newProductData.dimensions || ''}
-                                        onChange={(e) => setNewProductData({ ...newProductData, dimensions: e.target.value })}
-                                        placeholder="50x50x3"
-                                    />
-                                </div>
-
-                                <div className="space-y-2">
-                                    <label className={`text-xs font-medium ${t.textMuted}`}>Марка стали</label>
-                                    <input
-                                        className={`w-full ${t.bg} border ${t.border} rounded-lg px-3 py-2 ${t.text} outline-none focus:ring-2 focus:ring-indigo-500`}
-                                        value={newProductData.steelGrade || ''}
-                                        onChange={(e) => setNewProductData({ ...newProductData, steelGrade: e.target.value })}
-                                        placeholder="Ст3"
-                                    />
-                                </div>
-
-                                <div className="space-y-2">
-                                    <label className={`text-xs font-medium ${t.textMuted}`}>Цена продажи (USD)</label>
-                                    <input
-                                        type="number"
-                                        className={`w-full ${t.bg} border ${t.border} rounded-lg px-3 py-2 ${t.text} outline-none focus:ring-2 focus:ring-indigo-500 font-mono`}
-                                        value={newProductData.pricePerUnit ?? 0}
-                                        onChange={(e) => setNewProductData({ ...newProductData, pricePerUnit: Number(e.target.value) })}
-                                    />
-                                </div>
-
-                                <div className="space-y-2">
-                                    <label className={`text-xs font-medium ${t.textMuted}`}>Минимальный остаток</label>
-                                    <input
-                                        type="number"
-                                        className={`w-full ${t.bg} border ${t.border} rounded-lg px-3 py-2 ${t.text} outline-none focus:ring-2 focus:ring-indigo-500 font-mono`}
-                                        value={newProductData.minStockLevel ?? 0}
-                                        onChange={(e) => setNewProductData({ ...newProductData, minStockLevel: Number(e.target.value) })}
-                                    />
-                                </div>
-
-                                <div className="space-y-2">
-                                    <label className={`text-xs font-medium ${t.textMuted}`}>Происхождение</label>
-                                    <select
-                                        className={`w-full ${t.bg} border ${t.border} rounded-lg px-3 py-2 ${t.text} outline-none`}
-                                        value={newProductData.origin || 'local'}
-                                        onChange={(e) => setNewProductData({ ...newProductData, origin: e.target.value as 'import' | 'local' })}
-                                    >
-                                        <option value="local">Местный</option>
-                                        <option value="import">Импорт</option>
-                                    </select>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className={`p-6 border-t ${t.border} flex justify-end gap-3 ${t.bg}`}>
-                            <button
-                                onClick={() => setIsNewProductModalOpen(false)}
-                                className={`px-4 py-2 ${t.textMuted} hover:${t.text} transition-colors`}
-                            >
-                                Отмена
-                            </button>
-                            <button
-                                onClick={handleCreateNewProduct}
-                                className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-lg font-bold shadow-lg shadow-indigo-600/20"
-                            >
-                                Сохранить
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            <NewProductModal
+                isOpen={isNewProductModalOpen}
+                productData={newProductData}
+                setProductData={setNewProductData}
+                settings={settings}
+                t={t}
+                onClose={() => setIsNewProductModalOpen(false)}
+                onSave={handleCreateNewProduct}
+            />
             {/* Mixed Payment Modal */}
             <PaymentSplitModal
                 isOpen={isSplitModalOpen}
@@ -1364,45 +1007,13 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
 
             {/* Cancel Workflow Modal */}
             {isCancelModalOpen && workflowToCancel && (
-                <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
-                    <div className={`${t.bgCard} rounded-2xl border ${t.border} w-full max-w-md p-6`}>
-                        <h3 className={`text-xl font-bold ${t.text} mb-4 flex items-center gap-2`}>
-                            <AlertTriangle className="text-red-400" size={24} />
-                            Аннулирование заказа
-                        </h3>
-
-                        <div className={`${t.bg} rounded-xl p-4 mb-4`}>
-                            <div className={`text-sm ${t.textMuted}`}>Заказ: <span className={`${t.text} font-mono`}>{workflowToCancel.id}</span></div>
-                            <div className={`text-sm ${t.textMuted} mt-1`}>Клиент: <span className={t.text}>{workflowToCancel.customerName}</span></div>
-                            <div className={`text-sm ${t.textMuted} mt-1`}>Сумма: <span className="text-emerald-300 font-mono">{Number(workflowToCancel.totalAmountUZS || 0).toLocaleString()} сум</span></div>
-                        </div>
-
-                        <div className="mb-4">
-                            <label className={`text-sm ${t.textMuted} mb-2 block`}>Причина аннулирования *</label>
-                            <textarea
-                                value={cancelReason}
-                                onChange={(e) => setCancelReason(e.target.value)}
-                                className={`w-full ${t.bg} border ${t.border} rounded-xl px-4 py-3 ${t.text} outline-none focus:ring-2 focus:ring-red-500/50 h-24 resize-none`}
-                                placeholder="Укажите причину аннулирования..."
-                            />
-                        </div>
-
-                        <div className="flex gap-3">
-                            <button
-                                onClick={() => { setIsCancelModalOpen(false); setWorkflowToCancel(null); setCancelReason(''); }}
-                                className={`flex-1 ${t.bgHover} hover:${t.bg} ${t.text} py-3 rounded-xl font-medium`}
-                            >
-                                Отмена
-                            </button>
-                            <button
-                                onClick={confirmCancelWorkflow}
-                                className="flex-1 bg-red-600 hover:bg-red-500 text-white py-3 rounded-xl font-bold"
-                            >
-                                Аннулировать
-                            </button>
-                        </div>
-                    </div>
-                </div>
+                <CancelWorkflowModal
+                    order={workflowToCancel}
+                    workflowOrders={workflowOrders}
+                    cancelledBy="Закуп"
+                    onSaveWorkflowOrders={onSaveWorkflowOrders}
+                    onClose={() => { setIsCancelModalOpen(false); setWorkflowToCancel(null); }}
+                />
             )}
 
             {/* Payment Split Modal for Repayment */}
@@ -1414,8 +1025,8 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, setProducts,
                         setIsRepayModalOpen(true);
                     }}
                     totalAmountUSD={selectedPurchaseForRepayment.totalInvoiceAmount - (selectedPurchaseForRepayment.amountPaidUSD ?? 0)}
-                    totalAmountUZS={(selectedPurchaseForRepayment.totalInvoiceAmount - (selectedPurchaseForRepayment.amountPaidUSD ?? 0)) * (settings.defaultExchangeRate || 12800)}
-                    exchangeRate={settings.defaultExchangeRate || 12800}
+                    totalAmountUZS={(selectedPurchaseForRepayment.totalInvoiceAmount - (selectedPurchaseForRepayment.amountPaidUSD ?? 0)) * (settings.defaultExchangeRate || DEFAULT_EXCHANGE_RATE)}
+                    exchangeRate={settings.defaultExchangeRate || DEFAULT_EXCHANGE_RATE}
                     onConfirm={handleRepayDebt}
                 />
             )}

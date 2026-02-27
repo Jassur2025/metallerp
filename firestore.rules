@@ -57,6 +57,25 @@ service cloud.firestore {
     match /clients/{docId} {
       allow read: if isAuthenticated();
       allow write: if isAdmin();
+      
+      // Notes subcollection: any authenticated user can read/create notes
+      match /notes/{noteId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated();
+        allow update, delete: if isAdmin();
+      }
+    }
+
+    // Suppliers: Procurement data, Admin only
+    match /suppliers/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // Balance: Cached balance snapshot, Admin only writes
+    match /balance/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
     }
 
     // Settings: Only Admins change global config

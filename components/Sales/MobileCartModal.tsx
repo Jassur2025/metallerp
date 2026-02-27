@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ShoppingCart, Trash2, User, Plus, CheckCircle, X, Tag, Percent } from 'lucide-react';
 import { OrderItem, Client, Employee, AppSettings } from '../../types';
+import { DEFAULT_EXCHANGE_RATE } from '../../constants';
 import { PaymentMethod, Currency, FlyingItem } from './types';
 
 interface MobileCartModalProps {
@@ -90,7 +91,7 @@ export const MobileCartModal: React.FC<MobileCartModalProps> = ({
 
   const handleRoundTo = (roundedUZS: number) => {
     if (onTotalChange) {
-      const rate = settings.defaultExchangeRate || 12800;
+      const rate = settings.defaultExchangeRate || DEFAULT_EXCHANGE_RATE;
       onTotalChange(roundedUZS / rate);
     }
   };

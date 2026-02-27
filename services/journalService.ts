@@ -10,7 +10,6 @@ import {
     getDocs,
     setDoc,
     onSnapshot,
-    writeBatch,
     Timestamp,
     query,
     orderBy,
@@ -18,43 +17,26 @@ import {
 } from '../lib/firebase';
 import { JournalEvent } from '../types';
 import { IdGenerator } from '../utils/idGenerator';
+import { executeSafeBatch } from '../utils/batchWriter';
+import { genericToFirestore } from '../utils/firestoreHelpers';
+import { logger } from '../utils/logger';
 
-// Collection name
-const COLLECTION_NAME = 'journal';
+// Collection name — must match firestore.rules match path
+const COLLECTION_NAME = 'journalEvents';
 
 // Firestore document interface
 interface JournalEventDocument extends JournalEvent {
     createdAt?: Timestamp;
 }
 
-// Convert Firestore document to JournalEvent
-const fromFirestore = (doc: any): JournalEvent => {
+// fromFirestore is minimal (no Timestamp fields to convert)
+const fromFirestore = (doc: import('firebase/firestore').DocumentSnapshot): JournalEvent => {
     const data = doc.data();
-    return {
-        ...data,
-        id: doc.id
-    };
+    return { ...data, id: doc.id } as JournalEvent;
 };
 
-// Convert JournalEvent to Firestore document
-const toFirestore = (event: JournalEvent): Partial<JournalEventDocument> => {
-    const { id, ...data } = event;
-    const now = Timestamp.now();
-
-    // Clean undefined values
-    const docData: any = {
-        ...data,
-        createdAt: now
-    };
-
-    Object.keys(docData).forEach(key => {
-        if (docData[key] === undefined) {
-            delete docData[key];
-        }
-    });
-
-    return docData;
-};
+// toFirestore uses shared converter with createdAt timestamp
+const toFirestore = (event: JournalEvent) => genericToFirestore(event, 'createdAt');
 
 export const journalService = {
     /**
@@ -70,7 +52,7 @@ export const journalService = {
             const querySnapshot = await getDocs(q);
             return querySnapshot.docs.map(fromFirestore);
         } catch (error) {
-            console.error('Error fetching journal events:', error);
+            logger.error('JournalService', 'Error fetching journal events:', error);
             throw error;
         }
     },
@@ -95,7 +77,7 @@ export const journalService = {
                 id
             };
         } catch (error) {
-            console.error('Error adding journal event:', error);
+            logger.error('JournalService', 'Error adding journal event:', error);
             throw error;
         }
     },
@@ -105,40 +87,20 @@ export const journalService = {
      */
     async batchCreate(events: JournalEvent[]): Promise<number> {
         try {
-            const batch = writeBatch(db);
             const now = Timestamp.now();
-            let count = 0;
 
-            // Firestore batches are limited to 500 ops.
-            // We'll take the first 500 for safety if array is huge, 
-            // or caller should handle chunking. 
-            // For migration we assume the caller or this fn handles it.
-            // Let's implement simple chunking here for robustness.
+            const stats = await executeSafeBatch(events, { collectionName: COLLECTION_NAME }, (event, batch) => {
+                const id = event.id || IdGenerator.journal();
+                const docRef = doc(db, COLLECTION_NAME, id);
+                batch.set(docRef, {
+                    ...toFirestore({ ...event, id }),
+                    createdAt: now
+                });
+            });
 
-            const chunks = [];
-            for (let i = 0; i < events.length; i += 450) {
-                chunks.push(events.slice(i, i + 450));
-            }
-
-            let totalMigrated = 0;
-
-            for (const chunk of chunks) {
-                const currentBatch = writeBatch(db);
-                for (const event of chunk) {
-                    const id = event.id || IdGenerator.journal();
-                    const docRef = doc(db, COLLECTION_NAME, id);
-                    currentBatch.set(docRef, {
-                        ...toFirestore({ ...event, id }),
-                        createdAt: now
-                    });
-                }
-                await currentBatch.commit();
-                totalMigrated += chunk.length;
-            }
-
-            return totalMigrated;
+            return stats.totalProcessed;
         } catch (error) {
-            console.error('Error batch creating journal events:', error);
+            logger.error('JournalService', 'Error batch creating journal events:', error);
             throw error;
         }
     },
@@ -156,7 +118,7 @@ export const journalService = {
             const events = snapshot.docs.map(fromFirestore);
             callback(events);
         }, (error) => {
-            console.error('Error subscribing to journal:', error);
+            logger.error('JournalService', 'Error subscribing to journal:', error);
             callback([]);
         });
 

@@ -10,14 +10,16 @@ import {
     getDocs,
     getDoc,
     setDoc,
-    updateDoc,
     deleteDoc,
     onSnapshot,
-    writeBatch,
-    Timestamp
+    Timestamp,
+    runTransaction
 } from '../lib/firebase';
 import { FixedAsset } from '../types';
 import { IdGenerator } from '../utils/idGenerator';
+import { genericFromFirestore, genericToFirestore } from '../utils/firestoreHelpers';
+import { executeSafeBatch } from '../utils/batchWriter';
+import { logger } from '../utils/logger';
 
 // Collection name
 const COLLECTION_NAME = 'fixedAssets';
@@ -29,38 +31,9 @@ interface FixedAssetDocument extends Omit<FixedAsset, '_version' | 'updatedAt'> 
     createdAt?: Timestamp;
 }
 
-// Convert Firestore document to FixedAsset
-const fromFirestore = (doc: any): FixedAsset => {
-    const data = doc.data();
-    return {
-        ...data,
-        id: doc.id,
-        _version: data._version || 1,
-        // Convert Timestamp to ISO string
-        updatedAt: data.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString()
-    };
-};
-
-// Convert FixedAsset to Firestore document
-const toFirestore = (asset: FixedAsset): Partial<FixedAssetDocument> => {
-    const { id, ...data } = asset;
-    const now = Timestamp.now();
-
-    // Clean undefined values
-    const docData: any = {
-        ...data,
-        updatedAt: now
-    };
-
-    // Clean fields
-    Object.keys(docData).forEach(key => {
-        if (docData[key] === undefined) {
-            delete docData[key];
-        }
-    });
-
-    return docData;
-};
+// Use shared converters
+const fromFirestore = (doc: import('firebase/firestore').DocumentSnapshot): FixedAsset => genericFromFirestore<FixedAsset>(doc);
+const toFirestore = (asset: FixedAsset) => genericToFirestore(asset);
 
 export const fixedAssetsService = {
     /**
@@ -71,7 +44,7 @@ export const fixedAssetsService = {
             const querySnapshot = await getDocs(collection(db, COLLECTION_NAME));
             return querySnapshot.docs.map(fromFirestore);
         } catch (error) {
-            console.error('Error fetching fixed assets:', error);
+            logger.error('FixedAssetsService', 'Error fetching fixed assets:', error);
             throw error;
         }
     },
@@ -89,7 +62,7 @@ export const fixedAssetsService = {
             }
             return null;
         } catch (error) {
-            console.error('Error fetching fixed asset:', error);
+            logger.error('FixedAssetsService', 'Error fetching fixed asset:', error);
             throw error;
         }
     },
@@ -119,7 +92,7 @@ export const fixedAssetsService = {
                 updatedAt: new Date().toISOString()
             };
         } catch (error) {
-            console.error('Error creating fixed asset:', error);
+            logger.error('FixedAssetsService', 'Error creating fixed asset:', error);
             throw error;
         }
     },
@@ -130,30 +103,33 @@ export const fixedAssetsService = {
     async update(id: string, updates: Partial<FixedAsset>): Promise<void> {
         try {
             const docRef = doc(db, COLLECTION_NAME, id);
-            const docSnap = await getDoc(docRef);
 
-            if (!docSnap.exists()) {
-                throw new Error(`Fixed asset with id ${id} not found`);
-            }
+            await runTransaction(db, async (transaction) => {
+                const docSnap = await transaction.get(docRef);
 
-            const currentData = fromFirestore(docSnap);
-            const newVersion = (currentData._version || 0) + 1;
-
-            const updateData: any = {
-                ...toFirestore({ ...currentData, ...updates, id } as FixedAsset),
-                _version: newVersion
-            };
-
-            // Remove undefined values
-            Object.keys(updateData).forEach(key => {
-                if (updateData[key] === undefined) {
-                    delete updateData[key];
+                if (!docSnap.exists()) {
+                    throw new Error(`Fixed asset with id ${id} not found`);
                 }
-            });
 
-            await updateDoc(docRef, updateData);
+                const currentData = fromFirestore(docSnap);
+                const newVersion = (currentData._version || 0) + 1;
+
+                const updateData: Record<string, unknown> = {
+                    ...toFirestore({ ...currentData, ...updates, id } as FixedAsset),
+                    _version: newVersion
+                };
+
+                // Remove undefined values
+                Object.keys(updateData).forEach(key => {
+                    if (updateData[key] === undefined) {
+                        delete updateData[key];
+                    }
+                });
+
+                transaction.update(docRef, updateData as Record<string, import('firebase/firestore').FieldValue | Partial<unknown> | undefined>);
+            });
         } catch (error) {
-            console.error('Error updating fixed asset:', error);
+            logger.error('FixedAssetsService', 'Error updating fixed asset:', error);
             throw error;
         }
     },
@@ -165,7 +141,7 @@ export const fixedAssetsService = {
         try {
             await deleteDoc(doc(db, COLLECTION_NAME, id));
         } catch (error) {
-            console.error('Error deleting fixed asset:', error);
+            logger.error('FixedAssetsService', 'Error deleting fixed asset:', error);
             throw error;
         }
     },
@@ -175,26 +151,21 @@ export const fixedAssetsService = {
      */
     async batchCreate(assets: FixedAsset[]): Promise<number> {
         try {
-            const batch = writeBatch(db);
             const now = Timestamp.now();
-            let count = 0;
 
-            for (const asset of assets) {
+            const stats = await executeSafeBatch(assets, { collectionName: COLLECTION_NAME }, (asset, batch) => {
                 const id = asset.id || IdGenerator.fixedAsset();
                 const docRef = doc(db, COLLECTION_NAME, id);
-
                 batch.set(docRef, {
                     ...toFirestore({ ...asset, id }),
                     createdAt: now,
                     _version: 1
                 });
-                count++;
-            }
+            });
 
-            await batch.commit();
-            return count;
+            return stats.totalProcessed;
         } catch (error) {
-            console.error('Error batch creating fixed assets:', error);
+            logger.error('FixedAssetsService', 'Error batch creating fixed assets:', error);
             throw error;
         }
     },
@@ -208,7 +179,7 @@ export const fixedAssetsService = {
             const assets = snapshot.docs.map(fromFirestore);
             callback(assets);
         }, (error) => {
-            console.error('Error subscribing to fixed assets:', error);
+            logger.error('FixedAssetsService', 'Error subscribing to fixed assets:', error);
             callback([]);
         });
 

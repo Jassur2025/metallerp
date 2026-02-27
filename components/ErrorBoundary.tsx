@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ErrorBoundary as ReactErrorBoundary } from 'react-error-boundary';
 import { AlertOctagon, RefreshCw, Home, Bug, ChevronDown, ChevronUp } from 'lucide-react';
+import { logger } from '../utils/logger';
 
 interface ErrorFallbackProps {
   error: Error;
@@ -115,7 +116,7 @@ interface ErrorBoundaryProps {
  */
 export const ErrorBoundary: React.FC<ErrorBoundaryProps> = ({ children, onError }) => {
   const handleError = (error: Error, info: React.ErrorInfo) => {
-    console.error('ErrorBoundary caught an error:', error, info);
+    logger.error('ErrorBoundary', 'Caught an error:', error, info);
     onError?.(error, info);
   };
 
@@ -125,7 +126,7 @@ export const ErrorBoundary: React.FC<ErrorBoundaryProps> = ({ children, onError 
       onError={handleError}
       onReset={() => {
         // Reset state when user clicks "Try again"
-        console.log('Error boundary reset');
+        logger.info('ErrorBoundary', 'Error boundary reset');
       }}
     >
       {children}

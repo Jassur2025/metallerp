@@ -1,5 +1,5 @@
 import { jsPDF } from 'jspdf';
-import { Order, AppSettings, OrderItem } from '../types';
+import { Order, AppSettings, OrderItem, CompanyDetails } from '../types';
 
 // Utility to load custom font if needed, for now we rely on standard fonts or add base64 later if cyrillic fails.
 // Note: jsPDF default fonts might not support Cyrillic. We often need a custom font.
@@ -11,14 +11,14 @@ import { Order, AppSettings, OrderItem } from '../types';
 // Since I cannot download files easily, I will use a base64 encoded string of a font like Roboto or OpenSans in a separate file if needed.
 // BUT, for now, let's try the HTML -> Canvas -> PDF approach as it is safer for encoding in this constrained env.
 import html2canvas from 'html2canvas';
+import { logger } from './logger';
 
 export const generateInvoicePDF = async (order: Order, settings: AppSettings) => {
     // We will construct a hidden HTML element, render it to canvas, then to PDF.
     // This allows full CSS styling control and perfect Cyrillic support without managing font files.
 
     const dateStr = new Date(order.date).toLocaleDateString('ru-RU');
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const company = (settings.companyDetails || {}) as any;
+    const company: Partial<CompanyDetails> = settings.companyDetails || {};
 
     // Calculate totals
     const totalAmount = order.totalAmountUZS;
@@ -112,8 +112,7 @@ export const generateInvoicePDF = async (order: Order, settings: AppSettings) =>
 
 export const generateWaybillPDF = async (order: Order, settings: AppSettings) => {
     const dateStr = new Date(order.date).toLocaleDateString('ru-RU');
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const company = (settings.companyDetails || {}) as any;
+    const company: Partial<CompanyDetails> = settings.companyDetails || {};
     const items = order.items;
     
     // Report number - use sequential number if available, otherwise fallback to last 6 chars of ID
@@ -233,7 +232,7 @@ async function generateAndSavePDF(html: string, filename: string) {
         pdf.save(filename);
 
     } catch (err) {
-        console.error("PDF Generation failed", err);
+        logger.error('DocumentTemplates', 'PDF Generation failed', err);
         alert("Ошибка при создании PDF");
     } finally {
         document.body.removeChild(container);

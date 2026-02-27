@@ -16,7 +16,6 @@
     "test:coverage": "vitest --coverage"
   },
   "dependencies": {
-    "@google/genai": "^1.30.0",
     "@tanstack/react-virtual": "^3.13.16",
     "firebase": "^12.6.0",
     "html2canvas": "^1.4.1",

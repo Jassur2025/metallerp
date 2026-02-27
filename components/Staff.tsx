@@ -29,7 +29,7 @@ const ROLE_LABELS: Record<UserRole, string> = {
 };
 
 // Force rebuild
-export const Staff: React.FC<StaffProps> = ({ employees: sheetsEmployees, onSave }) => {
+export const Staff: React.FC<StaffProps> = React.memo(({ employees: sheetsEmployees, onSave }) => {
     const { theme } = useTheme();
     const t = getThemeClasses(theme);
     const toast = useToast();
@@ -43,7 +43,6 @@ export const Staff: React.FC<StaffProps> = ({ employees: sheetsEmployees, onSave
         updateEmployee, 
         deleteEmployee,
         refreshEmployees,
-        migrateFromSheets,
         stats 
     } = useEmployees({ realtime: true });
     
@@ -52,7 +51,6 @@ export const Staff: React.FC<StaffProps> = ({ employees: sheetsEmployees, onSave
     const [filterRole, setFilterRole] = useState<UserRole | 'all'>('all');
     const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'inactive'>('all');
     const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
-    const [isMigrating, setIsMigrating] = useState(false);
     const [staffViewMode, setStaffViewMode] = useState<'grid' | 'list'>(() => {
         try { return (localStorage.getItem('erp_staff_view') as 'grid' | 'list') || 'grid'; } catch { return 'grid'; }
     });
@@ -130,19 +128,6 @@ export const Staff: React.FC<StaffProps> = ({ employees: sheetsEmployees, onSave
         
         // Hard delete from Firebase
         await deleteEmployee(employeeId, false);
-    };
-
-    const handleMigrateFromSheets = async () => {
-        if (sheetsEmployees.length === 0) {
-            toast.info('Нет сотрудников в Google Sheets для миграции');
-            return;
-        }
-        
-        if (!window.confirm(`Перенести ${sheetsEmployees.length} сотрудников из Google Sheets в Firebase?`)) return;
-        
-        setIsMigrating(true);
-        await migrateFromSheets(sheetsEmployees);
-        setIsMigrating(false);
     };
 
 
@@ -716,4 +701,4 @@ export const Staff: React.FC<StaffProps> = ({ employees: sheetsEmployees, onSave
             )}
         </div>
     );
-};
+});

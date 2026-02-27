@@ -23,7 +23,6 @@ VITE_FIREBASE_PROJECT_ID=ваш_project_id
 VITE_FIREBASE_STORAGE_BUCKET=ваш_project.firebasestorage.app
 VITE_FIREBASE_MESSAGING_SENDER_ID=ваш_sender_id
 VITE_FIREBASE_APP_ID=ваш_app_id
-GEMINI_API_KEY=ваш_gemini_key (опционально)
 ```
 
 ### Шаг 2: Включение GitHub Pages

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Employee } from '../types';
 import employeeService from '../services/employeeService'; // Check default export
+import { logger } from '../utils/logger';
 
 export function useEmployees(options?: { realtime?: boolean }) {
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -49,17 +50,6 @@ export function useEmployees(options?: { realtime?: boolean }) {
     }
   }, []);
 
-  const migrateFromSheets = useCallback(async (legacyEmployees: Employee[]) => {
-    // Find employees that are NOT in Firebase yet (by ID)
-    const currentIds = new Set(employees.map(e => e.id));
-    const toMigrate = legacyEmployees.filter(e => !currentIds.has(e.id));
-
-    if (toMigrate.length === 0) return 0;
-
-    await employeeService.batchCreate(toMigrate);
-    return toMigrate.length;
-  }, [employees]);
-
   // Calculate stats
   const stats = useMemo(() => {
     const s = {
@@ -84,7 +74,7 @@ export function useEmployees(options?: { realtime?: boolean }) {
       const data = await employeeService.getAll();
       setEmployees(data);
     } catch (e) {
-      console.error(e);
+      logger.error('useEmployees', 'Error refreshing employees:', e);
     } finally {
       setLoading(false);
     }
@@ -97,7 +87,6 @@ export function useEmployees(options?: { realtime?: boolean }) {
     addEmployee,
     updateEmployee,
     deleteEmployee,
-    migrateFromSheets,
     refreshEmployees,
     stats
   };

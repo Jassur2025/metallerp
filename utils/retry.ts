@@ -1,6 +1,6 @@
 /**
  * Utility для retry с exponential backoff
- * Критический фикс для устойчивости Google Sheets API
+ * Обеспечивает устойчивость при сетевых ошибках и временных сбоях
  */
 
 export interface RetryOptions {

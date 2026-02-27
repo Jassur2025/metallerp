@@ -1,24 +1,40 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { FixedAsset, FixedAssetCategory, Transaction } from '../types';
 import { IdGenerator } from '../utils/idGenerator';
+import { DEFAULT_EXCHANGE_RATE } from '../constants';
 import { Plus, Trash2, RefreshCw, Landmark, Calendar, DollarSign, TrendingDown, Edit2 } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
 
 interface FixedAssetsProps {
     assets: FixedAsset[];
-    setAssets: (assets: FixedAsset[]) => void;
     onSaveAssets?: (assets: FixedAsset[]) => Promise<void>;
     transactions?: Transaction[];
-    setTransactions?: (t: Transaction[]) => void;
     onSaveTransactions?: (t: Transaction[]) => Promise<boolean | void>;
     defaultExchangeRate?: number;
 }
 
+const getDepreciationRate = (cat: FixedAssetCategory): number => {
+    switch (cat) {
+        case FixedAssetCategory.BUILDING: return 5;
+        case FixedAssetCategory.STRUCTURE: return 5;
+        case FixedAssetCategory.MACHINERY: return 15;
+        case FixedAssetCategory.VEHICLE: return 15;
+        case FixedAssetCategory.COMPUTER: return 20;
+        case FixedAssetCategory.OFFICE_EQUIPMENT: return 20;
+        case FixedAssetCategory.FURNITURE: return 10;
+        case FixedAssetCategory.INVENTORY: return 10;
+        case FixedAssetCategory.APPLIANCES: return 15;
+        case FixedAssetCategory.SPECIAL_EQUIPMENT: return 20;
+        case FixedAssetCategory.LAND: return 0;
+        default: return 0;
+    }
+};
+
 export const FixedAssets: React.FC<FixedAssetsProps> = ({
-    assets, setAssets, onSaveAssets,
-    transactions = [], setTransactions, onSaveTransactions,
-    defaultExchangeRate = 12800
+    assets, onSaveAssets,
+    transactions = [], onSaveTransactions,
+    defaultExchangeRate = DEFAULT_EXCHANGE_RATE
 }) => {
     const { theme } = useTheme();
     const t = getThemeClasses(theme);
@@ -37,23 +53,6 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
     const [paymentMethod, setPaymentMethod] = useState<'cash' | 'bank' | 'card'>('cash');
     const [paymentCurrency, setPaymentCurrency] = useState<'USD' | 'UZS'>('UZS');
     const [customExchangeRate, setCustomExchangeRate] = useState(defaultExchangeRate.toString());
-
-    const getDepreciationRate = (cat: FixedAssetCategory): number => {
-        switch (cat) {
-            case FixedAssetCategory.BUILDING: return 5;
-            case FixedAssetCategory.STRUCTURE: return 5;
-            case FixedAssetCategory.MACHINERY: return 15;
-            case FixedAssetCategory.VEHICLE: return 15;
-            case FixedAssetCategory.COMPUTER: return 20;
-            case FixedAssetCategory.OFFICE_EQUIPMENT: return 20;
-            case FixedAssetCategory.FURNITURE: return 10;
-            case FixedAssetCategory.INVENTORY: return 10;
-            case FixedAssetCategory.APPLIANCES: return 15;
-            case FixedAssetCategory.SPECIAL_EQUIPMENT: return 20;
-            case FixedAssetCategory.LAND: return 0;
-            default: return 0;
-        }
-    };
 
     const handleAddAsset = async () => {
         if (!name || !purchaseCost) return;
@@ -85,7 +84,6 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
         };
 
         const updatedAssets = [...assets, newAsset];
-        setAssets(updatedAssets);
         if (onSaveAssets) {
             await onSaveAssets(updatedAssets);
         }
@@ -93,7 +91,7 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
         // Создаём транзакцию расхода только на оплаченную сумму
         // IAS 16: Покупка ОС — это капитализация (актив), а не расход периода.
         // Тип 'supplier_payment' корректно отражает отток денежных средств без искажения P&L.
-        if (setTransactions && onSaveTransactions && paid > 0) {
+        if (onSaveTransactions && paid > 0) {
             // Рассчитываем сумму в валюте оплаты
             const transactionAmount = currency === 'UZS' ? paid * rate : paid;
 
@@ -112,7 +110,6 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
             const updatedTransactions = [...transactions, newTransaction];
             // CRITICAL: Save to Sheets FIRST, then update state
             await onSaveTransactions(updatedTransactions);
-            setTransactions(updatedTransactions);
         }
 
         setIsModalOpen(false);
@@ -126,7 +123,6 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
     const handleDelete = (id: string) => {
         if (confirm('Вы уверены, что хотите удалить это основное средство?')) {
             const updatedAssets = assets.filter(a => a.id !== id);
-            setAssets(updatedAssets);
             if (onSaveAssets) {
                 onSaveAssets(updatedAssets);
             }
@@ -182,7 +178,6 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
             };
         });
 
-        setAssets(updatedAssets);
         if (onSaveAssets) {
             onSaveAssets(updatedAssets);
         }
@@ -225,7 +220,6 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
             return a;
         });
 
-        setAssets(updatedAssets);
         if (onSaveAssets) {
             onSaveAssets(updatedAssets);
         }
@@ -234,8 +228,10 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
         setRevalValue('');
     };
 
-    const totalValue = assets.reduce((sum, a) => sum + a.currentValue, 0);
-    const totalDepreciation = assets.reduce((sum, a) => sum + a.accumulatedDepreciation, 0);
+    const { totalValue, totalDepreciation } = useMemo(() => ({
+        totalValue: assets.reduce((sum, a) => sum + a.currentValue, 0),
+        totalDepreciation: assets.reduce((sum, a) => sum + a.accumulatedDepreciation, 0)
+    }), [assets]);
 
     return (
         <div className="p-6 h-full flex flex-col space-y-6">

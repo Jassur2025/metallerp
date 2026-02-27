@@ -18,7 +18,7 @@ describe('errorHandler', () => {
     it('should return user-friendly message for NOT_FOUND error', () => {
       const error = new Error('NOT_FOUND: Spreadsheet not found');
       const message = getErrorMessage(error);
-      expect(message).toContain('Таблица не найдена');
+      expect(message).toContain('Ресурс не найден');
     });
 
     it('should return user-friendly message for UNAUTHENTICATED error', () => {

@@ -56,13 +56,18 @@ export interface CompanyDetails {
   website?: string;
 }
 
+export interface ExchangeRateEntry {
+  rate: number;
+  date: string; // ISO string
+  changedBy?: string; // email of user who changed it
+}
+
 export interface AppSettings {
   vatRate: number; // Percentage (e.g. 12)
   defaultExchangeRate: number;
+  exchangeRateHistory?: ExchangeRateEntry[]; // History of rate changes
   theme?: 'light' | 'dark'; // UI theme
   companyDetails?: CompanyDetails; // Added company details for documents
-  telegramBotToken?: string;
-  telegramChatId?: string;
   expenseCategories?: ExpenseCategory[];
   manufacturers?: string[]; // Список производителей
   nextReportNo?: number; // Counter for report numbers
@@ -311,6 +316,7 @@ export interface Transaction extends Versionable {
   exchangeRate?: number; // Required if currency is UZS
   method: 'cash' | 'bank' | 'card' | 'debt';
   description: string;
+  orderId?: string; // Link to order for sale-linked payments
   relatedId?: string; // Client ID or Purchase ID
   // _version and updatedAt inherited from Versionable
 }
@@ -320,11 +326,6 @@ export interface DashboardStats {
   totalOrders: number;
   lowStockCount: number;
   inventoryValue: number;
-}
-
-export interface AiInsight {
-  type: 'warning' | 'success' | 'info';
-  message: string;
 }
 
 export enum FixedAssetCategory {
@@ -454,3 +455,53 @@ export interface JournalEvent {
   metadata?: Record<string, unknown>;
 }
 
+// ═══ Balance Data (computed and cached in Firestore) ═══
+
+export interface BalanceData {
+  // Assets (Активы)
+  inventoryValue: number;
+  inventoryByWarehouse: { main: number; cloud: number };
+  cashUSD: number;         // Net cash in USD
+  cashUZS: number;         // Net cash in UZS
+  bankUZS: number;         // Net bank balance in UZS
+  cardUZS: number;         // Net card balance in UZS
+  totalCashUSD: number;    // Cash converted to USD
+  netBankUSD: number;      // Bank converted to USD
+  netCardUSD: number;      // Card converted to USD
+  totalLiquidAssets: number;
+  fixedAssetsValue: number;
+  accountsReceivable: number;
+  totalAssets: number;
+
+  // Passives (Пассивы)
+  vatOutput: number;
+  vatInput: number;
+  vatLiability: number;
+  accountsPayable: number;
+  fixedAssetsPayable: number;
+  equity: number;
+  fixedAssetsFund: number;
+  retainedEarnings: number;
+  totalPassives: number;
+
+  // P&L summary
+  revenue: number;
+  cogs: number;
+  grossProfit: number;
+  totalExpenses: number;
+  totalDepreciation: number;
+  netProfit: number;
+
+  // Corrections from validateUSD
+  corrections: Array<{
+    id: string;
+    type: 'order' | 'transaction' | 'expense';
+    originalAmount: number;
+    correctedAmount: number;
+    reason: string;
+  }>;
+
+  // Meta
+  exchangeRate: number;
+  computedAt: string; // ISO date
+}

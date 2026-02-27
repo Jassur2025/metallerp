@@ -2,7 +2,7 @@ import { Order, Transaction, Expense } from '../types';
 import { DEFAULT_EXCHANGE_RATE } from '../constants';
 
 // Helper to safely parse numbers
-const num = (v: any): number => {
+export const num = (v: unknown): number => {
   if (typeof v === 'number') return isFinite(v) ? v : 0;
   if (typeof v === 'string') {
     const p = parseFloat(v.replace(',', '.').replace(/[^\d.-]/g, ''));
@@ -12,7 +12,7 @@ const num = (v: any): number => {
 };
 
 // Helper to get a safe exchange rate
-const getSafeRate = (rate: any, defaultRate: number) => {
+export const getSafeRate = (rate: unknown, defaultRate: number) => {
   const r = num(rate);
   const safeDefault = defaultRate > 100 ? defaultRate : DEFAULT_EXCHANGE_RATE;
   return r > 100 ? r : safeDefault;
@@ -27,55 +27,23 @@ export interface CorrectionDetails {
 }
 
 /**
- * Validates and auto-corrects USD amounts that might be mistakenly entered in UZS.
+ * Validates USD amounts (sanitizes input).
  * 
- * Rules:
- * 1. Suspicion threshold: $1,000,000 (logs warning).
- * 2. Auto-correction threshold: $500,000.
- * 3. If > $500,000, tries to convert from UZS using rate.
- * 4. If converted amount is reasonable (<= $500,000), returns converted amount.
- * 5. Otherwise returns original amount (but logs warning).
+ * Previously auto-corrected amounts > 500,000 by dividing by exchange rate,
+ * assuming they were entered in UZS. This was removed because:
+ * - It silently corrupted legitimate large USD amounts
+ * - Exchange rate should always come from Settings, not be used for guessing
+ * - Data should be entered correctly at the source
+ * 
+ * Now simply returns the sanitized numeric value.
  */
 export const validateUSD = (
   amount: number, 
-  currentRate: number,
-  context?: { id: string, type: 'order' | 'transaction' | 'expense' },
-  onCorrection?: (details: CorrectionDetails) => void
+  _currentRate: number,
+  _context?: { id: string, type: 'order' | 'transaction' | 'expense' },
+  _onCorrection?: (details: CorrectionDetails) => void
 ): number => {
-  const safeAmount = num(amount);
-  const rate = getSafeRate(currentRate, DEFAULT_EXCHANGE_RATE);
-
-  // Thresholds
-  const SUSPICION_THRESHOLD = 1000000;
-  const CORRECTION_THRESHOLD = 500000;
-  const MAX_REASONABLE_AFTER_CORRECTION = 500000;
-
-  if (safeAmount > CORRECTION_THRESHOLD) {
-    const possibleUSD = safeAmount / rate;
-    
-    // Check if it looks like a UZS entry
-    if (possibleUSD <= MAX_REASONABLE_AFTER_CORRECTION) {
-      console.warn(`[Finance] Auto-correction: ${safeAmount} -> ${possibleUSD.toFixed(2)} USD (assumed UZS entry)`);
-      
-      if (context && onCorrection) {
-        onCorrection({
-          id: context.id,
-          type: context.type,
-          originalAmount: safeAmount,
-          correctedAmount: possibleUSD,
-          reason: 'Auto-corrected UZS entry in USD field'
-        });
-      }
-      
-      return possibleUSD;
-    }
-  }
-
-  if (safeAmount > SUSPICION_THRESHOLD) {
-    console.warn(`[Finance] Suspiciously large USD amount: ${safeAmount}`);
-  }
-
-  return safeAmount;
+  return num(amount);
 };
 
 export interface FinancialTotals {
@@ -133,15 +101,17 @@ export const calculateBaseTotals = (
     const isUSD = t.currency === 'USD';
     const tRate = getSafeRate(t.exchangeRate, rate);
     
-    // Extract Order ID if present
-    const orderIdMatch = t.description?.match(/ORD-\d+/);
-    const relatedOrderId = orderIdMatch ? orderIdMatch[0] : null;
+    // Resolve Order ID using explicit link first, then legacy fallbacks
+    const orderIdFromRelated = t.relatedId?.startsWith('ORD-') ? t.relatedId : null;
+    const orderIdMatch = t.description?.match(/ORD-[A-Z0-9-]+/i);
+    const relatedOrderId = t.orderId || orderIdFromRelated || (orderIdMatch ? orderIdMatch[0] : null);
     const relatedOrder = relatedOrderId ? orders.find(o => o.id === relatedOrderId) : null;
+    const hasOrderReference = Boolean(relatedOrderId);
     
     // Only count client_payments if they are for mixed orders or debt repayment (not standard cash/bank orders already counted)
     // Standard orders are counted above. Mixed orders have payments in transactions.
     const isMixedPayment = relatedOrder?.paymentMethod === 'mixed';
-    const isDebtPayment = t.type === 'client_payment' && !relatedOrderId; // Simple heuristic for debt payment
+    const isDebtPayment = t.type === 'client_payment' && !hasOrderReference;
 
     if (t.type === 'client_payment') {
       if (isMixedPayment || isDebtPayment) {

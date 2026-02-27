@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { AppSettings } from '../types';
 import { settingsService } from '../services/settingsService';
+import { logger } from '../utils/logger';
 
 interface UseSettingsReturn {
   settings: AppSettings;
@@ -47,7 +48,7 @@ export function useSettings(defaultSettings: AppSettings): UseSettingsReturn {
     try {
       await settingsService.save(newSettings);
     } catch (error) {
-      console.error('Failed to save settings to Firestore:', error);
+      logger.error('useSettings', 'Failed to save settings to Firestore:', error);
       // Local state already updated, Firestore will sync when online
     }
   }, []);

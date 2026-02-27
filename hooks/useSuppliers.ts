@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Supplier } from '../types';
 import { supplierService } from '../services/supplierService';
+import { logger } from '../utils/logger';
 
 interface UseSupplierOptions {
     realtime?: boolean;
@@ -32,7 +33,7 @@ export function useSuppliers(options: UseSupplierOptions = {}) {
                     setSuppliers(data);
                     setError(null);
                 } catch (err) {
-                    console.error('Error fetching suppliers:', err);
+                    logger.error('useSuppliers', 'Error fetching suppliers:', err);
                     setError(err instanceof Error ? err.message : 'Failed to fetch suppliers');
                 } finally {
                     setLoading(false);
@@ -64,7 +65,7 @@ export function useSuppliers(options: UseSupplierOptions = {}) {
         } catch (err) {
             // Rollback on error
             setSuppliers(prev => prev.filter(s => s.id !== supplier.id));
-            console.error('Error adding supplier:', err);
+            logger.error('useSuppliers', 'Error adding supplier:', err);
             throw err;
         }
     }, []);
@@ -83,7 +84,7 @@ export function useSuppliers(options: UseSupplierOptions = {}) {
             // Reload on error
             const data = await supplierService.getAll();
             setSuppliers(data);
-            console.error('Error updating supplier:', err);
+            logger.error('useSuppliers', 'Error updating supplier:', err);
             throw err;
         }
     }, []);
@@ -104,7 +105,7 @@ export function useSuppliers(options: UseSupplierOptions = {}) {
             if (deletedSupplier) {
                 setSuppliers(prev => [...prev, deletedSupplier]);
             }
-            console.error('Error deleting supplier:', err);
+            logger.error('useSuppliers', 'Error deleting supplier:', err);
             throw err;
         }
     }, [suppliers]);
@@ -132,7 +133,7 @@ export function useSuppliers(options: UseSupplierOptions = {}) {
             setSuppliers(data);
             setError(null);
         } catch (err) {
-            console.error('Error refreshing suppliers:', err);
+            logger.error('useSuppliers', 'Error refreshing suppliers:', err);
             setError(err instanceof Error ? err.message : 'Failed to refresh suppliers');
         } finally {
             setLoading(false);

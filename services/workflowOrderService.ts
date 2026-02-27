@@ -7,19 +7,20 @@ import {
     collection,
     doc,
     getDocs,
-    getDoc,
     setDoc,
-    updateDoc,
     deleteDoc,
     onSnapshot,
-    writeBatch,
     Timestamp,
     query,
     orderBy,
-    limit
+    limit,
+    runTransaction
 } from '../lib/firebase';
 import { WorkflowOrder } from '../types';
 import { IdGenerator } from '../utils/idGenerator';
+import { genericFromFirestore, genericToFirestore } from '../utils/firestoreHelpers';
+import { executeSafeBatch } from '../utils/batchWriter';
+import { logger } from '../utils/logger';
 
 // Collection name
 const COLLECTION_NAME = 'workflowOrders';
@@ -31,38 +32,9 @@ interface WorkflowOrderDocument extends Omit<WorkflowOrder, '_version' | 'update
     createdAt?: Timestamp;
 }
 
-// Convert Firestore document to WorkflowOrder
-const fromFirestore = (doc: any): WorkflowOrder => {
-    const data = doc.data();
-    return {
-        ...data,
-        id: doc.id,
-        _version: data._version || 1,
-        // Convert Timestamp to ISO string
-        updatedAt: data.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString()
-    };
-};
-
-// Convert WorkflowOrder to Firestore document
-const toFirestore = (order: WorkflowOrder): Partial<WorkflowOrderDocument> => {
-    const { id, ...data } = order;
-    const now = Timestamp.now();
-
-    // Clean undefined values
-    const docData: any = {
-        ...data,
-        updatedAt: now
-    };
-
-    // Clean fields
-    Object.keys(docData).forEach(key => {
-        if (docData[key] === undefined) {
-            delete docData[key];
-        }
-    });
-
-    return docData;
-};
+// Use shared converters
+const fromFirestore = (doc: import('firebase/firestore').DocumentSnapshot): WorkflowOrder => genericFromFirestore<WorkflowOrder>(doc);
+const toFirestore = (order: WorkflowOrder) => genericToFirestore(order);
 
 export const workflowOrderService = {
     /**
@@ -74,7 +46,7 @@ export const workflowOrderService = {
             const querySnapshot = await getDocs(q);
             return querySnapshot.docs.map(fromFirestore);
         } catch (error) {
-            console.error('Error fetching workflow orders:', error);
+            logger.error('WorkflowOrderService', 'Error fetching workflow orders:', error);
             throw error;
         }
     },
@@ -102,7 +74,7 @@ export const workflowOrderService = {
                 updatedAt: new Date().toISOString()
             };
         } catch (error) {
-            console.error('Error creating workflow order:', error);
+            logger.error('WorkflowOrderService', 'Error creating workflow order:', error);
             throw error;
         }
     },
@@ -113,30 +85,33 @@ export const workflowOrderService = {
     async update(id: string, updates: Partial<WorkflowOrder>): Promise<void> {
         try {
             const docRef = doc(db, COLLECTION_NAME, id);
-            const docSnap = await getDoc(docRef);
 
-            if (!docSnap.exists()) {
-                throw new Error(`Workflow order with id ${id} not found`);
-            }
+            await runTransaction(db, async (transaction) => {
+                const docSnap = await transaction.get(docRef);
 
-            const currentData = fromFirestore(docSnap);
-            const newVersion = (currentData._version || 0) + 1;
-
-            const updateData: any = {
-                ...toFirestore({ ...currentData, ...updates, id } as WorkflowOrder),
-                _version: newVersion
-            };
-
-            // Remove undefined values
-            Object.keys(updateData).forEach(key => {
-                if (updateData[key] === undefined) {
-                    delete updateData[key];
+                if (!docSnap.exists()) {
+                    throw new Error(`Workflow order with id ${id} not found`);
                 }
-            });
 
-            await updateDoc(docRef, updateData);
+                const currentData = fromFirestore(docSnap);
+                const newVersion = (currentData._version || 0) + 1;
+
+                const updateData: Record<string, unknown> = {
+                    ...toFirestore({ ...currentData, ...updates, id } as WorkflowOrder),
+                    _version: newVersion
+                };
+
+                // Remove undefined values
+                Object.keys(updateData).forEach(key => {
+                    if (updateData[key] === undefined) {
+                        delete updateData[key];
+                    }
+                });
+
+                transaction.update(docRef, updateData as Record<string, import('firebase/firestore').FieldValue | Partial<unknown> | undefined>);
+            });
         } catch (error) {
-            console.error('Error updating workflow order:', error);
+            logger.error('WorkflowOrderService', 'Error updating workflow order:', error);
             throw error;
         }
     },
@@ -148,7 +123,7 @@ export const workflowOrderService = {
         try {
             await deleteDoc(doc(db, COLLECTION_NAME, id));
         } catch (error) {
-            console.error('Error deleting workflow order:', error);
+            logger.error('WorkflowOrderService', 'Error deleting workflow order:', error);
             throw error;
         }
     },
@@ -158,26 +133,21 @@ export const workflowOrderService = {
      */
     async batchCreate(orders: WorkflowOrder[]): Promise<number> {
         try {
-            const batch = writeBatch(db);
             const now = Timestamp.now();
-            let count = 0;
 
-            for (const order of orders) {
+            const stats = await executeSafeBatch(orders, { collectionName: COLLECTION_NAME }, (order, batch) => {
                 const id = order.id || IdGenerator.workflow();
                 const docRef = doc(db, COLLECTION_NAME, id);
-
                 batch.set(docRef, {
                     ...toFirestore({ ...order, id }),
                     createdAt: now,
                     _version: 1
                 });
-                count++;
-            }
+            });
 
-            await batch.commit();
-            return count;
+            return stats.totalProcessed;
         } catch (error) {
-            console.error('Error batch creating workflow orders:', error);
+            logger.error('WorkflowOrderService', 'Error batch creating workflow orders:', error);
             throw error;
         }
     },
@@ -191,7 +161,7 @@ export const workflowOrderService = {
             const orders = snapshot.docs.map(fromFirestore);
             callback(orders);
         }, (error) => {
-            console.error('Error subscribing to workflow orders:', error);
+            logger.error('WorkflowOrderService', 'Error subscribing to workflow orders:', error);
             callback([]);
         });
 

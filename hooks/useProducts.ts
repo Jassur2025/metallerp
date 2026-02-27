@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Product } from '../types';
 import { productService } from '../services/productService';
 import { useToast } from '../contexts/ToastContext';
+import { logger } from '../utils/logger';
 
 interface UseProductsOptions {
     realtime?: boolean;
@@ -15,7 +16,6 @@ interface UseProductsReturn {
     updateProduct: (id: string, updates: Partial<Product>) => Promise<boolean>;
     deleteProduct: (id: string) => Promise<boolean>;
     refreshProducts: () => Promise<void>;
-    migrateProducts: (sheetsProducts: Product[]) => Promise<number>;
     stats: {
         totalItems: number;
         lowStockCount: number;
@@ -45,9 +45,9 @@ export const useProducts = (options: UseProductsOptions = {}): UseProductsReturn
             setError(null);
             const data = await productService.getAll();
             setProducts(data);
-        } catch (err: any) {
-            setError(err.message || 'Ошибка загрузки товаров');
-            console.error('Error loading products:', err);
+        } catch (err: unknown) {
+            setError((err instanceof Error ? err.message : String(err)) || 'Ошибка загрузки товаров');
+            logger.error('useProducts', 'Error loading products:', err);
         } finally {
             setLoading(false);
         }
@@ -79,8 +79,8 @@ export const useProducts = (options: UseProductsOptions = {}): UseProductsReturn
                 return updated;
             });
             return newProduct;
-        } catch (err: any) {
-            toast.error(`Ошибка добавления товара: ${err.message}`);
+        } catch (err: unknown) {
+            toast.error(`Ошибка добавления товара: ${(err instanceof Error ? err.message : String(err))}`);
             // Rollback if needed (though harder with snapshot)
             return null;
         }
@@ -96,8 +96,8 @@ export const useProducts = (options: UseProductsOptions = {}): UseProductsReturn
             await productService.update(id, updates);
 
             return true;
-        } catch (err: any) {
-            toast.error(`Ошибка обновления товара: ${err.message}`);
+        } catch (err: unknown) {
+            toast.error(`Ошибка обновления товара: ${(err instanceof Error ? err.message : String(err))}`);
             // Rollback
             if (!realtime) {
                 await loadProducts();
@@ -116,36 +116,11 @@ export const useProducts = (options: UseProductsOptions = {}): UseProductsReturn
                 setProducts(prev => prev.filter(p => p.id !== id));
             }
             return true;
-        } catch (err: any) {
-            toast.error(`Ошибка удаления товара: ${err.message}`);
+        } catch (err: unknown) {
+            toast.error(`Ошибка удаления товара: ${(err instanceof Error ? err.message : String(err))}`);
             return false;
         }
     }, [realtime, toast]);
-
-    // Migrate from Sheets
-    const migrateProducts = useCallback(async (sheetsProducts: Product[]): Promise<number> => {
-        try {
-            if (sheetsProducts.length === 0) return 0;
-
-            // Avoid duplicates by checking ID
-            const existingIds = new Set(products.map(p => p.id));
-            const toImport = sheetsProducts.filter(p => !existingIds.has(p.id));
-
-            if (toImport.length === 0) return 0;
-
-            const count = await productService.batchCreate(toImport);
-
-            // Refresh if not realtime (realtime will catch up automatically)
-            if (!realtime) {
-                await loadProducts();
-            }
-
-            return count;
-        } catch (err: any) {
-            toast.error(`Ошибка миграции товаров: ${err.message}`);
-            return 0;
-        }
-    }, [products, realtime, loadProducts, toast]);
 
     return {
         products,
@@ -155,7 +130,6 @@ export const useProducts = (options: UseProductsOptions = {}): UseProductsReturn
         updateProduct,
         deleteProduct,
         refreshProducts: loadProducts,
-        migrateProducts,
         stats
     };
 };

@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Product, ProductType, AppSettings } from '../types';
+import { DEFAULT_EXCHANGE_RATE } from '../constants';
 import { Search, FileText, Filter, Package, Save, Percent, Edit, CheckSquare, Square, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
@@ -10,7 +11,7 @@ interface PriceListProps {
     settings: AppSettings;
 }
 
-export const PriceList: React.FC<PriceListProps> = ({ products, onSaveProducts, settings }) => {
+export const PriceList: React.FC<PriceListProps> = React.memo(({ products, onSaveProducts, settings }) => {
     const { theme } = useTheme();
     const t = getThemeClasses(theme);
     const toast = useToast();
@@ -27,7 +28,7 @@ export const PriceList: React.FC<PriceListProps> = ({ products, onSaveProducts, 
 
     // Currency toggle
     const [displayCurrency, setDisplayCurrency] = useState<'USD' | 'UZS'>('USD');
-    const rate = settings.defaultExchangeRate || 12800;
+    const rate = settings.defaultExchangeRate || DEFAULT_EXCHANGE_RATE;
     const fmtPrice = (usd: number) => {
         if (displayCurrency === 'UZS') {
             const uzs = usd * rate;
@@ -365,4 +366,4 @@ export const PriceList: React.FC<PriceListProps> = ({ products, onSaveProducts, 
             </div>
         </div>
     );
-};
+});

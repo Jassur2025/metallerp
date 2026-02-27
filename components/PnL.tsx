@@ -3,9 +3,7 @@ import { Order, Expense, FixedAsset, ExpenseCategory } from '../types';
 import { Printer, FileSpreadsheet, Download, CalendarDays, ChevronDown, ChevronRight, Pencil, Trash2, Check, X } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
-
-const isDev = import.meta.env.DEV;
-const errorDev = (...args: unknown[]) => { if (isDev) console.error(...args); };
+import { logger } from '../utils/logger';
 
 interface PnLProps {
     orders: Order[];
@@ -352,7 +350,7 @@ export const PnL: React.FC<PnLProps> = ({ orders, expenses, fixedAssets = [], ex
             pdf.save(`PnL_${selectedYear}_${new Date().toISOString().split('T')[0]}.pdf`);
             toast.success('PDF файл скачан!');
         } catch (err) {
-            errorDev("PDF Generation failed", err);
+            logger.error('PnL', 'PDF Generation failed', err);
             toast.error("Ошибка при создании PDF.");
         } finally {
             setIsGeneratingPdf(false);

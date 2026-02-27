@@ -27,7 +27,8 @@ import {
 const getEnvVar = (key: string, fallback?: string): string => {
   const value = import.meta.env[key];
   if (!value && !fallback) {
-    console.warn(`Warning: Environment variable ${key} is not set. Please configure it in GitHub Secrets.`);
+    // Use console directly here since logger depends on app initialization
+    console.warn(`[firebase] Environment variable ${key} is not set.`);
     return '';
   }
   return value || fallback || '';
@@ -75,11 +76,11 @@ export {
 
 // Устанавливаем persistence для мобильных устройств
 setPersistence(auth, browserLocalPersistence).catch((error) => {
-  console.error("Error setting persistence:", error);
+  // Use console directly here since logger depends on app initialization
+  console.warn('[firebase] Error setting persistence:', error);
 });
 
 export const googleProvider = new GoogleAuthProvider();
-googleProvider.addScope('https://www.googleapis.com/auth/spreadsheets');
 
 // Дополнительные параметры для мобильных устройств
 googleProvider.setCustomParameters({

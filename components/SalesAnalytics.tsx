@@ -1,7 +1,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { Order, AppSettings } from '../types';
-import { validateUSD } from '../utils/finance';
+import { validateUSD, num } from '../utils/finance';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend } from 'recharts';
 import { Users, Briefcase, TrendingUp, Crown, Wallet, Package, X, ChevronRight } from 'lucide-react';
@@ -22,8 +22,8 @@ interface StatItem {
     name: string;
     totalAmount: number;
     ordersCount: number;
-    purchasedProducts: Record<string, ProductStat>; // Aggregated products for this entity
-    [key: string]: any;
+    purchasedProducts: Record<string, ProductStat>;
+    [key: string]: string | number | Record<string, ProductStat>;
 }
 
 export const SalesAnalytics: React.FC<SalesAnalyticsProps> = ({ orders, settings }) => {
@@ -38,15 +38,6 @@ export const SalesAnalytics: React.FC<SalesAnalyticsProps> = ({ orders, settings
 
         let totalRevenue = 0;
         let validOrdersCount = 0;
-
-        const num = (v: any): number => {
-            if (typeof v === 'number') return isFinite(v) ? v : 0;
-            if (typeof v === 'string') {
-                const p = parseFloat(v.replace(/[^\d.-]/g, ''));
-                return isFinite(p) ? p : 0;
-            }
-            return 0;
-        };
 
         if (orders && Array.isArray(orders)) {
             orders.forEach(order => {

@@ -11,6 +11,7 @@ import {
     orderBy, 
     Timestamp 
 } from '../lib/firebase';
+import { logger } from '../utils/logger';
 
 export interface ClientNote {
     id: string;
@@ -40,7 +41,7 @@ export const notesService = {
                 createdAt: doc.data().createdAt?.toDate?.()?.toISOString() || new Date().toISOString()
             } as ClientNote));
         } catch (error) {
-            console.error('Error fetching notes:', error);
+            logger.error('NotesService', 'Error fetching notes:', error);
             return [];
         }
     },
@@ -67,7 +68,7 @@ export const notesService = {
                 createdAt: now.toDate().toISOString()
             };
         } catch (error) {
-            console.error('Error adding note:', error);
+            logger.error('NotesService', 'Error adding note:', error);
             throw error;
         }
     }

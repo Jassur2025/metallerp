@@ -1,13 +1,13 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Product, Order, Client, Transaction, AppSettings } from '../types';
-import { geminiService } from '../services/geminiService';
+import { DEFAULT_EXCHANGE_RATE } from '../constants';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
-import { validateUSD } from '../utils/finance';
+import { validateUSD, num } from '../utils/finance';
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, CartesianGrid
 } from 'recharts';
 import {
-  Activity, TrendingUp, Package, AlertTriangle, Sparkles, RefreshCw, BrainCircuit,
+  Activity, TrendingUp, Package, AlertTriangle,
   DollarSign, Users, ShoppingCart, Calendar, ArrowUp, ArrowDown, TrendingDown,
   Award, Target, BarChart3, Clock
 } from 'lucide-react';
@@ -20,14 +20,9 @@ interface DashboardProps {
   settings?: AppSettings;
 }
 
-const isDev = import.meta.env.DEV;
-const errorDev = (...args: unknown[]) => { if (isDev) console.error(...args); };
-
 type TimeRange = 'today' | 'week' | 'month' | 'year' | 'all';
 
-export const Dashboard: React.FC<DashboardProps> = ({ products, orders, clients = [], transactions = [], settings }) => {
-  const [insight, setInsight] = useState<string>('');
-  const [loadingInsight, setLoadingInsight] = useState(false);
+export const Dashboard: React.FC<DashboardProps> = React.memo(({ products, orders, clients = [], transactions = [], settings }) => {
   const [timeRange, setTimeRange] = useState<TimeRange>('month');
   const { theme } = useTheme();
   const t = getThemeClasses(theme);
@@ -57,30 +52,25 @@ export const Dashboard: React.FC<DashboardProps> = ({ products, orders, clients 
   }, [orders, timeRange]);
 
   // Calculate Stats
-  const num = (v: any): number => {
-    if (typeof v === 'number') return isFinite(v) ? v : 0;
-    if (typeof v === 'string') {
-      const p = parseFloat(v.replace(/[^\d.-]/g, ''));
-      return isFinite(p) ? p : 0;
-    }
-    return 0;
-  };
+  const { totalRevenue, totalRevenueUZS, lowStockCount, inventoryValue, avgOrderValue, totalDebt } = useMemo(() => {
+    const rate = settings?.defaultExchangeRate || DEFAULT_EXCHANGE_RATE;
+    const rev = filteredOrders.reduce((sum, o) => {
+      let amt = num(o.totalAmount);
+      if (amt === 0 && o.items && o.items.length > 0) {
+        amt = o.items.reduce((s, it) => s + num(it.total), 0);
+      }
+      return sum + validateUSD(amt, rate);
+    }, 0);
+    const revUZS = filteredOrders.reduce((sum, o) => sum + num(o.totalAmountUZS), 0);
+    const totalOrd = filteredOrders.length;
+    const lowStock = products.filter(p => num(p.quantity) <= num(p.minStockLevel)).length;
+    const invValue = products.reduce((sum, p) => sum + (num(p.quantity) * num(p.pricePerUnit)), 0);
+    const avgOV = totalOrd > 0 ? rev / totalOrd : 0;
+    const debt = clients.reduce((sum, c) => sum + (c.totalDebt || 0), 0);
+    return { totalRevenue: rev, totalRevenueUZS: revUZS, lowStockCount: lowStock, inventoryValue: invValue, avgOrderValue: avgOV, totalDebt: debt };
+  }, [filteredOrders, products, clients, settings?.defaultExchangeRate]);
 
-  const totalRevenue = filteredOrders.reduce((sum, o) => {
-    let amt = num(o.totalAmount);
-    if (amt === 0 && o.items && o.items.length > 0) {
-      amt = o.items.reduce((s, it) => s + num(it.total), 0);
-    }
-    return sum + validateUSD(amt, settings?.defaultExchangeRate || 12800);
-  }, 0);
-
-  const totalRevenueUZS = filteredOrders.reduce((sum, o) => sum + num(o.totalAmountUZS), 0);
   const totalOrders = filteredOrders.length;
-  const lowStockCount = products.filter(p => num(p.quantity) <= num(p.minStockLevel)).length;
-  const inventoryValue = products.reduce((sum, p) => sum + (num(p.quantity) * num(p.pricePerUnit)), 0);
-
-  // Average order value
-  const avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
 
   // Total clients
   const totalClients = clients.length;
@@ -89,8 +79,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products, orders, clients 
     return clientSet.size;
   }, [filteredOrders]);
 
-  // Debt amount
-  const totalDebt = clients.reduce((sum, c) => sum + (c.totalDebt || 0), 0);
+  // Debt amount (in useMemo above)
 
   // Sales by day (last 30 days or selected period)
   const salesByDay = useMemo(() => {
@@ -104,7 +93,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products, orders, clients 
       if (!days[date]) {
         days[date] = { date, revenue: 0, orders: 0 };
       }
-      days[date].revenue += validateUSD(order.totalAmount, settings?.defaultExchangeRate || 12800);
+      days[date].revenue += validateUSD(order.totalAmount, settings?.defaultExchangeRate || DEFAULT_EXCHANGE_RATE);
       days[date].orders += 1;
     });
 
@@ -251,26 +240,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ products, orders, clients 
   };
 
   const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
-
-  const fetchInsight = async () => {
-    setLoadingInsight(true);
-    try {
-      const result = await geminiService.analyzeBusiness(products, filteredOrders);
-      setInsight(result);
-    } catch (error) {
-      errorDev("Failed to fetch insight:", error);
-      setInsight("Не удалось получить аналитику. Проверьте API ключ.");
-    } finally {
-      setLoadingInsight(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!insight && filteredOrders.length > 0) {
-      fetchInsight();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timeRange]);
 
   return (
     <div className="p-6 space-y-6 animate-fade-in overflow-auto h-full pb-20">
@@ -420,9 +389,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ products, orders, clients 
                   cx="50%"
                   cy="50%"
                   labelLine={false}
-                  label={({ name, percent }: any) => {
+                  label={({ name, percent }: { name?: string; percent?: number }) => {
                     if (!percent || percent < 0.05) return '';
-                    return `${name}\n${(percent * 100).toFixed(0)}%`;
+                    return `${name || ''}\n${(percent * 100).toFixed(0)}%`;
                   }}
                   outerRadius={90}
                   innerRadius={40}
@@ -645,43 +614,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ products, orders, clients 
           </div>
         </div>
       </div>
-
-      {/* AI Insights */}
-      <div className={`${theme === 'light' ? 'bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200' : 'bg-gradient-to-br from-slate-800 to-indigo-900/20 border-indigo-500/30'} rounded-2xl border p-6 ${t.shadow} relative overflow-hidden`}>
-        <div className={`absolute -top-10 -right-10 w-32 h-32 ${theme === 'light' ? 'bg-blue-200/50' : 'bg-indigo-500/20'} rounded-full blur-3xl`}></div>
-
-        <div className="flex justify-between items-center mb-4">
-          <h3 className={`text-xl font-bold ${t.text} flex items-center gap-2`}>
-            <Sparkles size={20} className={theme === 'light' ? 'text-blue-600' : 'text-indigo-400'} /> AI Аналитика
-          </h3>
-          <button
-            onClick={fetchInsight}
-            disabled={loadingInsight}
-            className={`p-2 ${t.bgButton} rounded-full ${theme === 'light' ? 'text-blue-600' : 'text-indigo-300'} transition-colors`}
-          >
-            <RefreshCw size={16} className={loadingInsight ? 'animate-spin' : ''} />
-          </button>
-        </div>
-
-        <div className="space-y-4 min-h-[150px]">
-          {loadingInsight ? (
-            <div className={`flex flex-col items-center justify-center h-full ${t.textMuted} gap-3 pt-10`}>
-              <RefreshCw size={24} className={`animate-spin ${theme === 'light' ? 'text-blue-500' : 'text-indigo-500'}`} />
-              <span className="text-sm">Анализ данных...</span>
-            </div>
-          ) : (
-            <div className={`${t.textSecondary} text-sm leading-relaxed whitespace-pre-line ${theme === 'light' ? 'bg-white/70 border-blue-100' : 'bg-slate-900/40 border-indigo-500/10'} p-4 rounded-xl border`}>
-              {insight || "Нажмите кнопку обновления для получения аналитики от Gemini AI."}
-            </div>
-          )}
-        </div>
-
-        <div className={`mt-6 pt-4 border-t ${theme === 'light' ? 'border-blue-200' : 'border-indigo-500/10'}`}>
-          <p className={`text-xs ${theme === 'light' ? 'text-blue-500' : 'text-indigo-300/60'} flex items-center gap-1`}>
-            <BrainCircuit size={12} /> Powered by Gemini 2.5 Flash
-          </p>
-        </div>
-      </div>
     </div>
   );
-};
+});

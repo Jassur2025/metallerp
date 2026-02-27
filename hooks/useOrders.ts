@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Order } from '../types';
 import { orderService } from '../services/orderService';
 import { useToast } from '../contexts/ToastContext';
+import { logger } from '../utils/logger';
 
 export const useOrders = (initialOrders: Order[] = []) => {
     const [orders, setOrders] = useState<Order[]>(initialOrders);
@@ -15,19 +16,24 @@ export const useOrders = (initialOrders: Order[] = []) => {
             const data = await orderService.getAll();
             setOrders(data);
             setError(null);
-        } catch (err: any) {
-            console.error(err);
-            setError(err.message);
-            // Don't show toast on initial load error to avoid spam if offline
+        } catch (err: unknown) {
+            logger.error('useOrders', 'Error fetching orders:', err);
+            setError((err instanceof Error ? err.message : String(err)));
         } finally {
             setLoading(false);
         }
     }, []);
 
-    // Initial fetch
+    // Real-time subscription (consistent with other hooks)
     useEffect(() => {
-        fetchOrders();
-    }, [fetchOrders]);
+        setLoading(true);
+        const unsubscribe = orderService.subscribe((data) => {
+            setOrders(data);
+            setLoading(false);
+            setError(null);
+        });
+        return () => unsubscribe();
+    }, []);
 
     const addOrder = useCallback(async (order: Order) => {
         try {
@@ -37,8 +43,8 @@ export const useOrders = (initialOrders: Order[] = []) => {
             await orderService.add(order);
             // toast.success('Заказ сохранен в базе');
             return true;
-        } catch (err: any) {
-            console.error(err);
+        } catch (err: unknown) {
+            logger.error('useOrders', 'Error adding order:', err);
             toast.error('Ошибка при сохранении заказа');
             // Rollback
             setOrders(prev => prev.filter(o => o.id !== order.id));
@@ -54,46 +60,28 @@ export const useOrders = (initialOrders: Order[] = []) => {
             await orderService.update(id, updates);
             // toast.success('Заказ обновлен');
             return true;
-        } catch (err: any) {
-            console.error(err);
+        } catch (err: unknown) {
+            logger.error('useOrders', 'Error updating order:', err);
             toast.error('Ошибка при обновлении заказа');
             fetchOrders(); // Revert to server state
             return false;
         }
     }, [toast, fetchOrders]);
-    
-    const migrateOrders = useCallback(async (legacyOrders: Order[]) => {
-        if (!legacyOrders.length) return;
-        
-        try {
-            setLoading(true);
-            // Check which ones are already in DB (simple check by ID in current state)
-            // Ideally we should check DB, but for simple migration this is okay
-            const existingIds = new Set(orders.map(o => o.id));
-            const toMigrate = legacyOrders.filter(o => !existingIds.has(o.id));
-            
-            if (toMigrate.length === 0) {
-                 // toast.info('Все заказы уже в базе');
-                 setLoading(false);
-                 return;
-            }
 
-            // Split into chunks of 500 (Firestore limit)
-            const chunkSize = 400;
-            for (let i = 0; i < toMigrate.length; i += chunkSize) {
-                const chunk = toMigrate.slice(i, i + chunkSize);
-                await orderService.batchCreate(chunk);
-            }
-            
-            await fetchOrders();
-            toast.success(`Миграция завершена: ${toMigrate.length} заказов перенесено`);
-        } catch (err: any) {
-            console.error('Migration failed:', err);
-            toast.error('Ошибка миграции заказов');
-        } finally {
-            setLoading(false);
+    const deleteOrder = useCallback(async (id: string) => {
+        const prev = orders;
+        try {
+            // Optimistic
+            setOrders(p => p.filter(o => o.id !== id));
+            await orderService.delete(id);
+            return true;
+        } catch (err: unknown) {
+            logger.error('useOrders', 'Error deleting order:', err);
+            toast.error('Ошибка при удалении заказа');
+            setOrders(prev); // Rollback
+            return false;
         }
-    }, [orders, fetchOrders, toast]);
+    }, [orders, toast]);
 
     return {
         orders,
@@ -102,7 +90,7 @@ export const useOrders = (initialOrders: Order[] = []) => {
         error,
         addOrder,
         updateOrder,
-        refreshOrders: fetchOrders,
-        migrateOrders
+        deleteOrder,
+        refreshOrders: fetchOrders
     };
 };

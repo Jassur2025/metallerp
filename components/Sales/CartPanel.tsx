@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ShoppingCart, Trash2, User, Plus, CheckCircle, FileText, Printer, Percent, Tag, Calendar } from 'lucide-react';
 import { OrderItem, Client, Employee, Order, AppSettings } from '../../types';
+import { DEFAULT_EXCHANGE_RATE } from '../../constants';
 import { PaymentMethod, Currency, FlyingItem } from './types';
 import { useTheme, getThemeClasses } from '../../contexts/ThemeContext';
 
@@ -112,7 +113,7 @@ export const CartPanel: React.FC<CartPanelProps> = ({
 
   const handleRoundTo = (roundedUZS: number) => {
     if (onTotalChange) {
-      const rate = settings.defaultExchangeRate || 12800;
+      const rate = settings.defaultExchangeRate || DEFAULT_EXCHANGE_RATE;
       const newTotalUSD = roundedUZS / rate;
       onTotalChange(newTotalUSD);
     }
@@ -121,7 +122,7 @@ export const CartPanel: React.FC<CartPanelProps> = ({
   const handleCustomRound = () => {
     const value = parseFloat(customRoundedValue);
     if (!isNaN(value) && value > 0 && onTotalChange) {
-      const rate = settings.defaultExchangeRate || 12800;
+      const rate = settings.defaultExchangeRate || DEFAULT_EXCHANGE_RATE;
       onTotalChange(value / rate);
       setCustomRoundedValue('');
     }

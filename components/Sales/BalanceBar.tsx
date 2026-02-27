@@ -1,11 +1,12 @@
 import React from 'react';
 import { Wallet, Building2, CreditCard, AlertCircle } from 'lucide-react';
 import { Balances } from './types';
+import { Order } from '../../types';
 import { useTheme, getThemeClasses } from '../../contexts/ThemeContext';
 
 interface BalanceBarProps {
   balances: Balances;
-  orders?: any[];
+  orders?: Order[];
   debugStats?: {
     salesUSD: number;
     trxInUSD: number;
