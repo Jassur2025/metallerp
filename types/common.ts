@@ -8,6 +8,12 @@ export interface Versionable {
   _version?: number;
   /** ISO timestamp of last update */
   updatedAt?: string;
+  /** Soft-delete flag — when true, document is logically deleted */
+  _deleted?: boolean;
+  /** ISO timestamp of soft deletion */
+  _deletedAt?: string;
+  /** UID of user who performed the soft delete */
+  _deletedBy?: string;
 }
 
 export enum ProductType {

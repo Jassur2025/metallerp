@@ -13,7 +13,8 @@ import {
     Timestamp,
     query,
     orderBy,
-    limit
+    limit,
+    startAfter
 } from '../lib/firebase';
 import { JournalEvent } from '../types';
 import { IdGenerator } from '../utils/idGenerator';
@@ -123,5 +124,26 @@ export const journalService = {
         });
 
         return unsubscribe;
+    },
+
+    /**
+     * Paginated fetch — returns events older than `afterDate`.
+     */
+    async getPage(afterDate: string, pageSize: number = 100): Promise<{ items: JournalEvent[]; hasMore: boolean }> {
+        try {
+            const q = query(
+                collection(db, COLLECTION_NAME),
+                orderBy('date', 'desc'),
+                startAfter(afterDate),
+                limit(pageSize + 1)
+            );
+            const snapshot = await getDocs(q);
+            const docs = snapshot.docs.map(fromFirestore);
+            const hasMore = docs.length > pageSize;
+            return { items: hasMore ? docs.slice(0, pageSize) : docs, hasMore };
+        } catch (error) {
+            logger.error('JournalService', 'Error fetching page:', error);
+            throw error;
+        }
     }
 };

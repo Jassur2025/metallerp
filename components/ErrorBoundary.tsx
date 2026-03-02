@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { ErrorBoundary as ReactErrorBoundary } from 'react-error-boundary';
 import { AlertOctagon, RefreshCw, Home, Bug, ChevronDown, ChevronUp } from 'lucide-react';
 import { logger } from '../utils/logger';
+import { Sentry, isSentryEnabled } from '../lib/sentry';
 
 interface ErrorFallbackProps {
   error: Error;
@@ -117,6 +118,9 @@ interface ErrorBoundaryProps {
 export const ErrorBoundary: React.FC<ErrorBoundaryProps> = ({ children, onError }) => {
   const handleError = (error: Error, info: React.ErrorInfo) => {
     logger.error('ErrorBoundary', 'Caught an error:', error, info);
+    if (isSentryEnabled) {
+      Sentry.captureException(error, { extra: { componentStack: info.componentStack } });
+    }
     onError?.(error, info);
   };
 

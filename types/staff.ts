@@ -32,6 +32,7 @@ export interface Employee extends Versionable {
     priceList?: boolean;
     // Granular permissions
     canViewCostPrice?: boolean;
+    canViewSalary?: boolean;
     canProcessReturns?: boolean;
     canEditProducts?: boolean;
     canDeleteOrders?: boolean;

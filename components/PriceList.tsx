@@ -4,6 +4,7 @@ import { DEFAULT_EXCHANGE_RATE } from '../constants';
 import { Search, FileText, Filter, Package, Save, Percent, Edit, CheckSquare, Square, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
+import { useCurrentEmployee } from '../contexts/CurrentEmployeeContext';
 
 interface PriceListProps {
     products: Product[];
@@ -15,6 +16,8 @@ export const PriceList: React.FC<PriceListProps> = React.memo(({ products, onSav
     const { theme } = useTheme();
     const t = getThemeClasses(theme);
     const toast = useToast();
+    const { can } = useCurrentEmployee();
+    const canSeeCost = can('canViewCostPrice');
     const [searchTerm, setSearchTerm] = useState('');
     const [typeFilter, setTypeFilter] = useState<string>('all');
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -315,7 +318,7 @@ export const PriceList: React.FC<PriceListProps> = React.memo(({ products, onSav
                                             <div className={`${t.textMuted} text-[10px]`}>{product.steelGrade}</div>
                                         </td>
                                         <td className={`p-4 text-right font-mono ${t.textMuted} text-sm`}>
-                                            {fmtPrice(product.costPrice || 0)}
+                                            {canSeeCost ? fmtPrice(product.costPrice || 0) : '***'}
                                         </td>
                                         <td className="p-4 text-right">
                                             <span className={`font-mono text-sm ${product.quantity > product.minStockLevel ? (theme === 'dark' ? 'text-slate-300' : 'text-slate-700') : 'text-red-400'}`}>

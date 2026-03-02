@@ -12,7 +12,10 @@ import {
     getDoc,
     setDoc,
     serverTimestamp,
-    Timestamp
+    Timestamp,
+    runTransaction,
+    startAfter,
+    limit
 } from '../lib/firebase';
 import { Product } from '../types';
 import { executeSafeBatch } from '../utils/batchWriter';
@@ -38,9 +41,9 @@ export const productService = {
         }
     },
 
-    // Subscribe to real-time updates
-    subscribe: (callback: (products: Product[]) => void) => {
-        const q = query(collection(db, COLLECTION_NAME), orderBy('name', 'asc'));
+    // Subscribe to real-time updates (limited for pagination)
+    subscribe: (callback: (products: Product[]) => void, maxItems: number = 500) => {
+        const q = query(collection(db, COLLECTION_NAME), orderBy('name', 'asc'), limit(maxItems));
         return onSnapshot(q, (snapshot) => {
             const products = snapshot.docs.map(doc => ({
                 id: doc.id,
@@ -50,6 +53,27 @@ export const productService = {
         }, (error) => {
             logger.error('ProductService', 'Error subscribing to products:', error);
         });
+    },
+
+    /**
+     * Paginated fetch — returns products after `afterName` alphabetically.
+     */
+    async getPage(afterName: string, pageSize: number = 100): Promise<{ items: Product[]; hasMore: boolean }> {
+        try {
+            const q = query(
+                collection(db, COLLECTION_NAME),
+                orderBy('name', 'asc'),
+                startAfter(afterName),
+                limit(pageSize + 1)
+            );
+            const snapshot = await getDocs(q);
+            const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product));
+            const hasMore = docs.length > pageSize;
+            return { items: hasMore ? docs.slice(0, pageSize) : docs, hasMore };
+        } catch (error) {
+            logger.error('ProductService', 'Error fetching page:', error);
+            throw error;
+        }
     },
 
     // Add a new product (supports custom ID)
@@ -90,7 +114,7 @@ export const productService = {
         }
     },
 
-    // Update a product
+    // Update a product — atomic with optimistic concurrency (_version)
     update: async (id: string, updates: Partial<Product>): Promise<void> => {
         try {
             const hasProductFields = updates.name || updates.quantity !== undefined || updates.pricePerUnit !== undefined || updates.costPrice !== undefined;
@@ -105,12 +129,26 @@ export const productService = {
             const data = JSON.parse(JSON.stringify(updates));
             delete data.id; // Don't update ID
 
-            // Use setDoc with merge instead of updateDoc to allow "Upsert"
-            // This prevents "No document to update" errors if the doc is missing in DB but exists in UI
-            await setDoc(docRef, {
-                ...data,
-                updatedAt: new Date().toISOString(),
-            }, { merge: true });
+            await runTransaction(db, async (firebaseTx) => {
+                const snap = await firebaseTx.get(docRef);
+
+                if (!snap.exists()) {
+                    // Upsert: create if missing (was setDoc merge before)
+                    firebaseTx.set(docRef, {
+                        ...data,
+                        updatedAt: new Date().toISOString(),
+                        _version: 1
+                    });
+                    return;
+                }
+
+                const currentVersion = snap.data()?._version || 0;
+                firebaseTx.update(docRef, {
+                    ...data,
+                    updatedAt: new Date().toISOString(),
+                    _version: currentVersion + 1
+                });
+            });
         } catch (error) {
             logger.error('ProductService', 'Error updating product:', error);
             throw error;

@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Employee, UserRole } from '../types';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
+import { useCurrentEmployee } from '../contexts/CurrentEmployeeContext';
 import { Plus, Search, Edit2, Phone, Mail, Briefcase, Calendar, DollarSign, User, Shield, CheckCircle, XCircle, Trash2, Database, RefreshCw, Upload, Cloud, LayoutGrid, List } from 'lucide-react';
 import { IdGenerator } from '../utils/idGenerator';
 import { useEmployees } from '../hooks/useEmployees';
@@ -33,6 +34,8 @@ export const Staff: React.FC<StaffProps> = React.memo(({ employees: sheetsEmploy
     const { theme } = useTheme();
     const t = getThemeClasses(theme);
     const toast = useToast();
+    const { can } = useCurrentEmployee();
+    const canSeeSalary = can('canViewSalary');
     
     // Firebase real-time hook
     const { 
@@ -513,12 +516,16 @@ export const Staff: React.FC<StaffProps> = React.memo(({ employees: sheetsEmploy
                                 </div>
                                 <div>
                                     <label className={`block text-sm font-medium ${t.textMuted} mb-1`}>Зарплата (USD)</label>
+                                    {canSeeSalary ? (
                                     <input
                                         type="number"
                                         value={formData.salary}
                                         onChange={e => setFormData({ ...formData, salary: Number(e.target.value) })}
                                         className={`w-full ${t.input} border ${t.border} rounded-lg px-4 py-2 ${t.text} focus:ring-2 focus:ring-purple-500 outline-none`}
                                     />
+                                    ) : (
+                                    <div className={`w-full ${t.input} border ${t.border} rounded-lg px-4 py-2 ${t.textMuted}`}>***</div>
+                                    )}
                                 </div>
                             </div>
 
@@ -649,6 +656,7 @@ export const Staff: React.FC<StaffProps> = React.memo(({ employees: sheetsEmploy
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 {[
                                     { key: 'canViewCostPrice', label: 'Видеть себестоимость (Inventory)' },
+                                    { key: 'canViewSalary', label: 'Видеть зарплаты (Payroll/Staff)' },
                                     { key: 'canProcessReturns', label: 'Оформлять возвраты (Sales)' },
                                     { key: 'canEditProducts', label: 'Редактировать товары (Inventory)' },
                                     { key: 'canDeleteOrders', label: 'Удалять заказы (History)' },

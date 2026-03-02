@@ -8,6 +8,7 @@ import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
 import { useConfirm } from './ConfirmDialog';
 import { ExpenseCategoriesTab } from './Settings/ExpenseCategoriesTab';
 import { ManufacturersTab } from './Settings/ManufacturersTab';
+import { AccountingPeriodsTab } from './Settings/AccountingPeriodsTab';
 
 const EMPTY_COMPANY: CompanyDetails = {
   name: '', address: '', phone: '', inn: '', mfo: '', bankName: '', accountNumber: ''
@@ -77,7 +78,7 @@ export const Settings: React.FC<SettingsProps> = React.memo(({ settings, onSave,
     });
     const [message, setMessage] = useState<string | null>(null);
 
-    const [activeTab, setActiveTab] = useState<'general' | 'expenses' | 'manufacturers'>('general');
+    const [activeTab, setActiveTab] = useState<'general' | 'expenses' | 'manufacturers' | 'periods'>('general');
 
     // Reset state
     const [isResetting, setIsResetting] = useState(false);
@@ -160,6 +161,16 @@ export const Settings: React.FC<SettingsProps> = React.memo(({ settings, onSave,
                 >
                     <Factory size={18} className="inline mr-2" />
                     Производители
+                </button>
+                <button
+                    onClick={() => setActiveTab('periods')}
+                    className={`px-6 py-3 rounded-xl font-medium transition-all ${activeTab === 'periods'
+                        ? 'bg-amber-600 text-white shadow-lg shadow-amber-600/20'
+                        : `${t.bgCard} ${t.textMuted} hover:${t.text} border ${t.border}`
+                        }`}
+                >
+                    <History size={18} className="inline mr-2" />
+                    Учётные периоды
                 </button>
             </div>
 
@@ -594,6 +605,13 @@ export const Settings: React.FC<SettingsProps> = React.memo(({ settings, onSave,
                     handleSave={handleSave}
                     t={t}
                 />
+            )}
+
+            {/* Tab: Accounting Periods */}
+            {activeTab === 'periods' && (
+                <div className={`${t.bgCard} rounded-2xl border ${t.border} p-8 shadow-lg`}>
+                    <AccountingPeriodsTab />
+                </div>
             )}
         </div>
     );

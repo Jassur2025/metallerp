@@ -23,6 +23,13 @@ import {
   validateClient,
   validateEmployee,
   validateProduct,
+  validateOrder,
+  validateTransaction,
+  validateExpense,
+  validatePurchase,
+  validateWorkflowOrder,
+  sanitizeString,
+  sanitizeNumber,
   debounce,
 } from '../../utils/validation';
 
@@ -342,5 +349,227 @@ describe('debounce', () => {
 
     expect(fn).toHaveBeenCalledTimes(1);
     expect(fn).toHaveBeenCalledWith('third');
+  });
+});
+
+// ─── validateOrder ──────────────────────────────────────────────────────────
+
+describe('validateOrder', () => {
+  const validOrder = {
+    customerName: 'Клиент',
+    items: [{ productId: 'p1', quantity: 10, priceAtSale: 1.5 }],
+    totalAmount: 15,
+    exchangeRate: 12800,
+    status: 'pending',
+    paymentMethod: 'cash',
+    paymentStatus: 'paid',
+  };
+
+  it('accepts a valid order', () => {
+    expect(validateOrder(validOrder).isValid).toBe(true);
+  });
+
+  it('rejects order without customer name', () => {
+    const result = validateOrder({ ...validOrder, customerName: '' });
+    expect(result.isValid).toBe(false);
+    expect(result.errors).toContain('Имя клиента обязательно');
+  });
+
+  it('rejects order with no items', () => {
+    const result = validateOrder({ ...validOrder, items: [] });
+    expect(result.isValid).toBe(false);
+    expect(result.errors).toContain('Заказ должен содержать хотя бы один товар');
+  });
+
+  it('rejects order with zero/negative totalAmount', () => {
+    expect(validateOrder({ ...validOrder, totalAmount: 0 }).isValid).toBe(false);
+    expect(validateOrder({ ...validOrder, totalAmount: -1 }).isValid).toBe(false);
+  });
+
+  it('rejects invalid status', () => {
+    const result = validateOrder({ ...validOrder, status: 'invalid' });
+    expect(result.isValid).toBe(false);
+  });
+
+  it('rejects invalid paymentMethod', () => {
+    const result = validateOrder({ ...validOrder, paymentMethod: 'bitcoin' });
+    expect(result.isValid).toBe(false);
+  });
+
+  it('validates item-level errors', () => {
+    const result = validateOrder({
+      ...validOrder,
+      items: [{ productId: '', quantity: -1, priceAtSale: -5 }],
+    });
+    expect(result.isValid).toBe(false);
+    expect(result.errors.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+// ─── validateTransaction ────────────────────────────────────────────────────
+
+describe('validateTransaction', () => {
+  const validTx = {
+    amount: 100,
+    type: 'client_payment',
+    currency: 'USD',
+    method: 'cash',
+    date: '2025-01-01',
+  };
+
+  it('accepts a valid transaction', () => {
+    expect(validateTransaction(validTx).isValid).toBe(true);
+  });
+
+  it('rejects zero amount', () => {
+    expect(validateTransaction({ ...validTx, amount: 0 }).isValid).toBe(false);
+  });
+
+  it('rejects invalid type', () => {
+    const result = validateTransaction({ ...validTx, type: 'unknown' });
+    expect(result.isValid).toBe(false);
+  });
+
+  it('rejects invalid currency', () => {
+    const result = validateTransaction({ ...validTx, currency: 'EUR' });
+    expect(result.isValid).toBe(false);
+  });
+
+  it('rejects missing date', () => {
+    const result = validateTransaction({ ...validTx, date: '' });
+    expect(result.isValid).toBe(false);
+  });
+});
+
+// ─── validateExpense ────────────────────────────────────────────────────────
+
+describe('validateExpense', () => {
+  const validExpense = {
+    amount: 50,
+    description: 'Аренда офиса',
+    category: 'administrative',
+    paymentMethod: 'bank',
+    currency: 'USD',
+    date: '2025-01-15',
+  };
+
+  it('accepts a valid expense', () => {
+    expect(validateExpense(validExpense).isValid).toBe(true);
+  });
+
+  it('rejects missing description', () => {
+    const result = validateExpense({ ...validExpense, description: '' });
+    expect(result.isValid).toBe(false);
+  });
+
+  it('rejects negative amount', () => {
+    expect(validateExpense({ ...validExpense, amount: -10 }).isValid).toBe(false);
+  });
+
+  it('rejects invalid currency', () => {
+    const result = validateExpense({ ...validExpense, currency: 'RUB' });
+    expect(result.isValid).toBe(false);
+  });
+});
+
+// ─── validatePurchase ───────────────────────────────────────────────────────
+
+describe('validatePurchase', () => {
+  const validPurchase = {
+    supplierName: 'ООО Металл',
+    items: [{ productId: 'p1', quantity: 100, pricePerUnit: 0.5 }],
+    exchangeRate: 12800,
+    paymentMethod: 'bank',
+    date: '2025-02-01',
+  };
+
+  it('accepts a valid purchase', () => {
+    expect(validatePurchase(validPurchase).isValid).toBe(true);
+  });
+
+  it('rejects missing supplier', () => {
+    const result = validatePurchase({ ...validPurchase, supplierName: '' });
+    expect(result.isValid).toBe(false);
+  });
+
+  it('rejects empty items', () => {
+    const result = validatePurchase({ ...validPurchase, items: [] });
+    expect(result.isValid).toBe(false);
+  });
+
+  it('rejects zero exchange rate', () => {
+    const result = validatePurchase({ ...validPurchase, exchangeRate: 0 });
+    expect(result.isValid).toBe(false);
+  });
+});
+
+// ─── validateWorkflowOrder ──────────────────────────────────────────────────
+
+describe('validateWorkflowOrder', () => {
+  it('accepts valid workflow order', () => {
+    const result = validateWorkflowOrder({
+      customerName: 'Клиент',
+      items: [{ productId: 'p1', quantity: 5 }],
+      totalAmount: 25,
+      status: 'draft',
+    });
+    expect(result.isValid).toBe(true);
+  });
+
+  it('rejects invalid status', () => {
+    const result = validateWorkflowOrder({
+      customerName: 'Клиент',
+      items: [{ productId: 'p1', quantity: 5 }],
+      totalAmount: 25,
+      status: 'unknown_status',
+    });
+    expect(result.isValid).toBe(false);
+  });
+
+  it('rejects empty items', () => {
+    const result = validateWorkflowOrder({
+      customerName: 'Клиент',
+      items: [],
+      totalAmount: 25,
+    });
+    expect(result.isValid).toBe(false);
+  });
+});
+
+// ─── sanitizeString ─────────────────────────────────────────────────────────
+
+describe('sanitizeString', () => {
+  it('trims whitespace', () => {
+    expect(sanitizeString('  hello  ')).toBe('hello');
+  });
+
+  it('removes angle brackets (XSS vectors)', () => {
+    expect(sanitizeString('<script>alert(1)</script>')).toBe('scriptalert(1)/script');
+  });
+
+  it('handles empty string', () => {
+    expect(sanitizeString('')).toBe('');
+  });
+});
+
+// ─── sanitizeNumber ─────────────────────────────────────────────────────────
+
+describe('sanitizeNumber', () => {
+  it('parses valid number strings', () => {
+    expect(sanitizeNumber('123.45')).toBe(123.45);
+    expect(sanitizeNumber('-50')).toBe(-50);
+  });
+
+  it('strips non-numeric characters', () => {
+    expect(sanitizeNumber('$1,234.56')).toBe(1234.56);
+  });
+
+  it('returns NaN for garbage input', () => {
+    expect(sanitizeNumber('abc')).toBeNaN();
+  });
+
+  it('passes through valid numbers', () => {
+    expect(sanitizeNumber(42)).toBe(42);
+    expect(sanitizeNumber(0)).toBe(0);
   });
 });

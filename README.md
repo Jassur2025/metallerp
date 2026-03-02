@@ -2,234 +2,222 @@
 <img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
 </div>
 
-# Metal ERP - Система управления предприятием
+# MetalMaster ERP
 
-Полнофункциональная ERP система для управления складом, продажами, закупками, клиентами и финансами с интеграцией Google Sheets.
-
-## 🚀 Возможности
-
-- 📊 **Дашборд** - Аналитика и статистика в реальном времени
-- 📦 **Управление складом** - Учет товаров, остатков, себестоимости
-- 💰 **Касса и продажи** - Оформление заказов, работа с клиентами
-- 🛒 **Закупки** - Управление закупками, импорт товаров
-- 👥 **CRM** - База клиентов, управление долгами
-- 👨‍💼 **Сотрудники** - Управление персоналом и правами доступа
-- 📈 **Отчеты** - Финансовые отчеты, P&L, Cash Flow
-- 🏢 **Основные средства** - Учет и амортизация основных средств
-- 📋 **Журнал событий** - Отслеживание всех операций в системе
-- ⚙️ **Настройки** - Гибкая настройка модулей и параметров
-
-## 🛠 Технологии
-
-- **React 19** - Современный UI фреймворк
-- **TypeScript** - Типобезопасность
-- **Vite** - Быстрая сборка
-- **Firebase Auth** - Аутентификация через Google
-- **Google Sheets API** - Хранение данных
-- **Tailwind CSS** - Стилизация
-- **Recharts** - Графики и визуализация
-- **Lucide React** - Иконки
-
-## 📋 Требования
-
-- Node.js 18+ 
-- npm или yarn
-- Google аккаунт для аутентификации
-- Google Sheets таблица для хранения данных
-- **Google Cloud Console** - настроенный OAuth 2.0 для доступа к Sheets API
-
-> ⚠️ **Важно:** Для работы с Google Sheets требуется правильная настройка OAuth 2.0  
-> См. инструкцию: [БЫСТРОЕ-РЕШЕНИЕ-OAuth.md](./БЫСТРОЕ-РЕШЕНИЕ-OAuth.md)
-
-## 🔧 Установка
-
-1. **Клонируйте репозиторий:**
-   ```bash
-   git clone <repository-url>
-   cd "Google ERP"
-   ```
-
-2. **Установите зависимости:**
-   ```bash
-   npm install
-   ```
-
-3. **Настройте переменные окружения:**
-   
-   Создайте файл `.env.local` в корне проекта:
-   ```env
-   # Firebase Configuration (обязательно)
-   VITE_FIREBASE_API_KEY=your_firebase_api_key
-   VITE_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
-   VITE_FIREBASE_PROJECT_ID=your_project_id
-   VITE_FIREBASE_STORAGE_BUCKET=your_project.firebasestorage.app
-   VITE_FIREBASE_MESSAGING_SENDER_ID=your_messaging_sender_id
-   VITE_FIREBASE_APP_ID=your_app_id
-   ```
-
-4. **Настройте Google Cloud Console (OAuth для Sheets API):**
-
-   📝 **Подробная инструкция:** [БЫСТРОЕ-РЕШЕНИЕ-OAuth.md](./БЫСТРОЕ-РЕШЕНИЕ-OAuth.md)
-   
-   Кратко:
-   - Включите Google Sheets API в вашем проекте
-   - Настройте OAuth consent screen
-   - Добавьте scope: `https://www.googleapis.com/auth/spreadsheets`
-   - Добавьте себя как тестового пользователя (если режим Testing)
-
-5. **Настройте Google Sheets:**
-
-   - Создайте новую Google Sheets таблицу
-   - Скопируйте ID таблицы из URL
-   - При первом входе в систему введите ID таблицы в настройках
-   - Система автоматически создаст необходимые листы
-
-5. **Запустите проект:**
-   ```bash
-   npm run dev
-   ```
-
-   Приложение будет доступно по адресу: `http://localhost:3000`
-
-## 📦 Сборка для продакшена
-
-```bash
-npm run build
-```
-
-Собранные файлы будут в папке `dist/`
-
-## 🔐 Безопасность
-
-- Все конфиденциальные данные хранятся в переменных окружения
-- Аутентификация через Firebase Auth
-- Права доступа на уровне модулей (RBAC)
-- Токены доступа хранятся в localStorage (для production рекомендуется использовать httpOnly cookies)
-
-## 🎯 Основные функции
-
-### Управление складом
-- Учет товаров с характеристиками (тип, размеры, марка стали)
-- Отслеживание остатков и минимальных уровней
-- Расчет себестоимости (weighted average)
-- Поддержка разных единиц измерения (м, т, шт)
-
-### Продажи и касса
-- Оформление заказов с расчетом НДС
-- Поддержка разных методов оплаты (наличные, карта, перевод, долг)
-- Мультивалютность (USD/UZS)
-- Печать чеков
-- Возвраты товаров
-- Управление расходами
-
-### Закупки
-- Закупка у местных поставщиков
-- Импорт товаров с учетом накладных расходов
-- Расчет полной себестоимости (landed cost)
-- Управление долгами поставщикам
-
-### CRM
-- База клиентов с контактами
-- Отслеживание долгов клиентов
-- История покупок
-- Погашение долгов
-
-### Отчеты
-- Прибыль и убытки (P&L)
-- Движение денежных средств (Cash Flow)
-- Аналитика продаж
-- Экспорт в PDF
-
-## ⚡ Оптимизации
-
-- **Кэширование данных** - Данные из Google Sheets кэшируются на 2 минуты
-- **Lazy loading** - Компоненты загружаются по требованию
-- **Debounce** - Оптимизация поиска и фильтрации
-- **Мемоизация** - Использование useMemo для тяжелых вычислений
-
-## 🧪 Тестирование
-
-```bash
-# Запуск тестов (когда будут добавлены)
-npm test
-
-# Запуск тестов с покрытием
-npm run test:coverage
-```
-
-## 📝 Структура проекта
-
-```
-├── components/          # React компоненты
-│   ├── Dashboard.tsx
-│   ├── Sales.tsx
-│   ├── Inventory.tsx
-│   └── ...
-├── services/            # Сервисы для работы с API
-│   ├── sheetsService.ts
-│   ├── cacheService.ts
-│   └── ...
-├── contexts/            # React контексты
-│   ├── AuthContext.tsx
-│   └── ToastContext.tsx
-├── hooks/               # Кастомные хуки
-│   ├── useSheets.ts
-│   └── useDebounce.ts
-├── utils/               # Утилиты
-│   ├── errorHandler.ts
-│   └── validation.ts
-├── types.ts             # TypeScript типы
-└── lib/                 # Конфигурация библиотек
-    └── firebase.ts
-```
-
-## 🐛 Устранение неполадок
-
-### ❌ Ошибка: "Request had invalid authentication credentials"
-
-**Причина:** Не настроен OAuth 2.0 для доступа к Google Sheets API.
-
-**Решение:** 
-1. Следуйте инструкции: [БЫСТРОЕ-РЕШЕНИЕ-OAuth.md](./БЫСТРОЕ-РЕШЕНИЕ-OAuth.md)
-2. Настройте OAuth consent screen в Google Cloud Console
-3. Добавьте scope для Google Sheets API
-4. Войдите в приложение заново
-
-**Диагностика в консоли браузера (F12):**
-```javascript
-// Проверка токена
-window.authDiagnostics.logDiagnostics()
-
-// Тест доступа к Sheets
-window.authDiagnostics.testSheetsAccess('ваш_spreadsheet_id')
-```
-
-### 🔍 Другие проблемы
-
-- **Токен истек:** OAuth access token действует 1 час. Выйдите и войдите заново.
-- **ID token вместо access token:** Проверьте настройки OAuth consent screen (должен быть добавлен scope для Sheets)
-- **Popup заблокирован:** На мобильных устройствах автоматически используется redirect вместо popup
-
-## 🐛 Известные ограничения
-
-- OAuth access token нельзя обновить автоматически (требуется повторный вход каждый час)
-- Токены доступа хранятся в localStorage (для production рекомендуется httpOnly cookies)
-- Некоторые компоненты требуют рефакторинга для лучшей читаемости
-
-## 📄 Лицензия
-
-Private project
-
-## 👥 Авторы
-
-MetalMaster ERP Team
-
-## 🔗 Полезные ссылки
-
-- [Google Sheets API Documentation](https://developers.google.com/sheets/api)
-- [Firebase Documentation](https://firebase.google.com/docs)
-- [React Documentation](https://react.dev)
+Полнофункциональная ERP-система для управления металлоторговым бизнесом в Узбекистане.  
+React 19 + Firebase/Firestore, мультивалютность (USD/UZS), НДС 12%, RBAC.
 
 ---
 
-**Примечание:** Для работы системы требуется активное подключение к интернету и доступ к Google Sheets API.
+## Возможности
+
+| Модуль | Описание |
+|--------|----------|
+| **Dashboard** | Аналитика продаж, выручки, остатков в реальном времени |
+| **Складской учёт** | Товары, остатки, себестоимость (weighted average), NRV-проверка (IAS 2) |
+| **Касса / Продажи** | Оформление заказов, мульти-оплата, чек-печать, возвраты |
+| **Workflow** | Очередь заказов: Продажи → Касса → Выполнено / Отмена |
+| **Закупки / Импорт** | Локальные и импортные закупки, landed cost, накладные |
+| **CRM** | Клиенты, долги, история, заметки |
+| **Payroll** | Расчёт зарплаты, KPI-бонусы, авансы |
+| **Отчёты** | P&L, Cash Flow, VAT, аналитика продаж |
+| **Основные средства** | Учёт и амортизация (линейная) |
+| **Журнал** | Аудит-лог всех операций |
+| **Настройки** | Модули, курс, НДС, категории расходов, тема |
+
+---
+
+## Технологии
+
+| Слой | Стек |
+|------|------|
+| **Frontend** | React 19, TypeScript 5.8, Vite 6, TailwindCSS 4 |
+| **Backend/Data** | Firebase Firestore (прямой доступ из клиента, persistence + multi-tab) |
+| **Auth** | Firebase Auth — Google OAuth (browserLocalPersistence) |
+| **Monitoring** | Sentry (`@sentry/react`) — ошибки, replay, performance tracing |
+| **Testing** | Vitest (276+ unit/integration tests) |
+| **CI/CD** | GitHub Actions → type-check → vitest → build → GitHub Pages |
+| **UI** | Lucide React (иконки), Recharts (графики) |
+
+---
+
+## Быстрый старт
+
+### Требования
+
+- Node.js 18+
+- Firebase-проект с включённым Firestore и Authentication (Google sign-in)
+
+### Установка
+
+```bash
+git clone <repository-url>
+cd "Google ERP"
+npm install
+```
+
+### Настройка окружения
+
+Скопируйте шаблон и заполните значения:
+
+```bash
+cp .env.example .env.local
+```
+
+```env
+# Firebase (обязательно)
+VITE_FIREBASE_API_KEY=...
+VITE_FIREBASE_AUTH_DOMAIN=...
+VITE_FIREBASE_PROJECT_ID=...
+VITE_FIREBASE_STORAGE_BUCKET=...
+VITE_FIREBASE_MESSAGING_SENDER_ID=...
+VITE_FIREBASE_APP_ID=...
+
+# Sentry (опционально, только для production)
+VITE_SENTRY_DSN=https://xxx@sentry.io/yyy
+
+# Super-admin email addresses (через запятую)
+VITE_SUPER_ADMIN_EMAILS=admin@example.com
+```
+
+### Запуск
+
+```bash
+npm run dev          # Dev-сервер (http://localhost:5173)
+npm run build        # Production-сборка → dist/
+npm run preview      # Просмотр сборки
+```
+
+---
+
+## Тестирование
+
+```bash
+npm test             # Запуск Vitest (276+ тестов)
+npm run test:coverage # С отчётом покрытия
+```
+
+Тесты покрывают: сервисы (Firestore CRUD, атомарные операции), утилиты (финансовые калькуляции, валидация, integrity monitor), хуки.
+
+---
+
+## Архитектура
+
+```
+├── App.tsx                  # Главная оболочка (routing, permissions, lazy-load)
+├── components/
+│   ├── Sales/               # Модуль продаж (18 файлов, SalesContext)
+│   ├── Procurement/         # Модуль закупок
+│   ├── CRM/                 # CRM модуль
+│   ├── Workflow/            # Workflow модуль
+│   ├── Settings/            # Настройки
+│   ├── Import/              # Импорт товаров
+│   ├── AppSidebar.tsx       # Config-driven sidebar
+│   ├── AppHeader.tsx        # Dynamic header
+│   └── ...                  # Dashboard, Inventory, Balance, etc.
+├── contexts/
+│   ├── AuthContext.tsx       # Firebase Auth provider
+│   ├── ThemeContext.tsx      # Light/dark theme
+│   ├── ToastContext.tsx      # Toast notifications
+│   ├── SalesContext.tsx      # Sales data/handlers (eliminates prop drilling)
+│   └── CurrentEmployeeContext.tsx  # Current employee + field permissions
+├── hooks/
+│   ├── useAppData.ts        # Aggregate hook (14 data hooks + handlers)
+│   ├── useOrders.ts         # Orders CRUD + real-time + pagination
+│   ├── useTransactions.ts   # Transactions CRUD + real-time + pagination
+│   ├── useJournal.ts        # Journal events + pagination
+│   └── ...                  # useProducts, useClients, useEmployees, etc.
+├── services/
+│   ├── orderService.ts      # Firestore CRUD + pagination + soft delete
+│   ├── transactionService.ts # Atomic TOCTOU-safe CRUD
+│   ├── productService.ts    # Optimistic locking (_version)
+│   ├── salesAtomicService.ts # Atomic sale completion
+│   └── ...                  # purchaseService, clientService, etc.
+├── utils/
+│   ├── integrityMonitor.ts  # Data integrity checks (17+ checks)
+│   ├── validation.ts        # Financial validators + sanitizers
+│   ├── logger.ts            # Pluggable logger → Sentry
+│   ├── finance.ts           # Currency formatting, totals
+│   └── ...
+├── config/
+│   └── navigation.tsx       # Sidebar items, header titles
+├── lib/
+│   ├── firebase.ts          # Firebase init + persistence
+│   └── sentry.ts            # Sentry init + user identification
+├── types/
+│   ├── staff.ts             # Employee, UserRole, RBAC permissions
+│   ├── commerce.ts          # Order, Transaction, Purchase
+│   ├── assets.ts            # FixedAsset
+│   ├── common.ts            # Versionable, soft-delete fields
+│   └── index.ts             # Re-exports
+└── types.ts                 # Legacy types (re-exports + AppSettings)
+```
+
+### Ключевые архитектурные решения
+
+- **No backend**: Весь доступ к Firestore напрямую из клиента. Безопасность — через Firestore Security Rules + клиентский RBAC.
+- **Soft delete**: Удалённые записи помечаются `_deleted: true`, а не стираются физически. Позволяет восстановление и аудит.
+- **Optimistic locking**: `_version` на products/transactions — `runTransaction` проверяет версию перед записью.
+- **Pagination**: Заказы, транзакции, журнал — первые 500 записей real-time через `onSnapshot`, остальные подгружаются страницами через `getPage()`.
+- **Context-driven permissions**: `CurrentEmployeeContext` предоставляет `can('canViewCostPrice')` и `can('canViewSalary')` для field-level access control.
+
+---
+
+## Безопасность и RBAC
+
+### Роли
+
+| Роль | Описание |
+|------|----------|
+| `admin` | Полный доступ ко всем модулям |
+| `manager` | Продажи, закупки, CRM, отчёты |
+| `accountant` | Касса, финансы, отчёты |
+| `sales` | Продажи, workflow |
+| `warehouse` | Склад |
+
+### Права доступа
+
+- **Модульные**: dashboard, inventory, sales, workflow, reports, balance, crm, staff, journal, priceList, fixedAssets, import
+- **Гранулярные**: `canViewCostPrice`, `canViewSalary`, `canProcessReturns`, `canEditProducts`, `canDeleteOrders`, `canManageUsers`
+- **Super Admin**: email в `VITE_SUPER_ADMIN_EMAILS` или `role === 'admin'` — bypass всех проверок
+
+---
+
+## Firestore Structure
+
+```
+/products/{id}        — Product (name, type, quantity, costPrice, pricePerUnit, _version)
+/orders/{id}          — Order (date, items, paymentMethod, totalAmount, _deleted)
+/transactions/{id}    — Transaction (type, amount, clientId, _version, _deleted)
+/clients/{id}         — Client (name, debt, phone)
+/purchases/{id}       — Purchase (items, overheads, status, _version)
+/employees/{id}       — Employee (name, role, permissions, salary, status)
+/workflowOrders/{id}  — WorkflowOrder (status, paymentStatus, items)
+/journalEvents/{id}   — JournalEvent (type, module, action, employeeName)
+/fixedAssets/{id}      — FixedAsset (name, cost, depreciation)
+/expenses/{id}        — Expense (category, amount, method)
+/settings/main        — AppSettings (exchangeRate, vatRate, modules, theme)
+/notes/{id}           — Note (title, content)
+```
+
+---
+
+## CI/CD
+
+GitHub Actions workflow (`.github/workflows/deploy.yml`):
+
+1. `npm ci`
+2. `npx tsc --noEmit` (type check)
+3. `npx vitest run` (unit tests)
+4. `npm run build`
+5. Deploy dist/ → GitHub Pages
+
+---
+
+## Лицензия
+
+Private project
+
+## Авторы
+
+MetalMaster ERP Team

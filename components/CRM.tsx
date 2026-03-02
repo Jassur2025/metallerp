@@ -90,8 +90,7 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
 
     // Check if current user is admin
     const isAdmin = currentUser?.email && (
-        SUPER_ADMIN_EMAILS.includes(currentUser.email.toLowerCase()) ||
-        currentUser.email.toLowerCase() === 'jassurgme@gmail.com'
+        SUPER_ADMIN_EMAILS.includes(currentUser.email.toLowerCase())
     );
     
     const handleCheckPhones = () => {

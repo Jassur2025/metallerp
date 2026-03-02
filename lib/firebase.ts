@@ -20,8 +20,12 @@ import {
   runTransaction,
   Timestamp,
   serverTimestamp,
-  limit
+  limit,
+  startAfter,
+  getCountFromServer,
+  DocumentSnapshot
 } from "firebase/firestore";
+import { getFunctions, httpsCallable, connectFunctionsEmulator } from "firebase/functions";
 
 // Get environment variables - use fallback if not set
 const getEnvVar = (key: string, fallback?: string): string => {
@@ -71,8 +75,21 @@ export {
   runTransaction,
   Timestamp,
   serverTimestamp,
-  limit
+  limit,
+  startAfter,
+  getCountFromServer,
+  DocumentSnapshot
 };
+
+// Initialize Cloud Functions
+export const functions = getFunctions(app, 'europe-west1');
+
+// Connect to emulator in development
+if (import.meta.env.DEV && import.meta.env.VITE_USE_FUNCTIONS_EMULATOR === 'true') {
+  connectFunctionsEmulator(functions, 'localhost', 5001);
+}
+
+export { httpsCallable };
 
 // Устанавливаем persistence для мобильных устройств
 setPersistence(auth, browserLocalPersistence).catch((error) => {

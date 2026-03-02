@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, signInWithPopup, signOut, onAuthStateChanged, signInWithRedirect, getRedirectResult } from 'firebase/auth';
 import { auth, googleProvider } from '../lib/firebase';
 import { logger } from '../utils/logger';
+import { setSentryUser } from '../lib/sentry';
 
 const logDev = (message: string, ...data: unknown[]) => logger.debug('Auth', message, ...data);
 const warnDev = (message: string, ...data: unknown[]) => logger.warn('Auth', message, ...data);
@@ -16,11 +17,50 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+/**
+ * Check for E2E test mock user.
+ * In E2E mode (VITE_E2E_TEST=true), the test injects a mock user via window/localStorage
+ * so we can bypass Google OAuth entirely.
+ * 
+ * SECURITY: This is stripped from production builds via the import.meta.env check.
+ * Even if somehow enabled, mock users cannot pass Firestore security rules
+ * (which check real request.auth tokens).
+ */
+function getE2EMockUser(): User | null {
+    // Double guard: never allow in production mode
+    if (import.meta.env.PROD) return null;
+    if (import.meta.env.VITE_E2E_TEST !== 'true') return null;
+    
+    try {
+        const injected = (window as any).__E2E_AUTH_USER__;
+        if (injected) return injected as User;
+        
+        const stored = localStorage.getItem('e2e_auth_user');
+        if (stored) {
+            const parsed = JSON.parse(stored);
+            (window as any).__E2E_AUTH_USER__ = parsed;
+            return parsed as User;
+        }
+    } catch {
+        // ignore
+    }
+    return null;
+}
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
+        // E2E test mode — use mock user, skip Firebase auth entirely
+        const e2eUser = getE2EMockUser();
+        if (e2eUser) {
+            logDev('🧪 E2E mode: using mock user', e2eUser.email);
+            setUser(e2eUser);
+            setLoading(false);
+            return;
+        }
+
         let isProcessingRedirect = false;
         
         // Таймаут для безопасности - если за 10 секунд не загрузилось, останавливаем loading
@@ -59,6 +99,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
             logDev('👤 Auth state changed:', currentUser?.email || 'не авторизован');
             setUser(currentUser);
+            setSentryUser(currentUser?.email ?? null, currentUser?.displayName);
             
             clearTimeout(loadingTimeout);
             setLoading(false);

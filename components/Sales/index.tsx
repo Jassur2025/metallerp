@@ -5,11 +5,12 @@ import { useToast } from '../../contexts/ToastContext';
 import { useTheme, getThemeClasses } from '../../contexts/ThemeContext';
 import { SUPER_ADMIN_EMAILS } from '../../constants';
 import { useAuth } from '../../contexts/AuthContext';
+import { useSalesContext } from '../../contexts/SalesContext';
 import { IdGenerator } from '../../utils/idGenerator';
 
 
 // Sub-components
-import { SalesProps, Balances, FlyingItem, SalesMode, PaymentMethod, Currency } from './types';
+import { Balances, FlyingItem, SalesMode, PaymentMethod, Currency } from './types';
 import { FlyingIcon } from './FlyingIcon';
 import { BalanceBar } from './BalanceBar';
 import { ProductGrid } from './ProductGrid';
@@ -26,7 +27,9 @@ import { OrderEditModal } from './OrderEditModal';
 import { SalesTransactionsView } from './SalesTransactionsView';
 import { AuditAlert } from './AuditAlert';
 import { calculateBaseTotals, num, getSafeRate } from '../../utils/finance';
+import { escapeHtml } from '../../utils/escapeHtml';
 import { findOrCreateClient } from '../../services/clientService';
+import { salesAtomicService } from '../../services/salesAtomicService';
 import { CancelWorkflowModal } from '../CancelWorkflowModal';
 
 import { logger } from '../../utils/logger';
@@ -35,13 +38,14 @@ import { getMissingItems } from '../../utils/inventoryHelpers';
 const isDev = import.meta.env.DEV;
 const errorDev = (...args: unknown[]) => { if (isDev) logger.error('Sales', String(args[0]), ...args.slice(1)); };
 
-export const Sales: React.FC<SalesProps> = ({
-  products, orders, setOrders, settings, setSettings, expenses,
-  employees, onNavigateToStaff, clients, onSaveClients, transactions,
-  workflowOrders, onSaveWorkflowOrders, currentUserEmail, onNavigateToProcurement,
-  onSaveOrders, onSaveTransactions, onSaveProducts, onSaveExpenses, onAddExpense, onAddJournalEvent,
-  onDeleteTransaction, onDeleteExpense
-}) => {
+export const Sales: React.FC = () => {
+  const {
+    products, orders, setOrders, settings, setSettings, expenses,
+    employees, onNavigateToStaff, clients, onSaveClients, transactions,
+    workflowOrders, onSaveWorkflowOrders, currentUserEmail, onNavigateToProcurement,
+    onSaveOrders, onSaveTransactions, onSaveProducts, onSaveExpenses, onAddExpense, onAddJournalEvent,
+    onDeleteTransaction, onDeleteExpense
+  } = useSalesContext();
   const { user } = useAuth();
   const toast = useToast();
   const { theme } = useTheme();
@@ -218,125 +222,110 @@ export const Sales: React.FC<SalesProps> = ({
     const wf = selectedWorkflowOrder;
     if (!wf) return;
 
-    const { cashUSD, cashUZS, cardUZS, bankUZS, isPaid, remainingUSD } = dist;
+    try {
+      const { cashUSD, cashUZS, cardUZS, bankUZS, isPaid, remainingUSD } = dist;
 
-    // Determine overall status
-    let paymentStatus: 'paid' | 'unpaid' | 'partial' = isPaid ? 'paid' : 'partial';
-    // If absolutely nothing paid, it's unpaid (debt).
-    if (cashUSD + cashUZS + cardUZS + bankUZS === 0) paymentStatus = 'unpaid';
+      // Determine overall status
+      let paymentStatus: 'paid' | 'unpaid' | 'partial' = isPaid ? 'paid' : 'partial';
+      // If absolutely nothing paid, it's unpaid (debt).
+      if (cashUSD + cashUZS + cardUZS + bankUZS === 0) paymentStatus = 'unpaid';
 
-    // Total Paid in USD (for reference, though transactions track real movement)
-    const totalPaidUSD = cashUSD + (cashUZS / (wf.exchangeRate || exchangeRate)) + (cardUZS / (wf.exchangeRate || exchangeRate)) + (bankUZS / (wf.exchangeRate || exchangeRate));
+      // Total Paid in USD (for reference, though transactions track real movement)
+      const totalPaidUSD = cashUSD + (cashUZS / (wf.exchangeRate || exchangeRate)) + (cardUZS / (wf.exchangeRate || exchangeRate)) + (bankUZS / (wf.exchangeRate || exchangeRate));
 
-    // Payment Method is 'mixed' if multiple used, otherwise specific?
-    // User requested "Partially this, partially that". "Mixed" is safest bucket.
-    const paymentMethod: PaymentMethod = 'mixed';
+      // Payment Method is 'mixed' if multiple used, otherwise specific?
+      // User requested "Partially this, partially that". "Mixed" is safest bucket.
+      const paymentMethod: PaymentMethod = 'mixed';
 
-    // Generate report number for workflow orders
-    const reportNo = getNextReportNo();
+      // Generate report number for workflow orders
+      const reportNo = getNextReportNo();
 
-    const newOrder: Order = {
-      id: IdGenerator.order(),
-      reportNo, // Sequential report number
-      date: new Date().toISOString(),
-      customerName: wf.customerName,
-      sellerId: wf.sellerId, // Employee ID for KPI
-      sellerName: wf.sellerName || wf.createdBy || 'Sales',
-      items: wf.items,
-      subtotalAmount: wf.subtotalAmount,
-      vatRateSnapshot: wf.vatRateSnapshot,
-      vatAmount: wf.vatAmount,
-      totalAmount: wf.totalAmount,
-      exchangeRate: wf.exchangeRate,
-      totalAmountUZS: wf.totalAmountUZS,
-      status: 'completed',
-      paymentMethod: paymentMethod,
-      paymentStatus: paymentStatus,
-      amountPaid: totalPaidUSD,
-      paymentCurrency: 'USD' // Default reference
-    };
+      const newOrder: Order = {
+        id: IdGenerator.order(),
+        reportNo, // Sequential report number
+        date: new Date().toISOString(),
+        customerName: wf.customerName,
+        sellerId: wf.sellerId, // Employee ID for KPI
+        sellerName: wf.sellerName || wf.createdBy || 'Sales',
+        items: wf.items,
+        subtotalAmount: wf.subtotalAmount,
+        vatRateSnapshot: wf.vatRateSnapshot,
+        vatAmount: wf.vatAmount,
+        totalAmount: wf.totalAmount,
+        exchangeRate: wf.exchangeRate,
+        totalAmountUZS: wf.totalAmountUZS,
+        status: 'completed',
+        paymentMethod: paymentMethod,
+        paymentStatus: paymentStatus,
+        amountPaid: totalPaidUSD,
+        paymentCurrency: 'USD' // Default reference
+      };
 
-    const updatedProducts = products.map(p => {
-      const it = wf.items.find((i: OrderItem) => i.productId === p.id);
-      return it ? { ...p, quantity: p.quantity - it.quantity } : p;
-    });
-    // CRITICAL: Save to Sheets FIRST, then update state
-    await onSaveProducts?.(updatedProducts);
+      // Update client (create if missing)
+      const { client: foundClient } = findOrCreateClient(
+        clients, wf.customerName, wf.customerPhone || '', 'Автоматически создан из Workflow'
+      );
+      const clientId = foundClient.id;
 
-    // Update client (create if missing)
-    const { client: foundClient, index: idx, clients: nextClients } = findOrCreateClient(
-      clients, wf.customerName, wf.customerPhone || '', 'Автоматически создан из Workflow'
-    );
-    const clientId = foundClient.id;
+      // Add clientId to order
+      const newOrderWithClient: Order = {
+        ...newOrder,
+        clientId
+      };
 
-    // Add clientId to order
-    const newOrderWithClient: Order = {
-      ...newOrder,
-      clientId
-    };
+      // Create Transactions for EACH payment part
+      const newTrx: Transaction[] = [];
+      const baseTrx = {
+        id: '', date: new Date().toISOString(), type: 'client_payment' as const,
+        description: `Оплата заказа ${newOrder.id} (Workflow)`, relatedId: clientId, orderId: newOrder.id
+      };
 
-    nextClients[idx] = {
-      ...nextClients[idx],
-      totalPurchases: (nextClients[idx].totalPurchases || 0) + (wf.totalAmount || 0)
-    };
-    onSaveClients(nextClients);
+      if (cashUSD > 0) newTrx.push({ ...baseTrx, id: IdGenerator.transaction(), amount: cashUSD, currency: 'USD', method: 'cash' });
+      if (cashUZS > 0) newTrx.push({ ...baseTrx, id: IdGenerator.transaction(), amount: cashUZS, currency: 'UZS', method: 'cash' });
+      if (cardUZS > 0) newTrx.push({ ...baseTrx, id: IdGenerator.transaction(), amount: cardUZS, currency: 'UZS', method: 'card' });
+      if (bankUZS > 0) newTrx.push({ ...baseTrx, id: IdGenerator.transaction(), amount: bankUZS, currency: 'UZS', method: 'bank' });
 
-    // Create Transactions for EACH payment part
-    const newTrx: Transaction[] = [];
-    const baseTrx = {
-      id: '', date: new Date().toISOString(), type: 'client_payment' as const,
-      description: `Оплата заказа ${newOrder.id} (Workflow)`, relatedId: clientId, orderId: newOrder.id
-    };
+      if (remainingUSD > 0.05) {
+        newTrx.push({
+          ...baseTrx, id: IdGenerator.transaction(), type: 'debt_obligation', amount: remainingUSD, currency: 'USD', method: 'debt',
+          description: `Долг по заказу ${newOrder.id}`, orderId: newOrder.id
+        });
+      }
 
-    if (cashUSD > 0) newTrx.push({ ...baseTrx, id: IdGenerator.transaction(), amount: cashUSD, currency: 'USD', method: 'cash' });
-    if (cashUZS > 0) newTrx.push({ ...baseTrx, id: IdGenerator.transaction(), amount: cashUZS, currency: 'UZS', method: 'cash' });
-    if (cardUZS > 0) newTrx.push({ ...baseTrx, id: IdGenerator.transaction(), amount: cardUZS, currency: 'UZS', method: 'card' });
-    if (bankUZS > 0) newTrx.push({ ...baseTrx, id: IdGenerator.transaction(), amount: bankUZS, currency: 'UZS', method: 'bank' });
-
-    // If using transactions to track balance, these `client_payment`s will be summed up by `calculateBalance`.
-    // And since `paymentMethod` is 'mixed', `calculateBalance` will SKIP the order itself.
-
-    // Also record the "Debt Obligation" transaction if there is debt?
-    // "debt_obligation" is informational? Or used for balance?
-    // `calculateBalance` ignores `debt_obligation`. It's purely for ledger of "why debt increased".
-    if (remainingUSD > 0.05) {
-      newTrx.push({
-        ...baseTrx, id: IdGenerator.transaction(), type: 'debt_obligation', amount: remainingUSD, currency: 'USD', method: 'debt',
-        description: `Долг по заказу ${newOrder.id}`, orderId: newOrder.id
+      const convertedAt = new Date().toISOString();
+      await salesAtomicService.commitSale({
+        order: newOrderWithClient,
+        client: foundClient,
+        clientPurchaseDeltaUSD: wf.totalAmount || 0,
+        transactions: newTrx,
+        workflowOrderId: wf.id,
+        workflowConvertedAt: convertedAt
       });
+
+      const updatedOrders = [newOrderWithClient, ...orders];
+      setOrders(updatedOrders);
+
+      await onAddJournalEvent?.({
+        id: IdGenerator.journal(),
+        date: new Date().toISOString(),
+        type: 'employee_action',
+        employeeName: currentEmployee?.name || 'Кассир',
+        action: 'Workflow подтвержден (Смешанная оплата)',
+        description: `Заказ ${newOrderWithClient.id}. Оплачено: $${totalPaidUSD.toFixed(2)}. Долг: $${remainingUSD.toFixed(2)}.`,
+        module: 'sales',
+        relatedType: 'workflow',
+        relatedId: wf.id,
+        metadata: { convertedTo: newOrderWithClient.id }
+      });
+
+      toast.success('Workflow подтвержден!');
+      setMode('sale');
+      setWorkflowPaymentModalOpen(false);
+      setSelectedWorkflowOrder(null);
+    } catch (error) {
+      errorDev('confirmWorkflowPayment failed:', error);
+      toast.error('Ошибка при подтверждении workflow! Попробуйте снова.');
     }
-
-    const updatedTx = [...transactions, ...newTrx];
-    // CRITICAL: Save to Sheets FIRST, then update state
-    await onSaveTransactions?.(updatedTx);
-
-    const updatedOrders = [newOrderWithClient, ...orders];
-    // CRITICAL: Save to Sheets FIRST, then update state
-    await onSaveOrders?.(updatedOrders);
-    setOrders(updatedOrders);
-
-    const nextWorkflow = workflowOrders.map(o =>
-      o.id === wf.id ? { ...o, status: 'completed' as const, convertedToOrderId: newOrderWithClient.id, convertedAt: new Date().toISOString() } : o
-    );
-    await onSaveWorkflowOrders(nextWorkflow);
-
-    await onAddJournalEvent?.({
-      id: IdGenerator.journal(),
-      date: new Date().toISOString(),
-      type: 'employee_action',
-      employeeName: currentEmployee?.name || 'Кассир',
-      action: 'Workflow подтвержден (Смешанная оплата)',
-      description: `Заказ ${newOrderWithClient.id}. Оплачено: $${totalPaidUSD.toFixed(2)}. Долг: $${remainingUSD.toFixed(2)}.`,
-      module: 'sales',
-      relatedType: 'workflow',
-      relatedId: wf.id,
-      metadata: { convertedTo: newOrderWithClient.id }
-    });
-
-    toast.success('Workflow подтвержден!');
-    setMode('sale');
-    setWorkflowPaymentModalOpen(false);
-    setSelectedWorkflowOrder(null);
   };
 
   // --- Cancel Workflow Order ---
@@ -492,15 +481,8 @@ export const Sales: React.FC<SalesProps> = ({
     };
 
     try {
-      // Update products
-      const updatedProducts = products.map(p => {
-        const cartItem = cart.find(item => item.productId === p.id);
-        return cartItem ? { ...p, quantity: p.quantity - cartItem.quantity } : p;
-      });
-      await onSaveProducts?.(updatedProducts);
-
       // Update/Create Client
-      const { client: foundClient, index: clientIndex, clients: currentClients } = findOrCreateClient(
+      const { client: foundClient } = findOrCreateClient(
         clients, customerName, '', 'Автоматически создан при продаже'
       );
       const clientId = foundClient.id;
@@ -510,13 +492,6 @@ export const Sales: React.FC<SalesProps> = ({
         ...newOrder,
         clientId
       };
-
-      // Update Client stats. Debt is updated via debt transactions only.
-      currentClients[clientIndex] = {
-        ...currentClients[clientIndex],
-        totalPurchases: (currentClients[clientIndex].totalPurchases || 0) + totalAmountUSD
-      };
-      await onSaveClients(currentClients);
 
       // Create Transactions
       const newTrx: Transaction[] = [];
@@ -540,12 +515,14 @@ export const Sales: React.FC<SalesProps> = ({
         });
       }
 
-      const updatedTransactions = [...transactions, ...newTrx];
-      await onSaveTransactions?.(updatedTransactions);
+      await salesAtomicService.commitSale({
+        order: newOrderWithClient,
+        client: foundClient,
+        clientPurchaseDeltaUSD: totalAmountUSD,
+        transactions: newTrx
+      });
 
-      // Save order
       const updatedOrders = [newOrderWithClient, ...orders];
-      await onSaveOrders?.(updatedOrders);
       setOrders(updatedOrders);
 
       // Clear form
@@ -632,11 +609,11 @@ export const Sales: React.FC<SalesProps> = ({
         <div style="margin-bottom: 15px; font-size: 12px;">
           <p style="margin: 3px 0;"><strong>Заказ:</strong> ${order.id}</p>
           <p style="margin: 3px 0;"><strong>Дата:</strong> ${new Date(order.date).toLocaleString('ru-RU')}</p>
-          <p style="margin: 3px 0;"><strong>Клиент:</strong> ${order.customerName}</p>
-          <p style="margin: 3px 0;"><strong>Продавец:</strong> ${order.sellerName}</p>
+          <p style="margin: 3px 0;"><strong>Клиент:</strong> ${escapeHtml(order.customerName)}</p>
+          <p style="margin: 3px 0;"><strong>Продавец:</strong> ${escapeHtml(order.sellerName)}</p>
         </div>
         <div style="border-top: 1px solid #ccc; border-bottom: 1px solid #ccc; padding: 10px 0; margin: 15px 0;">
-          ${order.items.map(item => `<div style="margin-bottom: 8px;"><div style="display: flex; justify-content: space-between;"><span style="font-weight: bold;">${item.productName}</span><span>${(item.total * order.exchangeRate).toLocaleString()} сўм</span></div><div style="font-size: 11px; color: #666;">${item.quantity} ${item.unit} × ${(item.priceAtSale * order.exchangeRate).toLocaleString()} сўм</div></div>`).join('')}
+          ${order.items.map(item => `<div style="margin-bottom: 8px;"><div style="display: flex; justify-content: space-between;"><span style="font-weight: bold;">${escapeHtml(item.productName)}</span><span>${(item.total * order.exchangeRate).toLocaleString()} сўм</span></div><div style="font-size: 11px; color: #666;">${item.quantity} ${item.unit} × ${(item.priceAtSale * order.exchangeRate).toLocaleString()} сўм</div></div>`).join('')}
         </div>
         <div style="margin-bottom: 10px; font-size: 12px;">
           <div style="display: flex; justify-content: space-between;"><span>Подытог:</span><span>${(order.subtotalAmount * order.exchangeRate).toLocaleString()} сўм</span></div>

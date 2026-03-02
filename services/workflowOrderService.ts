@@ -4,15 +4,17 @@
 
 import {
     db,
+    auth,
     collection,
     doc,
     getDocs,
     setDoc,
-    deleteDoc,
+    updateDoc,
     onSnapshot,
     Timestamp,
     query,
     orderBy,
+    where,
     limit,
     runTransaction
 } from '../lib/firebase';
@@ -42,7 +44,7 @@ export const workflowOrderService = {
      */
     async getAll(): Promise<WorkflowOrder[]> {
         try {
-            const q = query(collection(db, COLLECTION_NAME), orderBy('date', 'desc'), limit(500));
+            const q = query(collection(db, COLLECTION_NAME), where('_deleted', '!=', true), orderBy('date', 'desc'), limit(500));
             const querySnapshot = await getDocs(q);
             return querySnapshot.docs.map(fromFirestore);
         } catch (error) {
@@ -117,13 +119,18 @@ export const workflowOrderService = {
     },
 
     /**
-     * Delete workflow order
+     * Soft-delete workflow order (sets _deleted flag instead of physical removal)
      */
     async delete(id: string): Promise<void> {
         try {
-            await deleteDoc(doc(db, COLLECTION_NAME, id));
+            await updateDoc(doc(db, COLLECTION_NAME, id), {
+                _deleted: true,
+                _deletedAt: new Date().toISOString(),
+                _deletedBy: auth.currentUser?.uid || 'unknown',
+                updatedAt: Timestamp.now()
+            });
         } catch (error) {
-            logger.error('WorkflowOrderService', 'Error deleting workflow order:', error);
+            logger.error('WorkflowOrderService', 'Error soft-deleting workflow order:', error);
             throw error;
         }
     },
@@ -158,7 +165,7 @@ export const workflowOrderService = {
     subscribe(callback: (orders: WorkflowOrder[]) => void): () => void {
         const q = query(collection(db, COLLECTION_NAME), orderBy('date', 'desc'), limit(500));
         const unsubscribe = onSnapshot(q, (snapshot) => {
-            const orders = snapshot.docs.map(fromFirestore);
+            const orders = snapshot.docs.map(fromFirestore).filter(o => !o._deleted);
             callback(orders);
         }, (error) => {
             logger.error('WorkflowOrderService', 'Error subscribing to workflow orders:', error);

@@ -1,9 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Transaction } from '../types';
 import { transactionService } from '../services/transactionService';
 import { useToast } from '../contexts/ToastContext';
 import { DEFAULT_EXCHANGE_RATE } from '../constants';
 import { logger } from '../utils/logger';
+
+const PAGE_SIZE = 100;
 
 interface UseTransactionsOptions {
     realtime?: boolean;
@@ -22,7 +24,10 @@ interface UseTransactionsReturn {
         totalIncome: number;
         totalExpenses: number;
         balance: number;
-    }
+    };
+    hasMore: boolean;
+    loadMore: () => Promise<void>;
+    loadingMore: boolean;
 }
 
 export const useTransactions = (options: UseTransactionsOptions = {}): UseTransactionsReturn => {
@@ -32,6 +37,11 @@ export const useTransactions = (options: UseTransactionsOptions = {}): UseTransa
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+
+    // Pagination state
+    const [olderItems, setOlderItems] = useState<Transaction[]>([]);
+    const [hasMore, setHasMore] = useState(false);
+    const [loadingMore, setLoadingMore] = useState(false);
 
     // Derived stats (simple calc)
     const stats = {
@@ -67,6 +77,7 @@ export const useTransactions = (options: UseTransactionsOptions = {}): UseTransa
             setLoading(true);
             const unsubscribe = transactionService.subscribe((data) => {
                 setTransactions(data);
+                setHasMore(data.length >= 500);
                 setLoading(false);
                 setError(null);
             });
@@ -123,14 +134,46 @@ export const useTransactions = (options: UseTransactionsOptions = {}): UseTransa
         }
     }, [realtime, toast]);
 
+    // Load older page
+    const loadMore = useCallback(async () => {
+        const all = [...transactions, ...olderItems];
+        const lastDate = all.at(-1)?.date;
+        if (!lastDate || loadingMore) return;
+        setLoadingMore(true);
+        try {
+            const page = await transactionService.getPage(lastDate, PAGE_SIZE);
+            setOlderItems(prev => {
+                const existingIds = new Set(prev.map(t => t.id));
+                const unique = page.items.filter(t => !existingIds.has(t.id));
+                return [...prev, ...unique];
+            });
+            setHasMore(page.hasMore);
+        } catch (err) {
+            logger.error('useTransactions', 'Error loading more:', err);
+        } finally {
+            setLoadingMore(false);
+        }
+    }, [transactions, olderItems, loadingMore]);
+
+    // Merge real-time head + older pages
+    const allTransactions = useMemo(() => {
+        if (olderItems.length === 0) return transactions;
+        const realtimeIds = new Set(transactions.map(t => t.id));
+        const tail = olderItems.filter(t => !realtimeIds.has(t.id));
+        return [...transactions, ...tail];
+    }, [transactions, olderItems]);
+
     return {
-        transactions,
+        transactions: allTransactions,
         loading,
         error,
         addTransaction,
         updateTransaction,
         deleteTransaction,
         refreshTransactions: loadTransactions,
-        stats
+        stats,
+        hasMore,
+        loadMore,
+        loadingMore,
     };
 };

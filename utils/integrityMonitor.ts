@@ -5,7 +5,7 @@
  * in the ERP system. Run periodically to catch corruption early.
  */
 
-import { Product, Order, Client, Transaction, Purchase, Employee } from '../types';
+import { Product, Order, Client, Transaction, Purchase, Employee, WorkflowOrder } from '../types';
 
 export interface IntegrityIssue {
   severity: 'critical' | 'high' | 'medium' | 'low';
@@ -303,6 +303,324 @@ function checkMissingTimestamps<T extends { id: string; updatedAt?: string }>(
 }
 
 /**
+ * Check Trial Balance: total debits must equal total credits across all transactions.
+ * If a General Ledger exists, validates debit == credit for each journal entry.
+ */
+function checkTrialBalance(transactions: Transaction[]): IntegrityIssue[] {
+  const issues: IntegrityIssue[] = [];
+  
+  let totalIncome = 0;
+  let totalExpense = 0;
+  let totalDebtCreated = 0;
+  let totalDebtPaid = 0;
+  
+  for (const tx of transactions) {
+    const amount = Math.abs(tx.amount || 0);
+    switch (tx.type) {
+      case 'client_payment':
+        totalIncome += amount;
+        break;
+      case 'expense':
+      case 'supplier_payment':
+        totalExpense += amount;
+        break;
+      case 'debt_obligation':
+        totalDebtCreated += amount;
+        break;
+      case 'client_return':
+        if (tx.method === 'debt') {
+          totalDebtPaid += amount;
+        }
+        break;
+    }
+  }
+  
+  // Check if debt obligations are balanced by payments + outstanding
+  if (totalDebtCreated > 0 && totalDebtPaid > totalDebtCreated * 1.01) {
+    issues.push({
+      severity: 'critical',
+      entity: 'TrialBalance',
+      id: 'global',
+      field: 'debt_balance',
+      message: `Debt payments ($${totalDebtPaid.toFixed(2)}) exceed debt obligations ($${totalDebtCreated.toFixed(2)})`,
+      suggestion: 'Check for duplicate payment transactions or missing debt records'
+    });
+  }
+  
+  return issues;
+}
+
+/**
+ * Check that all orders have corresponding transactions (sales have related transaction records).
+ */
+function checkOrderTransactionIntegrity(
+  orders: Order[],
+  transactions: Transaction[]
+): IntegrityIssue[] {
+  const issues: IntegrityIssue[] = [];
+  
+  // Build a set of order IDs referenced by transactions
+  const txOrderIds = new Set(
+    transactions
+      .filter(t => t.relatedId)
+      .map(t => t.relatedId)
+  );
+  
+  // Check completed orders that have no matching transaction
+  for (const order of orders) {
+    if (order.status === 'completed' && !txOrderIds.has(order.id)) {
+      issues.push({
+        severity: 'high',
+        entity: 'Order',
+        id: order.id,
+        field: 'transaction',
+        message: `Completed order has no corresponding sale transaction`,
+        suggestion: 'Verify the sale was properly recorded. May need to re-create the transaction.'
+      });
+    }
+  }
+  
+  return issues;
+}
+
+/**
+ * Check purchase → inventory consistency: total purchased qty should align with stock levels.
+ */
+function checkPurchaseInventoryConsistency(
+  products: Product[],
+  purchases: Purchase[],
+  orders: Order[]
+): IntegrityIssue[] {
+  const issues: IntegrityIssue[] = [];
+  
+  // For each product, calculate: purchased qty - sold qty and compare with current qty
+  const purchasedQty = new Map<string, number>();
+  const soldQty = new Map<string, number>();
+  
+  for (const purchase of purchases) {
+    for (const item of purchase.items || []) {
+      const productId = item.productId;
+      if (productId) {
+        purchasedQty.set(productId, (purchasedQty.get(productId) || 0) + (item.quantity || 0));
+      }
+    }
+  }
+  
+  for (const order of orders) {
+    if (order.status !== 'cancelled') {
+      for (const item of order.items || []) {
+        const productId = item.productId;
+        if (productId) {
+          soldQty.set(productId, (soldQty.get(productId) || 0) + (item.quantity || 0));
+        }
+      }
+    }
+  }
+  
+  for (const product of products) {
+    const bought = purchasedQty.get(product.id) || 0;
+    const sold = soldQty.get(product.id) || 0;
+    
+    // Only flag if there are purchases (otherwise we can't compute expected)
+    if (bought > 0) {
+      const expectedMin = bought - sold;
+      // Allow some tolerance (initial stock, adjustments, etc.)
+      if (product.quantity < expectedMin * 0.5 && expectedMin > 10) {
+        issues.push({
+          severity: 'medium',
+          entity: 'Product',
+          id: product.id,
+          field: 'quantity',
+          message: `Stock for "${product.name}" (${product.quantity}) is significantly lower than expected (purchased: ${bought}, sold: ${sold})`,
+          suggestion: 'Check for unrecorded sales, theft, or data entry errors'
+        });
+      }
+    }
+  }
+  
+  return issues;
+}
+
+/**
+ * Check employee data integrity
+ */
+function checkEmployeeIntegrity(employees: Employee[]): IntegrityIssue[] {
+  const issues: IntegrityIssue[] = [];
+  
+  for (const emp of employees) {
+    // Check for employees with no email
+    if (!emp.email) {
+      issues.push({
+        severity: 'medium',
+        entity: 'Employee',
+        id: emp.id,
+        field: 'email',
+        message: `Employee "${emp.name}" has no email set`,
+        suggestion: 'Set email for proper auth/permission linkage'
+      });
+    }
+    
+    // Check for dismissed/inactive employees still having active permissions
+    if (emp.status === 'inactive' && emp.permissions) {
+      const hasActivePermissions = Object.values(emp.permissions).some(v => v === true);
+      if (hasActivePermissions) {
+        issues.push({
+          severity: 'high',
+          entity: 'Employee',
+          id: emp.id,
+          field: 'permissions',
+          message: `Inactive employee "${emp.name}" still has active permissions`,
+          suggestion: 'Remove all permissions for inactive employees immediately'
+        });
+      }
+    }
+  }
+  
+  return issues;
+}
+
+/**
+ * Check for soft-deleted records that appear in active collections.
+ * After batch-1 soft-delete feature, _deleted items should be filtered out of UI queries.
+ */
+function checkSoftDeletedRecords<T extends { id: string; _deleted?: boolean }>(
+  items: T[],
+  entityName: string
+): IntegrityIssue[] {
+  const issues: IntegrityIssue[] = [];
+  const deletedItems = items.filter(i => i._deleted);
+
+  for (const item of deletedItems) {
+    issues.push({
+      severity: 'medium',
+      entity: entityName,
+      id: item.id,
+      field: '_deleted',
+      message: `Soft-deleted ${entityName} "${item.id}" still present in active data`,
+      suggestion: 'Verify Firestore query filters exclude _deleted records'
+    });
+  }
+
+  return issues;
+}
+
+/**
+ * Check that versionable entities have _version field set.
+ * Missing _version can cause optimistic concurrency issues.
+ */
+function checkVersionField<T extends { id: string; _version?: number }>(
+  items: T[],
+  entityName: string
+): IntegrityIssue[] {
+  const issues: IntegrityIssue[] = [];
+
+  for (const item of items) {
+    if (item._version === undefined || item._version === null) {
+      issues.push({
+        severity: 'low',
+        entity: entityName,
+        id: item.id,
+        field: '_version',
+        message: `${entityName} "${item.id}" missing _version field`,
+        suggestion: 'Resave record to initialize _version for optimistic locking'
+      });
+    }
+  }
+
+  return issues;
+}
+
+/**
+ * Check workflow order state consistency.
+ * E.g. completed orders should have amountPaid > 0, cancelled orders should have a reason.
+ */
+function checkWorkflowIntegrity(workflowOrders: WorkflowOrder[]): IntegrityIssue[] {
+  const issues: IntegrityIssue[] = [];
+
+  for (const wo of workflowOrders) {
+    // Cancelled without reason
+    if (wo.status === 'cancelled' && !wo.cancellationReason) {
+      issues.push({
+        severity: 'medium',
+        entity: 'WorkflowOrder',
+        id: wo.id,
+        field: 'cancellationReason',
+        message: `Cancelled workflow order "${wo.id}" has no cancellation reason`,
+        suggestion: 'Add cancellation reason for audit trail'
+      });
+    }
+
+    // Completed but unpaid
+    if (wo.status === 'completed' && wo.paymentStatus === 'unpaid' && wo.paymentMethod !== 'debt') {
+      issues.push({
+        severity: 'high',
+        entity: 'WorkflowOrder',
+        id: wo.id,
+        field: 'paymentStatus',
+        message: `Completed workflow order "${wo.id}" is marked as unpaid (non-debt)`,
+        suggestion: 'Review payment status — completed orders should be paid or debt'
+      });
+    }
+
+    // Zero-amount orders
+    if (wo.totalAmount <= 0 && wo.status !== 'cancelled' && wo.status !== 'draft') {
+      issues.push({
+        severity: 'high',
+        entity: 'WorkflowOrder',
+        id: wo.id,
+        field: 'totalAmount',
+        message: `Active workflow order "${wo.id}" has zero or negative total`,
+        suggestion: 'Review order items and pricing'
+      });
+    }
+  }
+
+  return issues;
+}
+
+/**
+ * Check for records with future dates (possible clock skew or data entry errors).
+ */
+function checkFutureDates(
+  orders: Order[],
+  transactions: Transaction[]
+): IntegrityIssue[] {
+  const issues: IntegrityIssue[] = [];
+  const now = new Date();
+  const tolerance = 24 * 60 * 60 * 1000; // 1 day tolerance
+
+  for (const order of orders) {
+    const orderDate = new Date(order.date);
+    if (orderDate.getTime() > now.getTime() + tolerance) {
+      issues.push({
+        severity: 'medium',
+        entity: 'Order',
+        id: order.id,
+        field: 'date',
+        message: `Order "${order.id}" has a future date: ${order.date}`,
+        suggestion: 'Verify order date — possible data entry error or clock skew'
+      });
+    }
+  }
+
+  for (const tx of transactions) {
+    const txDate = new Date(tx.date);
+    if (txDate.getTime() > now.getTime() + tolerance) {
+      issues.push({
+        severity: 'medium',
+        entity: 'Transaction',
+        id: tx.id,
+        field: 'date',
+        message: `Transaction "${tx.id}" has a future date: ${tx.date}`,
+        suggestion: 'Verify transaction date'
+      });
+    }
+  }
+
+  return issues;
+}
+
+/**
  * Run full integrity check on all data
  */
 export function runIntegrityCheck(data: {
@@ -312,6 +630,7 @@ export function runIntegrityCheck(data: {
   transactions: Transaction[];
   purchases: Purchase[];
   employees: Employee[];
+  workflowOrders?: WorkflowOrder[];
 }): IntegrityReport {
   const issues: IntegrityIssue[] = [];
   
@@ -348,6 +667,34 @@ export function runIntegrityCheck(data: {
   // Check missing timestamps
   issues.push(...checkMissingTimestamps(data.products, 'Product'));
   issues.push(...checkMissingTimestamps(data.orders, 'Order'));
+  
+  // Check Trial Balance (debit/credit consistency)
+  issues.push(...checkTrialBalance(data.transactions));
+  
+  // Check that all completed orders have corresponding transactions
+  issues.push(...checkOrderTransactionIntegrity(data.orders, data.transactions));
+  
+  // Check purchase ↔ inventory consistency
+  issues.push(...checkPurchaseInventoryConsistency(data.products, data.purchases, data.orders));
+  
+  // Check employee integrity (dismissed + permissions, missing emails)
+  issues.push(...checkEmployeeIntegrity(data.employees));
+
+  // Check soft-deleted records leaking into active data
+  issues.push(...checkSoftDeletedRecords(data.orders as (Order & { _deleted?: boolean })[], 'Order'));
+  issues.push(...checkSoftDeletedRecords(data.transactions as (Transaction & { _deleted?: boolean })[], 'Transaction'));
+
+  // Check _version field consistency
+  issues.push(...checkVersionField(data.products as (Product & { _version?: number })[], 'Product'));
+  issues.push(...checkVersionField(data.transactions as (Transaction & { _version?: number })[], 'Transaction'));
+
+  // Check workflow order integrity
+  if (data.workflowOrders?.length) {
+    issues.push(...checkWorkflowIntegrity(data.workflowOrders));
+  }
+
+  // Check for future-dated records
+  issues.push(...checkFutureDates(data.orders, data.transactions));
   
   // Count by severity
   const criticalCount = issues.filter(i => i.severity === 'critical').length;

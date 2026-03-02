@@ -2,20 +2,26 @@ import { useState, useEffect, useCallback } from 'react';
 import { WorkflowOrder } from '../types';
 import { workflowOrderService } from '../services/workflowOrderService';
 
-export function useWorkflowOrders() {
+interface UseWorkflowOrdersOptions {
+    enabled?: boolean;
+}
+
+export function useWorkflowOrders(options: UseWorkflowOrdersOptions = {}) {
+    const { enabled = true } = options;
     const [workflowOrders, setWorkflowOrders] = useState<WorkflowOrder[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    // Initial load & Subscription
+    // Initial load & Subscription (skip when disabled)
     useEffect(() => {
+        if (!enabled) return;
         const unsubscribe = workflowOrderService.subscribe((data) => {
             setWorkflowOrders(data);
             setLoading(false);
             setError(null);
         });
         return () => unsubscribe();
-    }, []);
+    }, [enabled]);
 
     const addWorkflowOrder = useCallback(async (order: Omit<WorkflowOrder, 'id'>) => {
         try {

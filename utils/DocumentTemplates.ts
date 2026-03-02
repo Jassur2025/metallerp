@@ -12,6 +12,7 @@ import { Order, AppSettings, OrderItem, CompanyDetails } from '../types';
 // BUT, for now, let's try the HTML -> Canvas -> PDF approach as it is safer for encoding in this constrained env.
 import html2canvas from 'html2canvas';
 import { logger } from './logger';
+import { escapeHtml } from './escapeHtml';
 
 export const generateInvoicePDF = async (order: Order, settings: AppSettings) => {
     // We will construct a hidden HTML element, render it to canvas, then to PDF.
@@ -50,7 +51,7 @@ export const generateInvoicePDF = async (order: Order, settings: AppSettings) =>
                 <tr><td colspan="2" style="height: 10px;"></td></tr>
                 <tr>
                     <td style="font-weight: bold;">Покупатель:</td>
-                    <td>${order.customerName}</td>
+                    <td>${escapeHtml(order.customerName)}</td>
                 </tr>
             </table>
         </div>
@@ -73,7 +74,7 @@ export const generateInvoicePDF = async (order: Order, settings: AppSettings) =>
         return `
                     <tr>
                         <td style="border: 1px solid #000; padding: 6px; text-align: center;">${index + 1}</td>
-                        <td style="border: 1px solid #000; padding: 6px;">${item.productName}</td>
+                        <td style="border: 1px solid #000; padding: 6px;">${escapeHtml(item.productName)}</td>
                         <td style="border: 1px solid #000; padding: 6px; text-align: center;">${item.unit}</td>
                         <td style="border: 1px solid #000; padding: 6px; text-align: center;">${item.quantity}</td>
                         <td style="border: 1px solid #000; padding: 6px; text-align: right;">${price.toLocaleString()}</td>
@@ -135,7 +136,7 @@ export const generateWaybillPDF = async (order: Order, settings: AppSettings) =>
                 </tr>
                 <tr>
                     <td style="vertical-align: top;">Грузополучатель:</td>
-                    <td style="border-bottom: 1px solid #ccc;">${order.customerName}</td>
+                    <td style="border-bottom: 1px solid #ccc;">${escapeHtml(order.customerName)}</td>
                 </tr>
                  <tr>
                     <td style="vertical-align: top;">Основание:</td>
@@ -162,7 +163,7 @@ export const generateWaybillPDF = async (order: Order, settings: AppSettings) =>
         return `
                     <tr>
                         <td style="border: 1px solid #000; padding: 6px; text-align: center;">${index + 1}</td>
-                        <td style="border: 1px solid #000; padding: 6px;">${item.productName}</td>
+                        <td style="border: 1px solid #000; padding: 6px;">${escapeHtml(item.productName)}</td>
                         <td style="border: 1px solid #000; padding: 6px; text-align: center;">${item.unit}</td>
                         <td style="border: 1px solid #000; padding: 6px; text-align: center;">${item.quantity}</td>
                         <td style="border: 1px solid #000; padding: 6px; text-align: right;">${price.toLocaleString()}</td>

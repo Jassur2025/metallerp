@@ -5,23 +5,27 @@
 
 import {
     db,
+    auth,
     collection,
     doc,
     getDocs,
     getDoc,
     addDoc,
     updateDoc,
-    deleteDoc,
     query,
     where,
     orderBy,
     Timestamp,
     runTransaction,
-    onSnapshot
+    onSnapshot,
+    limit,
+    startAfter
 } from '../lib/firebase';
 import { Transaction } from '../types';
 import { executeSafeBatch } from '../utils/batchWriter';
 import { logger } from '../utils/logger';
+import { generateExpenseEntry } from '../utils/ledgerEntryGenerators';
+import { ledgerService } from './ledgerService';
 
 const TRANSACTIONS_COLLECTION = 'transactions';
 const CLIENTS_COLLECTION = 'clients';
@@ -49,6 +53,7 @@ export const transactionService = {
         try {
             const q = query(
                 collection(db, TRANSACTIONS_COLLECTION),
+                where('_deleted', '!=', true),
                 orderBy('date', 'desc')
             );
             const snapshot = await getDocs(q);
@@ -62,17 +67,40 @@ export const transactionService = {
     /**
      * Subscribe to real-time updates
      */
-    subscribe(callback: (transactions: Transaction[]) => void): () => void {
+    subscribe(callback: (transactions: Transaction[]) => void, maxItems: number = 500): () => void {
         const q = query(
             collection(db, TRANSACTIONS_COLLECTION),
-            orderBy('date', 'desc')
+            orderBy('date', 'desc'),
+            limit(maxItems)
         );
         return onSnapshot(q, (snapshot) => {
-            const transactions = snapshot.docs.map(fromFirestore);
+            const transactions = snapshot.docs.map(fromFirestore).filter(t => !t._deleted);
             callback(transactions);
         }, (error) => {
             logger.error('TransactionService', 'Error subscribing to transactions:', error);
         });
+    },
+
+    /**
+     * Paginated fetch — returns transactions older than `afterDate`.
+     */
+    async getPage(afterDate: string, pageSize: number = 100): Promise<{ items: Transaction[]; hasMore: boolean }> {
+        try {
+            const q = query(
+                collection(db, TRANSACTIONS_COLLECTION),
+                where('_deleted', '!=', true),
+                orderBy('date', 'desc'),
+                startAfter(afterDate),
+                limit(pageSize + 1)
+            );
+            const snapshot = await getDocs(q);
+            const docs = snapshot.docs.map(fromFirestore);
+            const hasMore = docs.length > pageSize;
+            return { items: hasMore ? docs.slice(0, pageSize) : docs, hasMore };
+        } catch (error) {
+            logger.error('TransactionService', 'Error fetching page:', error);
+            throw error;
+        }
     },
 
     /**
@@ -87,7 +115,7 @@ export const transactionService = {
                 orderBy('date', 'desc')
             );
             const snapshot = await getDocs(q);
-            return snapshot.docs.map(fromFirestore);
+            return snapshot.docs.map(fromFirestore).filter(t => !t._deleted);
         } catch (error) {
             logger.error('TransactionService', `Error fetching transactions for client ${clientId}:`, error);
             // Fallback for missing index error
@@ -98,7 +126,7 @@ export const transactionService = {
                     where('relatedId', '==', clientId)
                 );
                 const snap = await getDocs(qSimple);
-                return snap.docs.map(fromFirestore).sort((a, b) =>
+                return snap.docs.map(fromFirestore).filter(t => !t._deleted).sort((a, b) =>
                     new Date(b.date).getTime() - new Date(a.date).getTime()
                 );
             }
@@ -130,7 +158,23 @@ export const transactionService = {
             _version: 1
         });
 
-        return { id: docRef.id, ...transaction } as Transaction;
+        const savedTx = { id: docRef.id, ...transaction } as Transaction;
+
+        // ── Generate General Ledger entry for expenses (fire-and-forget) ──
+        if (transaction.type === 'expense') {
+            try {
+                const entry = generateExpenseEntry({ transaction: savedTx });
+                if (entry) {
+                    ledgerService.addEntries([entry]).catch(err => {
+                        logger.error('TransactionService', 'Expense ledger entry failed (non-fatal):', err);
+                    });
+                }
+            } catch (ledgerErr) {
+                logger.error('TransactionService', 'Expense ledger generation failed (non-fatal):', ledgerErr);
+            }
+        }
+
+        return savedTx;
     },
 
     /**
@@ -217,33 +261,35 @@ export const transactionService = {
 
     /**
      * Update transaction (recalculates debt if amount/type changed)
+     * All reads happen INSIDE the Firestore transaction to prevent TOCTOU race conditions.
      */
     async update(id: string, updates: Partial<Transaction>): Promise<void> {
         const txRef = doc(db, TRANSACTIONS_COLLECTION, id);
-        const txSnap = await getDoc(txRef);
-
-        if (!txSnap.exists()) {
-            throw new Error(`Transaction ${id} not found`);
-        }
-
-        const oldTx = txSnap.data() as Transaction;
         const debtAffectingTypes: string[] = ['client_payment', 'debt_obligation'];
-        const oldAffectsDebt = debtAffectingTypes.includes(oldTx.type) && oldTx.relatedId;
-        const newType = updates.type || oldTx.type;
-        const newRelatedId = updates.relatedId ?? oldTx.relatedId;
-        const newAffectsDebt = debtAffectingTypes.includes(newType) && newRelatedId;
 
-        // If neither old nor new affects debt, do a simple update
-        if (!oldAffectsDebt && !newAffectsDebt) {
-            await updateDoc(txRef, {
-                ...updates,
-                updatedAt: new Date().toISOString()
-            });
-            return;
-        }
-
-        // Otherwise, atomically reverse old debt impact and apply new one
         await runTransaction(db, async (firebaseTx) => {
+            // Read the transaction INSIDE the Firestore transaction (prevents TOCTOU)
+            const txSnap = await firebaseTx.get(txRef);
+
+            if (!txSnap.exists()) {
+                throw new Error(`Transaction ${id} not found`);
+            }
+
+            const oldTx = txSnap.data() as Transaction;
+            const oldAffectsDebt = debtAffectingTypes.includes(oldTx.type) && oldTx.relatedId;
+            const newType = updates.type || oldTx.type;
+            const newRelatedId = updates.relatedId ?? oldTx.relatedId;
+            const newAffectsDebt = debtAffectingTypes.includes(newType) && newRelatedId;
+
+            // If neither old nor new affects debt, just update the document
+            if (!oldAffectsDebt && !newAffectsDebt) {
+                firebaseTx.update(txRef, {
+                    ...updates,
+                    updatedAt: new Date().toISOString()
+                });
+                return;
+            }
+
             // Reverse old debt impact
             if (oldAffectsDebt && oldTx.relatedId) {
                 const oldClientRef = doc(db, CLIENTS_COLLECTION, oldTx.relatedId);
@@ -289,30 +335,34 @@ export const transactionService = {
             // Update the transaction document itself
             firebaseTx.update(txRef, {
                 ...updates,
-                updatedAt: new Date().toISOString()
+                updatedAt: new Date().toISOString(),
+                _version: (oldTx._version || 0) + 1
             });
         });
     },
 
     /**
      * Delete transaction — atomically reverses debt impact if applicable
+     * All reads happen INSIDE the Firestore transaction to prevent TOCTOU race conditions.
      */
     async delete(id: string): Promise<void> {
         const txRef = doc(db, TRANSACTIONS_COLLECTION, id);
-        const txSnap = await getDoc(txRef);
-
-        if (!txSnap.exists()) {
-            // Already deleted, no-op
-            return;
-        }
-
-        const txData = txSnap.data() as Transaction;
         const debtAffectingTypes: string[] = ['client_payment', 'debt_obligation'];
 
-        // If this transaction affected a client's debt, reverse it atomically
-        if (debtAffectingTypes.includes(txData.type) && txData.relatedId) {
-            await runTransaction(db, async (firebaseTx) => {
-                const clientRef = doc(db, CLIENTS_COLLECTION, txData.relatedId!);
+        await runTransaction(db, async (firebaseTx) => {
+            // Read INSIDE the transaction (prevents TOCTOU)
+            const txSnap = await firebaseTx.get(txRef);
+
+            if (!txSnap.exists()) {
+                // Already deleted, no-op
+                return;
+            }
+
+            const txData = txSnap.data() as Transaction;
+
+            // If this transaction affected a client's debt, reverse it atomically
+            if (debtAffectingTypes.includes(txData.type) && txData.relatedId) {
+                const clientRef = doc(db, CLIENTS_COLLECTION, txData.relatedId);
                 const clientSnap = await firebaseTx.get(clientRef);
 
                 if (clientSnap.exists()) {
@@ -333,14 +383,16 @@ export const transactionService = {
                         updatedAt: Timestamp.now()
                     });
                 }
+            }
 
-                // Delete the transaction document
-                firebaseTx.delete(txRef);
+            // Soft-delete the transaction (preserves audit trail)
+            firebaseTx.update(txRef, {
+                _deleted: true,
+                _deletedAt: new Date().toISOString(),
+                _deletedBy: auth.currentUser?.uid || 'unknown',
+                updatedAt: Timestamp.now()
             });
-        } else {
-            // No debt impact — simple delete
-            await deleteDoc(txRef);
-        }
+        });
     },
 
     /**

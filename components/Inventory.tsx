@@ -4,6 +4,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { Product, ProductType, Unit, WarehouseType, WarehouseLabels, AppSettings, Employee } from '../types';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
+import { useCurrentEmployee } from '../contexts/CurrentEmployeeContext';
 import { Plus, Search, Trash2, DollarSign, Pencil, TrendingUp, Lock, Warehouse, Building2, Cloud, RefreshCw } from 'lucide-react';
 import { DEFAULT_EXCHANGE_RATE } from '../constants';
 import { IdGenerator } from '../utils/idGenerator';
@@ -16,10 +17,13 @@ interface InventoryProps {
   currentEmployee?: Employee;
 }
 
-export const Inventory: React.FC<InventoryProps> = ({ products, onSaveProducts, settings, currentEmployee }) => {
+export const Inventory: React.FC<InventoryProps> = ({ products, onSaveProducts, settings, currentEmployee: propEmployee }) => {
   const toast = useToast();
   const { theme } = useTheme();
   const t = getThemeClasses(theme);
+  const { can, employee: ctxEmployee } = useCurrentEmployee();
+  const currentEmployee = propEmployee ?? ctxEmployee;
+  const canSeeCost = can('canViewCostPrice');
 
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -277,6 +281,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, onSaveProducts, 
           </div>
 
           {/* Warehouse Totals */}
+          {canSeeCost && (
           <div className="flex flex-wrap gap-3 text-sm">
             <div className={`px-3 py-1.5 rounded-lg ${theme === 'dark' ? 'bg-cyan-500/10' : 'bg-cyan-50'} border border-cyan-500/20`}>
               <span className={t.textMuted}>Основной: </span>
@@ -291,6 +296,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, onSaveProducts, 
               <span className="font-mono font-bold text-emerald-500">{displayCurrency === 'UZS' ? `${(warehouseTotals.total * rate).toLocaleString('ru-RU', { maximumFractionDigits: 0 })} сум` : `$${warehouseTotals.total.toLocaleString(undefined, { maximumFractionDigits: 2 })}`}</span>
             </div>
           </div>
+          )}
         </div>
       </div>
 
@@ -437,7 +443,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, onSaveProducts, 
                         {product.quantity} <span className={`text-xs ${t.textMuted}`}>{product.unit}</span>
                       </div>
                       <div className="px-6 text-right font-mono text-slate-400">
-                        {currentEmployee?.permissions?.canViewCostPrice !== false ? (
+                        {canSeeCost ? (
                           fmtPrice(product.costPrice || 0)
                         ) : (
                           <span className={`${t.textMuted} flex justify-end gap-1 items-center`}><Lock size={12} /> ***</span>
@@ -577,7 +583,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, onSaveProducts, 
                             <div>
                               <p className={`${t.textMuted} mb-0.5`}>Себест.</p>
                               <p className={`font-mono ${t.textMuted}`}>
-                                {currentEmployee?.permissions?.canViewCostPrice !== false ? fmtPrice(product.costPrice || 0) : '***'}
+                                {canSeeCost ? fmtPrice(product.costPrice || 0) : '***'}
                               </p>
                             </div>
                             <div>
@@ -710,6 +716,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, onSaveProducts, 
                   </div>
 
                   {/* Prices Row */}
+                  {canSeeCost && (
                   <div className="space-y-1">
                     <label className={`text-xs font-medium ${t.textMuted}`}>Себестоимость (USD)</label>
                     <div className="relative">
@@ -724,6 +731,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, onSaveProducts, 
                       />
                     </div>
                   </div>
+                  )}
 
                   <div className="space-y-1">
                     <label className={`text-xs font-medium ${t.textMuted}`}>Цена продажи (USD)</label>

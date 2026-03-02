@@ -20,6 +20,7 @@ export default defineConfig(({ mode }) => {
       },
       plugins: [react(), tailwindcss()],
       define: {
+        __APP_VERSION__: JSON.stringify(process.env.npm_package_version || '0.0.0'),
       },
     build: {
       chunkSizeWarningLimit: 800,
@@ -28,6 +29,7 @@ export default defineConfig(({ mode }) => {
           manualChunks: {
             vendor: ['react', 'react-dom'],
             firebase: ['firebase/app', 'firebase/auth', 'firebase/firestore'],
+            sentry: ['@sentry/react'],
             charts: ['recharts'],
             pdf: ['jspdf', 'html2canvas']
           }

@@ -3,10 +3,21 @@ import { Product, ProductType, Unit, Order, Expense, Purchase, AppSettings } fro
 
 export const DEFAULT_EXCHANGE_RATE = 12800; // 1 USD = 12800 UZS (fallback rate)
 
-export const SUPER_ADMIN_EMAILS = [
-  'jasurmc@gmail.com',
-  'jassurgme@gmail.com',
-];
+/**
+ * Super-admin emails loaded from environment variable (not hardcoded in source).
+ * Set VITE_SUPER_ADMIN_EMAILS as a comma-separated list in .env.local
+ * Example: VITE_SUPER_ADMIN_EMAILS=admin1@gmail.com,admin2@gmail.com
+ */
+const envSuperAdmins: string[] = (import.meta.env.VITE_SUPER_ADMIN_EMAILS || '')
+  .split(',')
+  .map((e: string) => e.trim().toLowerCase())
+  .filter(Boolean);
+
+// In E2E test mode, always include the test admin email
+const E2E_ADMIN_EMAIL = 'e2e-admin@metalmaster-test.com';
+export const SUPER_ADMIN_EMAILS: string[] = import.meta.env.VITE_E2E_TEST === 'true'
+  ? [...new Set([...envSuperAdmins, E2E_ADMIN_EMAIL])]
+  : envSuperAdmins;
 
 export const INITIAL_PRODUCTS: Product[] = [
   {

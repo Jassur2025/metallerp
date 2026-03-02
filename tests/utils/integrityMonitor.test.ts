@@ -114,6 +114,7 @@ describe('runIntegrityCheck', () => {
       products: [makeProduct()],
       orders: [makeOrder()],
       clients: [makeClient()],
+      transactions: [makeTransaction({ relatedId: 'ORD-001', type: 'sale' })],
     };
     const report = runIntegrityCheck(data);
     expect(report.criticalCount).toBe(0);

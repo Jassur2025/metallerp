@@ -51,6 +51,28 @@ const safeNumber = (value: unknown, fallback = 0) => {
   return Number.isFinite(num) ? num : fallback;
 };
 
+/**
+ * Shallow equality check for objects. Compares own enumerable keys.
+ * For nested objects/arrays, falls back to JSON comparison only for that value.
+ * Much faster than full JSON.stringify on large objects.
+ */
+function hasChanged<T extends Record<string, unknown>>(a: T, b: T): boolean {
+  const keysA = Object.keys(a);
+  const keysB = Object.keys(b);
+  if (keysA.length !== keysB.length) return true;
+
+  for (const key of keysA) {
+    const valA = a[key];
+    const valB = b[key];
+    if (valA === valB) continue;
+    // For primitives, strict equality already failed → changed
+    if (typeof valA !== 'object' || typeof valB !== 'object' || valA === null || valB === null) return true;
+    // For objects/arrays, use JSON as last resort (only for this single field)
+    if (JSON.stringify(valA) !== JSON.stringify(valB)) return true;
+  }
+  return false;
+}
+
 // ── Hook ───────────────────────────────────────────────────────────────
 
 export function useAppHandlers(deps: AppHandlersDeps) {
@@ -80,7 +102,7 @@ export function useAppHandlers(deps: AppHandlersDeps) {
     for (const newProduct of newProducts) {
       if (!addedProducts.includes(newProduct)) {
         const oldProduct = products.find(p => p.id === newProduct.id);
-        if (oldProduct && JSON.stringify(oldProduct) !== JSON.stringify(newProduct)) {
+        if (oldProduct && hasChanged(oldProduct as unknown as Record<string, unknown>, newProduct as unknown as Record<string, unknown>)) {
           await updateProduct(newProduct.id, newProduct);
         }
       }
@@ -97,7 +119,7 @@ export function useAppHandlers(deps: AppHandlersDeps) {
       if (!existing) {
         // New transaction
         await addTransaction(tx);
-      } else if (JSON.stringify(existing) !== JSON.stringify(tx)) {
+      } else if (hasChanged(existing as unknown as Record<string, unknown>, tx as unknown as Record<string, unknown>)) {
         // Updated transaction
         const { id, ...updates } = tx;
         await deps.updateTransaction?.(id, updates) ?? Promise.resolve();
@@ -123,14 +145,16 @@ export function useAppHandlers(deps: AppHandlersDeps) {
     const prevIds = new Set(employees.map(e => e.id));
     const added = newEmployees.filter(e => !prevIds.has(e.id));
 
+    // 1. Add new employees
     for (const employee of added) {
       await addEmployee(employee);
     }
 
-    if (added.length === 0) {
-      for (const newEmp of newEmployees) {
+    // 2. Update existing employees (independently of additions)
+    for (const newEmp of newEmployees) {
+      if (!added.includes(newEmp)) {
         const oldEmp = employees.find(e => e.id === newEmp.id);
-        if (oldEmp && JSON.stringify(oldEmp) !== JSON.stringify(newEmp)) {
+        if (oldEmp && hasChanged(oldEmp as unknown as Record<string, unknown>, newEmp as unknown as Record<string, unknown>)) {
           await updateEmployee(newEmp.id, newEmp);
         }
       }
@@ -143,19 +167,20 @@ export function useAppHandlers(deps: AppHandlersDeps) {
     const prevIds = new Set(purchases.map(p => p.id));
     const addedPurchases = newPurchases.filter(p => !prevIds.has(p.id));
 
+    // 1. Add new purchases
     for (const purchase of addedPurchases) {
       await addPurchase(purchase);
     }
 
-    if (addedPurchases.length === 0) {
-      for (const newPurchase of newPurchases) {
+    // 2. Update existing purchases (independently of additions)
+    for (const newPurchase of newPurchases) {
+      if (!addedPurchases.includes(newPurchase)) {
         const oldPurchase = purchases.find(p => p.id === newPurchase.id);
-        if (oldPurchase && JSON.stringify(oldPurchase) !== JSON.stringify(newPurchase)) {
+        if (oldPurchase && hasChanged(oldPurchase as unknown as Record<string, unknown>, newPurchase as unknown as Record<string, unknown>)) {
           await updatePurchase(newPurchase.id, newPurchase);
         }
       }
     }
-
   }, [purchases, addPurchase, updatePurchase]);
 
   // ── Clients ────────────────────────────────────────────────────────
@@ -164,14 +189,16 @@ export function useAppHandlers(deps: AppHandlersDeps) {
     const prevIds = new Set(clients.map(c => c.id));
     const added = newClients.filter(c => !prevIds.has(c.id));
 
+    // 1. Add new clients
     for (const client of added) {
       await addClient(client);
     }
 
-    if (added.length === 0) {
-      for (const newClient of newClients) {
+    // 2. Update existing clients (independently of additions)
+    for (const newClient of newClients) {
+      if (!added.includes(newClient)) {
         const oldClient = clients.find(c => c.id === newClient.id);
-        if (oldClient && JSON.stringify(oldClient) !== JSON.stringify(newClient)) {
+        if (oldClient && hasChanged(oldClient as unknown as Record<string, unknown>, newClient as unknown as Record<string, unknown>)) {
           await updateClient(newClient.id, newClient);
         }
       }
@@ -184,14 +211,16 @@ export function useAppHandlers(deps: AppHandlersDeps) {
     const prevIds = new Set(fixedAssets.map(a => a.id));
     const added = newAssets.filter(a => !prevIds.has(a.id));
 
+    // 1. Add new assets
     for (const asset of added) {
       await addAsset(asset);
     }
 
-    if (added.length === 0) {
-      for (const newAsset of newAssets) {
+    // 2. Update existing assets (independently of additions)
+    for (const newAsset of newAssets) {
+      if (!added.includes(newAsset)) {
         const oldAsset = fixedAssets.find(a => a.id === newAsset.id);
-        if (oldAsset && JSON.stringify(oldAsset) !== JSON.stringify(newAsset)) {
+        if (oldAsset && hasChanged(oldAsset as unknown as Record<string, unknown>, newAsset as unknown as Record<string, unknown>)) {
           await updateAsset(newAsset.id, newAsset);
         }
       }
@@ -225,7 +254,7 @@ export function useAppHandlers(deps: AppHandlersDeps) {
           if (key === 'id' || key === '_version' || key === 'updatedAt') continue;
           const oldVal = oldOrder[key];
           const newVal = newOrder[key];
-          if (oldVal !== newVal && JSON.stringify(oldVal) !== JSON.stringify(newVal)) {
+          if (oldVal !== newVal && (typeof oldVal !== 'object' || typeof newVal !== 'object' || JSON.stringify(oldVal) !== JSON.stringify(newVal))) {
             (updates as Record<string, unknown>)[key] = newVal;
           }
         }
@@ -244,14 +273,16 @@ export function useAppHandlers(deps: AppHandlersDeps) {
     const prevIds = new Set(workflowOrders.map(o => o.id));
     const added = newWorkflowOrders.filter(o => !prevIds.has(o.id));
 
+    // 1. Add new workflow orders
     for (const order of added) {
       await addWorkflowOrder(order);
     }
 
-    if (added.length === 0) {
-      for (const newOrder of newWorkflowOrders) {
+    // 2. Update existing workflow orders (independently of additions)
+    for (const newOrder of newWorkflowOrders) {
+      if (!added.includes(newOrder)) {
         const oldOrder = workflowOrders.find(o => o.id === newOrder.id);
-        if (oldOrder && JSON.stringify(oldOrder) !== JSON.stringify(newOrder)) {
+        if (oldOrder && hasChanged(oldOrder as unknown as Record<string, unknown>, newOrder as unknown as Record<string, unknown>)) {
           await updateWorkflowOrder(newOrder.id, newOrder);
         }
       }

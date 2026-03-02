@@ -1,14 +1,22 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Order } from '../types';
 import { orderService } from '../services/orderService';
 import { useToast } from '../contexts/ToastContext';
 import { logger } from '../utils/logger';
+
+const PAGE_SIZE = 100;
 
 export const useOrders = (initialOrders: Order[] = []) => {
     const [orders, setOrders] = useState<Order[]>(initialOrders);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const toast = useToast();
+
+    // Pagination state
+    const [olderOrders, setOlderOrders] = useState<Order[]>([]);
+    const [hasMore, setHasMore] = useState(false);
+    const [loadingMore, setLoadingMore] = useState(false);
+    const realtimeCountRef = useRef(0);
 
     const fetchOrders = useCallback(async () => {
         setLoading(true);
@@ -29,11 +37,43 @@ export const useOrders = (initialOrders: Order[] = []) => {
         setLoading(true);
         const unsubscribe = orderService.subscribe((data) => {
             setOrders(data);
+            realtimeCountRef.current = data.length;
+            // If the real-time window is full, there may be older data
+            setHasMore(data.length >= 500);
             setLoading(false);
             setError(null);
         });
         return () => unsubscribe();
     }, []);
+
+    // Load older page
+    const loadMore = useCallback(async () => {
+        const lastDate = [...orders, ...olderOrders].at(-1)?.date;
+        if (!lastDate || loadingMore) return;
+        setLoadingMore(true);
+        try {
+            const page = await orderService.getPage(lastDate, PAGE_SIZE);
+            setOlderOrders(prev => {
+                const existingIds = new Set(prev.map(o => o.id));
+                const unique = page.items.filter(o => !existingIds.has(o.id));
+                return [...prev, ...unique];
+            });
+            setHasMore(page.hasMore);
+        } catch (err) {
+            logger.error('useOrders', 'Error loading more orders:', err);
+            toast.error('Ошибка при загрузке истории заказов');
+        } finally {
+            setLoadingMore(false);
+        }
+    }, [orders, olderOrders, loadingMore, toast]);
+
+    // Merged list: real-time head + older pages (deduplicated)
+    const allOrders = useMemo(() => {
+        if (olderOrders.length === 0) return orders;
+        const realtimeIds = new Set(orders.map(o => o.id));
+        const tail = olderOrders.filter(o => !realtimeIds.has(o.id));
+        return [...orders, ...tail];
+    }, [orders, olderOrders]);
 
     const addOrder = useCallback(async (order: Order) => {
         try {
@@ -84,13 +124,17 @@ export const useOrders = (initialOrders: Order[] = []) => {
     }, [orders, toast]);
 
     return {
-        orders,
+        orders: allOrders,
         setOrders,
         loading,
         error,
         addOrder,
         updateOrder,
         deleteOrder,
-        refreshOrders: fetchOrders
+        refreshOrders: fetchOrders,
+        // Pagination
+        hasMore,
+        loadMore,
+        loadingMore,
     };
 };

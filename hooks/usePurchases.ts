@@ -1,24 +1,37 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Purchase } from '../types';
 import { purchaseService } from '../services/purchaseService';
 import { logger } from '../utils/logger';
 
+const PAGE_SIZE = 100;
+
 interface UsePurchasesOptions {
     realtime?: boolean;
+    enabled?: boolean;
 }
 
 export function usePurchases(options: UsePurchasesOptions = {}) {
-    const { realtime = true } = options;
+    const { realtime = true, enabled = true } = options;
     
     const [purchases, setPurchases] = useState<Purchase[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
+    // Pagination state
+    const [olderPurchases, setOlderPurchases] = useState<Purchase[]>([]);
+    const [hasMore, setHasMore] = useState(false);
+    const [loadingMore, setLoadingMore] = useState(false);
+    const realtimeCountRef = useRef(0);
+
     // Initial load or realtime subscription
+    // Initial load or realtime subscription (skip when disabled)
     useEffect(() => {
+        if (!enabled) return;
         if (realtime) {
             const unsubscribe = purchaseService.subscribe((data) => {
                 setPurchases(data);
+                realtimeCountRef.current = data.length;
+                setHasMore(data.length >= 500);
                 setLoading(false);
                 setError(null);
             });
@@ -39,7 +52,36 @@ export function usePurchases(options: UsePurchasesOptions = {}) {
             };
             fetchPurchases();
         }
-    }, [realtime]);
+    }, [realtime, enabled]);
+
+    // Load more (pagination by date)
+    const loadMore = useCallback(async () => {
+        const allCurrent = [...purchases, ...olderPurchases];
+        const lastDate = allCurrent.at(-1)?.date;
+        if (!lastDate || loadingMore) return;
+        setLoadingMore(true);
+        try {
+            const page = await purchaseService.getPage(lastDate, PAGE_SIZE);
+            setOlderPurchases(prev => {
+                const existingIds = new Set(prev.map(p => p.id));
+                const unique = page.items.filter(p => !existingIds.has(p.id));
+                return [...prev, ...unique];
+            });
+            setHasMore(page.hasMore);
+        } catch (err) {
+            logger.error('usePurchases', 'Error loading more purchases:', err);
+        } finally {
+            setLoadingMore(false);
+        }
+    }, [purchases, olderPurchases, loadingMore]);
+
+    // Merged list
+    const allPurchases = useMemo(() => {
+        if (olderPurchases.length === 0) return purchases;
+        const realtimeIds = new Set(purchases.map(p => p.id));
+        const tail = olderPurchases.filter(p => !realtimeIds.has(p.id));
+        return [...purchases, ...tail];
+    }, [purchases, olderPurchases]);
 
     // Add purchase
     const addPurchase = useCallback(async (purchase: Purchase): Promise<Purchase> => {
@@ -129,13 +171,16 @@ export function usePurchases(options: UsePurchasesOptions = {}) {
     }, []);
 
     return {
-        purchases,
+        purchases: allPurchases,
         setPurchases,
         loading,
         error,
         addPurchase,
         updatePurchase,
         deletePurchase,
-        refreshPurchases
+        refreshPurchases,
+        hasMore,
+        loadMore,
+        loadingMore
     };
 }

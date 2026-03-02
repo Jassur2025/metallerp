@@ -21,6 +21,26 @@ service cloud.firestore {
              getUserData().role == 'admin';
     }
 
+    // Validate that a number field is positive (> 0)
+    function isPositive(val) {
+      return val is number && val > 0;
+    }
+
+    // Validate that a number field is non-negative (>= 0)
+    function isNonNegative(val) {
+      return val is number && val >= 0;
+    }
+
+    // Validate that a string field is non-empty
+    function isNonEmptyString(val) {
+      return val is string && val.size() > 0;
+    }
+
+    // Validate that a field is one of the allowed values
+    function isOneOf(val, allowed) {
+      return val in allowed;
+    }
+
     // ---------------------------------------------------------
     // DEFAULT RULE: DENY ALL
     // ---------------------------------------------------------
@@ -44,19 +64,25 @@ service cloud.firestore {
     }
 
     // ---------------------------------------------------------
-    // BUSINESS DATA (Protected)
+    // BUSINESS DATA (Protected + Validated)
     // ---------------------------------------------------------
     
     // Products: Catalog is managed by Admins only
     match /products/{docId} {
       allow read: if isAuthenticated();
-      allow write: if isAdmin();
+      allow write: if isAdmin()
+        && isNonNegative(request.resource.data.quantity)
+        && isNonNegative(request.resource.data.pricePerUnit)
+        && isNonNegative(request.resource.data.costPrice)
+        && isNonEmptyString(request.resource.data.name);
     }
     
     // Clients: Managed by Admins (sensitive data)
     match /clients/{docId} {
       allow read: if isAuthenticated();
-      allow write: if isAdmin();
+      allow write: if isAdmin()
+        && isNonEmptyString(request.resource.data.name)
+        && isNonNegative(request.resource.data.creditLimit);
       
       // Notes subcollection: any authenticated user can read/create notes
       match /notes/{noteId} {
@@ -69,7 +95,8 @@ service cloud.firestore {
     // Suppliers: Procurement data, Admin only
     match /suppliers/{docId} {
       allow read: if isAuthenticated();
-      allow write: if isAdmin();
+      allow write: if isAdmin()
+        && isNonEmptyString(request.resource.data.name);
     }
 
     // Balance: Cached balance snapshot, Admin only writes
@@ -87,56 +114,127 @@ service cloud.firestore {
     // Fixed Assets: Accounting data, Admin only
     match /fixedAssets/{docId} {
       allow read: if isAuthenticated();
-      allow write: if isAdmin();
+      allow write: if isAdmin()
+        && isNonEmptyString(request.resource.data.name)
+        && isPositive(request.resource.data.purchaseCost)
+        && isNonNegative(request.resource.data.currentValue);
     }
 
     // Employees: HR data, Admin only
     match /employees/{docId} {
       allow read: if isAuthenticated();
+      allow write: if isAdmin()
+        && isNonEmptyString(request.resource.data.name)
+        && isNonEmptyString(request.resource.data.email);
+    }
+
+    // ---------------------------------------------------------
+    // OPERATIONAL DATA (Validated)
+    // ---------------------------------------------------------
+
+    // Orders: validated creation, admin or creator can modify
+    match /orders/{docId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated()
+        && isPositive(request.resource.data.totalAmount)
+        && request.resource.data.items is list
+        && request.resource.data.items.size() > 0
+        && isNonEmptyString(request.resource.data.customerName)
+        && isOneOf(request.resource.data.status, ['pending', 'completed', 'cancelled'])
+        && isOneOf(request.resource.data.paymentMethod, ['cash', 'bank', 'card', 'debt', 'mixed'])
+        && isOneOf(request.resource.data.paymentStatus, ['paid', 'unpaid', 'partial']);
+      allow update: if (isAdmin() || (isAuthenticated() && resource.data.createdBy == request.auth.uid))
+        && isPositive(request.resource.data.totalAmount)
+        && request.resource.data.items is list
+        && request.resource.data.items.size() > 0
+        && isNonEmptyString(request.resource.data.customerName)
+        && isOneOf(request.resource.data.status, ['pending', 'completed', 'cancelled'])
+        && isOneOf(request.resource.data.paymentMethod, ['cash', 'bank', 'card', 'debt', 'mixed'])
+        && isOneOf(request.resource.data.paymentStatus, ['paid', 'unpaid', 'partial']);
+      allow delete: if isAdmin();
+    }
+    
+    // Workflow Orders: validated
+    match /workflowOrders/{docId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated()
+        && isPositive(request.resource.data.totalAmount)
+        && request.resource.data.items is list
+        && request.resource.data.items.size() > 0
+        && isNonEmptyString(request.resource.data.customerName)
+        && isOneOf(request.resource.data.status, ['draft', 'confirmed', 'sent_to_cash', 'sent_to_procurement', 'completed', 'cancelled']);
+      allow update: if (isAdmin() || (isAuthenticated() && resource.data.createdBy == request.auth.uid))
+        && isPositive(request.resource.data.totalAmount)
+        && request.resource.data.items is list
+        && request.resource.data.items.size() > 0
+        && isNonEmptyString(request.resource.data.customerName)
+        && isOneOf(request.resource.data.status, ['draft', 'confirmed', 'sent_to_cash', 'sent_to_procurement', 'completed', 'cancelled']);
+      allow delete: if isAdmin();
+    }
+
+    // Purchases: validated + admin only
+    match /purchases/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin()
+        && request.resource.data.items is list
+        && request.resource.data.items.size() > 0
+        && isPositive(request.resource.data.exchangeRate)
+        && isOneOf(request.resource.data.paymentMethod, ['cash', 'bank', 'card', 'debt', 'mixed']);
+    }
+
+    // Expenses: validated, admin or creator can modify
+    match /expenses/{docId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated()
+        && isPositive(request.resource.data.amount)
+        && isNonEmptyString(request.resource.data.description)
+        && isNonEmptyString(request.resource.data.category)
+        && isOneOf(request.resource.data.paymentMethod, ['cash', 'bank', 'card'])
+        && isOneOf(request.resource.data.currency, ['USD', 'UZS']);
+      allow update: if isAdmin() || (isAuthenticated() && resource.data.createdBy == request.auth.uid);
+      allow delete: if isAdmin();
+    }
+
+    // Transactions: validated + admin only (financial ledger)
+    match /transactions/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin()
+        && isPositive(request.resource.data.amount)
+        && isOneOf(request.resource.data.type, ['client_payment', 'supplier_payment', 'client_return', 'debt_obligation', 'client_refund', 'expense'])
+        && isOneOf(request.resource.data.currency, ['USD', 'UZS'])
+        && isOneOf(request.resource.data.method, ['cash', 'bank', 'card', 'debt']);
+    }
+    
+    // Journal: immutable audit log
+    match /journalEvents/{docId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated()
+        && isNonEmptyString(request.resource.data.action)
+        && isNonEmptyString(request.resource.data.description);
+      allow update, delete: if false;     // Audit log is immutable
+    }
+
+    // Ledger Entries: double-entry bookkeeping records
+    match /ledgerEntries/{docId} {
+      allow read: if isAuthenticated();
+      allow create: if isAdmin();
+      allow update, delete: if false;     // Ledger entries are immutable
+    }
+
+    // Accounting Periods: period open/close management
+    match /accountingPeriods/{docId} {
+      allow read: if isAuthenticated();
       allow write: if isAdmin();
     }
 
-    // ---------------------------------------------------------
-    // OPERATIONAL DATA (Less strict, or strictly Admin for now)
-    // ---------------------------------------------------------
-
-    // Orders: only admin or the creator can modify
-    match /orders/{docId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update: if isAdmin() || (isAuthenticated() && resource.data.createdBy == request.auth.uid);
-      allow delete: if isAdmin();
-    }
-    
-    match /workflowOrders/{docId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update: if isAdmin() || (isAuthenticated() && resource.data.createdBy == request.auth.uid);
-      allow delete: if isAdmin();
+    // Rate Limits: per-user throttle counters (Cloud Functions only)
+    match /rateLimits/{document=**} {
+      allow read, write: if false;        // Only Admin SDK (Cloud Functions)
     }
 
-    match /purchases/{docId} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin(); // Procurement is sensitive
-    }
-
-    // Expenses: only admin or the creator can modify
-    match /expenses/{docId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update: if isAdmin() || (isAuthenticated() && resource.data.createdBy == request.auth.uid);
-      allow delete: if isAdmin();
-    }
-
-    match /transactions/{docId} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin(); // Financial ledger - strict control
-    }
-    
-    match /journalEvents/{docId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated(); // System logs events
-      allow update, delete: if false;     // Audit log is immutable
+    // Idempotency Keys: duplicate-request protection (Cloud Functions only)
+    match /idempotencyKeys/{document=**} {
+      allow read, write: if false;        // Only Admin SDK (Cloud Functions)
     }
 
   }

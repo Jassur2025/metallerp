@@ -2,20 +2,26 @@ import { useState, useEffect, useCallback } from 'react';
 import { FixedAsset } from '../types';
 import { fixedAssetsService } from '../services/fixedAssetsService';
 
-export function useFixedAssets() {
+interface UseFixedAssetsOptions {
+    enabled?: boolean;
+}
+
+export function useFixedAssets(options: UseFixedAssetsOptions = {}) {
+    const { enabled = true } = options;
     const [fixedAssets, setFixedAssets] = useState<FixedAsset[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    // Initial load & Subscription
+    // Initial load & Subscription (skip when disabled)
     useEffect(() => {
+        if (!enabled) return;
         const unsubscribe = fixedAssetsService.subscribe((data) => {
             setFixedAssets(data);
             setLoading(false);
             setError(null);
         });
         return () => unsubscribe();
-    }, []);
+    }, [enabled]);
 
     const addAsset = useCallback(async (asset: Omit<FixedAsset, 'id'>) => {
         try {

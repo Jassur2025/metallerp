@@ -7,7 +7,8 @@ import { CashFlow } from './CashFlow';
 import { PnL } from './PnL';
 import { SalesAnalytics } from './SalesAnalytics';
 import { SalesStatistics } from './SalesStatistics';
-import { ArrowRightLeft, TrendingUp, FileText, PieChart, Table, Scale } from 'lucide-react';
+import { TrialBalance } from './TrialBalance';
+import { ArrowRightLeft, TrendingUp, FileText, PieChart, Table, Scale, BookOpen } from 'lucide-react';
 
 interface ReportsProps {
   orders: Order[];
@@ -22,7 +23,7 @@ interface ReportsProps {
   onDeleteExpense?: (id: string) => Promise<boolean>;
 }
 
-type ReportType = 'pnl' | 'cashflow' | 'sales' | 'statistics' | 'vat';
+type ReportType = 'pnl' | 'cashflow' | 'sales' | 'statistics' | 'vat' | 'trialbalance';
 
 export const Reports: React.FC<ReportsProps> = React.memo(({ orders, expenses, products, purchases, settings, transactions, fixedAssets = [], onAddExpense, onUpdateExpense, onDeleteExpense }) => {
   const { theme } = useTheme();
@@ -86,6 +87,15 @@ export const Reports: React.FC<ReportsProps> = React.memo(({ orders, expenses, p
           >
             <Scale size={16} /> НДС
           </button>
+          <button
+            onClick={() => setActiveTab('trialbalance')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === 'trialbalance'
+              ? 'bg-primary-600 text-white shadow-lg'
+              : `${t.textMuted} hover:${t.text} hover:${t.bgCardHover}`
+              }`}
+          >
+            <BookOpen size={16} /> Баланс
+          </button>
 
         </div>
       </div>
@@ -97,6 +107,7 @@ export const Reports: React.FC<ReportsProps> = React.memo(({ orders, expenses, p
         {activeTab === 'sales' && <SalesAnalytics orders={orders} settings={settings} />}
         {activeTab === 'statistics' && <SalesStatistics orders={orders} products={products} transactions={transactions} />}
         {activeTab === 'vat' && <VatReport purchases={purchases} orders={orders} expenses={expenses} settings={settings} />}
+        {activeTab === 'trialbalance' && <TrialBalance />}
       </div>
     </div>
   );

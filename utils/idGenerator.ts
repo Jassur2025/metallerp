@@ -123,6 +123,9 @@ export const IdGenerator = {
 
   /** Note ID: NTE-xxx */
   note: () => generateId('NTE'),
+
+  /** Ledger Entry ID: LED-xxx */
+  ledger: () => generateId('LED'),
 };
 
 /**

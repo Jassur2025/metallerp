@@ -16,7 +16,9 @@ import {
     orderBy,
     onSnapshot,
     Timestamp,
-    runTransaction 
+    runTransaction,
+    startAfter,
+    limit
   } from '../lib/firebase';
   import { Client } from '../types';
   import { IdGenerator } from '../utils/idGenerator';
@@ -24,6 +26,7 @@ import {
   import { validateClient } from '../utils/validation';
   import { executeSafeBatch } from '../utils/batchWriter';
   import { logger } from '../utils/logger';
+  import { assertAuth } from '../utils/authGuard';
   
   // Collection name
   const CLIENTS_COLLECTION = 'clients';
@@ -108,6 +111,7 @@ import {
      */
     async create(client: Omit<Client, 'id'>): Promise<Client> {
       try {
+        assertAuth();
         const validation = validateClient(client);
         if (!validation.isValid) {
           throw new Error(`Ошибка валидации: ${validation.errors.join(', ')}`);
@@ -217,15 +221,12 @@ import {
     },
   
     /**
-     * Subscribe to clients changes
+     * Subscribe to clients changes (limited for pagination)
      */
-    subscribe(callback: (clients: Client[]) => void): () => void {
-        const collectionRef = collection(db, CLIENTS_COLLECTION);
-        // Simple subscription without ordering to avoid index issues initially
-        const unsubscribe = onSnapshot(collectionRef, (snapshot) => {
+    subscribe(callback: (clients: Client[]) => void, maxItems: number = 500): () => void {
+        const q = query(collection(db, CLIENTS_COLLECTION), orderBy('name', 'asc'), limit(maxItems));
+        const unsubscribe = onSnapshot(q, (snapshot) => {
             const clients = snapshot.docs.map(fromFirestore);
-            // Sort client-side
-            clients.sort((a, b) => a.name.localeCompare(b.name));
             callback(clients);
         }, (error) => {
             logger.error('ClientService', 'Error subscribing to clients:', error);
@@ -233,5 +234,26 @@ import {
         });
 
         return unsubscribe;
+    },
+
+    /**
+     * Paginated fetch — returns clients after `afterName` alphabetically.
+     */
+    async getPage(afterName: string, pageSize: number = 100): Promise<{ items: Client[]; hasMore: boolean }> {
+        try {
+            const q = query(
+                collection(db, CLIENTS_COLLECTION),
+                orderBy('name', 'asc'),
+                startAfter(afterName),
+                limit(pageSize + 1)
+            );
+            const snapshot = await getDocs(q);
+            const docs = snapshot.docs.map(fromFirestore);
+            const hasMore = docs.length > pageSize;
+            return { items: hasMore ? docs.slice(0, pageSize) : docs, hasMore };
+        } catch (error) {
+            logger.error('ClientService', 'Error fetching page:', error);
+            throw error;
+        }
     }
   };

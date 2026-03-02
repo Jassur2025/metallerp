@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
+import { useCurrentEmployee } from '../contexts/CurrentEmployeeContext';
 import { Employee, Order, Expense, AppSettings } from '../types';
 import { DEFAULT_EXCHANGE_RATE } from '../constants';
 import { DollarSign, Calendar, Download, Search, User, TrendingUp, Wallet, ArrowDownCircle, ArrowUpCircle, X } from 'lucide-react';
@@ -16,6 +17,9 @@ interface PayrollProps {
 export const Payroll: React.FC<PayrollProps> = React.memo(({ employees, orders, expenses, settings }) => {
   const { theme } = useTheme();
   const t = getThemeClasses(theme);
+  const { can } = useCurrentEmployee();
+  const canSeeSalary = can('canViewSalary');
+  const masked = '***';
 
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [searchTerm, setSearchTerm] = useState('');
@@ -251,7 +255,7 @@ export const Payroll: React.FC<PayrollProps> = React.memo(({ employees, orders, 
           </div>
           <div className={t.textMuted}>Базовый ФОТ</div>
           <div className={`text-2xl font-bold ${t.text} mt-1`}>
-            {formatCurrency(totals.salary)}
+            {canSeeSalary ? formatCurrency(totals.salary) : masked}
           </div>
         </div>
 
@@ -263,7 +267,7 @@ export const Payroll: React.FC<PayrollProps> = React.memo(({ employees, orders, 
           </div>
           <div className={t.textMuted}>Бонусы (KPI)</div>
           <div className={`text-2xl font-bold ${t.text} mt-1`}>
-            {formatCurrency(totals.kpi)}
+            {canSeeSalary ? formatCurrency(totals.kpi) : masked}
           </div>
         </div>
 
@@ -338,8 +342,8 @@ export const Payroll: React.FC<PayrollProps> = React.memo(({ employees, orders, 
                     </div>
                   </td>
                   <td className={`px-6 py-4 text-right font-medium ${t.text}`}>
-                    {formatCurrency(row.baseSalary)}
-                    {row.isProrated && (
+                    {canSeeSalary ? formatCurrency(row.baseSalary) : masked}
+                    {canSeeSalary && row.isProrated && (
                       <div className="text-[10px] text-amber-500" title={`Отработано дней: ${row.daysWorked}`}>
                         (за {row.daysWorked} дн.)
                       </div>
@@ -358,7 +362,7 @@ export const Payroll: React.FC<PayrollProps> = React.memo(({ employees, orders, 
                   <td className="px-6 py-4 text-right">
                     {row.employee.hasKPI ? (
                       <div className="flex flex-col items-end">
-                        <span className="text-emerald-500 font-medium">+{formatCurrency(row.kpiBonus)}</span>
+                        <span className="text-emerald-500 font-medium">+{canSeeSalary ? formatCurrency(row.kpiBonus) : masked}</span>
                         <span className={`text-xs ${t.textMuted}`}>{row.employee.commissionRate}% от прибыли</span>
                       </div>
                     ) : (
@@ -411,7 +415,7 @@ export const Payroll: React.FC<PayrollProps> = React.memo(({ employees, orders, 
                  <div className={`p-4 rounded-xl ${t.bgPanel} border ${t.border}`}>
                    <div className={`text-xs ${t.textMuted} uppercase`}>Начислено (Оклад + KPI)</div>
                    <div className={`text-lg font-bold text-emerald-500`}>
-                     {formatCurrency(selectedEmployeeData.baseSalary + selectedEmployeeData.kpiBonus)}
+                     {canSeeSalary ? formatCurrency(selectedEmployeeData.baseSalary + selectedEmployeeData.kpiBonus) : masked}
                    </div>
                  </div>
                  <div className={`p-4 rounded-xl ${t.bgPanel} border ${t.border}`}>
