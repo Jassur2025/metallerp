@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Purchase } from '../types';
 import { purchaseService } from '../services/purchaseService';
+import { logger } from '../utils/logger';
 
 interface UsePurchasesOptions {
     realtime?: boolean;
@@ -30,7 +31,7 @@ export function usePurchases(options: UsePurchasesOptions = {}) {
                     setPurchases(data);
                     setError(null);
                 } catch (err) {
-                    console.error('Error fetching purchases:', err);
+                    logger.error('usePurchases', 'Error fetching purchases:', err);
                     setError(err instanceof Error ? err.message : 'Failed to fetch purchases');
                 } finally {
                     setLoading(false);
@@ -62,7 +63,7 @@ export function usePurchases(options: UsePurchasesOptions = {}) {
         } catch (err) {
             // Rollback on error
             setPurchases(prev => prev.filter(p => p.id !== purchase.id));
-            console.error('Error adding purchase:', err);
+            logger.error('usePurchases', 'Error adding purchase:', err);
             throw err;
         }
     }, []);
@@ -87,7 +88,7 @@ export function usePurchases(options: UsePurchasesOptions = {}) {
                     prev.map(p => p.id === id ? oldPurchase : p)
                 );
             }
-            console.error('Error updating purchase:', err);
+            logger.error('usePurchases', 'Error updating purchase:', err);
             throw err;
         }
     }, [purchases]);
@@ -107,7 +108,7 @@ export function usePurchases(options: UsePurchasesOptions = {}) {
             if (deletedPurchase) {
                 setPurchases(prev => [...prev, deletedPurchase]);
             }
-            console.error('Error deleting purchase:', err);
+            logger.error('usePurchases', 'Error deleting purchase:', err);
             throw err;
         }
     }, [purchases]);
@@ -120,32 +121,12 @@ export function usePurchases(options: UsePurchasesOptions = {}) {
             setPurchases(data);
             setError(null);
         } catch (err) {
-            console.error('Error refreshing purchases:', err);
+            logger.error('usePurchases', 'Error refreshing purchases:', err);
             setError(err instanceof Error ? err.message : 'Failed to refresh purchases');
         } finally {
             setLoading(false);
         }
     }, []);
-
-    // Migrate from Google Sheets
-    const migratePurchases = useCallback(async (sheetsPurchases: Purchase[]): Promise<number> => {
-        if (sheetsPurchases.length === 0) return 0;
-
-        // Get existing IDs
-        const existingIds = new Set(purchases.map(p => p.id));
-        
-        // Filter only new purchases
-        const newPurchases = sheetsPurchases.filter(p => !existingIds.has(p.id));
-        
-        if (newPurchases.length === 0) return 0;
-
-        const count = await purchaseService.batchCreate(newPurchases);
-        
-        // Refresh to get updated list
-        await refreshPurchases();
-        
-        return count;
-    }, [purchases, refreshPurchases]);
 
     return {
         purchases,
@@ -155,7 +136,6 @@ export function usePurchases(options: UsePurchasesOptions = {}) {
         addPurchase,
         updatePurchase,
         deletePurchase,
-        refreshPurchases,
-        migratePurchases
+        refreshPurchases
     };
 }

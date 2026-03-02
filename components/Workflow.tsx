@@ -1,158 +1,23 @@
-import React, { useMemo, useState, useRef, useCallback, useEffect } from 'react';
-import { Product, WorkflowOrder, OrderItem, Order, Client, Transaction, AppSettings, Employee, JournalEvent, WarehouseLabels, WarehouseType } from '../types';
+import React, { useMemo, useState, useRef, useCallback } from 'react';
+import { Product, WorkflowOrder, OrderItem, Order, Client, Transaction, AppSettings, Employee, JournalEvent, WarehouseLabels } from '../types';
+import { DEFAULT_EXCHANGE_RATE } from '../constants';
 import { IdGenerator } from '../utils/idGenerator';
+import { findOrCreateClient } from '../services/clientService';
+import { getMissingItems } from '../utils/inventoryHelpers';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
-import { Plus, Trash2, Search, ClipboardList, BadgeCheck, Send, AlertTriangle, Wallet, Building2, CreditCard, XCircle, RotateCcw, Edit3, LayoutGrid, List, UserPlus } from 'lucide-react';
-
-// ── ClientDropdown ─────────────────────────────────────────────────────────────
-interface ClientDropdownProps {
-  clients: Client[];
-  value: string;
-  onChange: (name: string) => void;
-  onPhone: (phone: string) => void;
-  onAddClient: (clients: Client[]) => void;
-  theme: string;
-  t: ReturnType<typeof getThemeClasses>;
-}
-
-const ClientDropdown: React.FC<ClientDropdownProps> = ({ clients, value, onChange, onPhone, onAddClient, theme, t }) => {
-  const [open, setOpen] = useState(false);
-  const [adding, setAdding] = useState(false);
-  const [newPhone, setNewPhone] = useState('');
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  const filtered = useMemo(() => {
-    const q = value.toLowerCase().trim();
-    if (!q) return clients;
-    return clients.filter(c =>
-      c.name.toLowerCase().includes(q) ||
-      (c.phone || '').includes(q) ||
-      (c.companyName || '').toLowerCase().includes(q)
-    );
-  }, [clients, value]);
-
-  const exact = clients.find(c => c.name.toLowerCase() === value.toLowerCase().trim());
-  const showAddBtn = value.trim().length >= 2 && !exact;
-
-  // Tashqi click bilan yopish
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
-        setAdding(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
-
-  const handleSelect = (c: Client) => {
-    onChange(c.name);
-    if (c.phone) onPhone(c.phone);
-    setOpen(false);
-    setAdding(false);
-  };
-
-  const handleAddNew = async () => {
-    const name = value.trim();
-    if (!name) return;
-    const newClient: Client = {
-      id: IdGenerator.client(),
-      name,
-      phone: newPhone.trim() || '',
-      creditLimit: 0,
-      totalPurchases: 0,
-      totalDebt: 0,
-      notes: 'Workflow orqali qo\'shildi'
-    };
-    onAddClient([...clients, newClient]);
-    if (newPhone.trim()) onPhone(newPhone.trim());
-    setAdding(false);
-    setOpen(false);
-  };
-
-  return (
-    <div ref={containerRef} className="relative">
-      <input
-        value={value}
-        onChange={(e) => { onChange(e.target.value); setOpen(true); setAdding(false); }}
-        onFocus={() => setOpen(true)}
-        className={`w-full ${t.bgInput} border ${t.borderInput} rounded px-2 py-1.5 ${t.text} outline-none text-sm ${t.focusRing} ${t.textPlaceholder}`}
-        placeholder="Клиент"
-        autoComplete="off"
-      />
-      {open && (
-        <div className={`absolute z-50 left-0 right-0 top-[calc(100%+2px)] ${theme === 'light' ? 'bg-white border border-slate-200 shadow-lg' : 'bg-slate-800 border border-slate-600 shadow-xl'} rounded-lg overflow-hidden max-h-52 flex flex-col`}>
-          <div className="overflow-y-auto flex-1">
-            {filtered.length === 0 && !showAddBtn && (
-              <div className={`px-3 py-2 text-xs ${t.textMuted} text-center`}>Klient topilmadi</div>
-            )}
-            {filtered.map(c => (
-              <button
-                key={c.id}
-                type="button"
-                onMouseDown={(e) => { e.preventDefault(); handleSelect(c); }}
-                className={`w-full text-left px-3 py-1.5 transition-colors flex items-center justify-between gap-1 ${theme === 'light' ? 'hover:bg-blue-50 text-slate-800' : 'hover:bg-slate-700 text-slate-100'}`}
-              >
-                <div className="min-w-0">
-                  <div className={`text-xs font-medium truncate ${t.text}`}>{c.name}</div>
-                  {c.phone && <div className={`text-[10px] ${t.textMuted}`}>{c.phone}</div>}
-                </div>
-                {(c.totalDebt || 0) > 0 && (
-                  <span className="text-[9px] text-red-400 font-mono flex-shrink-0">${(c.totalDebt || 0).toFixed(0)} qarzi</span>
-                )}
-              </button>
-            ))}
-          </div>
-          {showAddBtn && !adding && (
-            <button
-              type="button"
-              onMouseDown={(e) => { e.preventDefault(); setAdding(true); }}
-              className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold border-t ${theme === 'light' ? 'border-slate-100 text-blue-600 hover:bg-blue-50' : 'border-slate-700 text-emerald-400 hover:bg-slate-700'} transition-colors w-full`}
-            >
-              <UserPlus size={12} />
-              Yangi: "<span className="font-bold">{value.trim()}</span>" ni qo'shish
-            </button>
-          )}
-          {adding && (
-            <div className={`px-3 py-2 border-t ${theme === 'light' ? 'border-slate-100 bg-blue-50' : 'border-slate-700 bg-slate-700/50'} flex gap-1`}>
-              <input
-                autoFocus
-                value={newPhone}
-                onChange={(e) => setNewPhone(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') handleAddNew(); if (e.key === 'Escape') setAdding(false); }}
-                className={`flex-1 ${t.bgInput} border ${t.borderInput} rounded px-2 py-1 text-xs ${t.text} outline-none`}
-                placeholder="Telefon (ixtiyoriy)"
-              />
-              <button
-                type="button"
-                onMouseDown={(e) => { e.preventDefault(); handleAddNew(); }}
-                className="px-2 py-1 bg-emerald-500 hover:bg-emerald-600 text-white text-xs rounded font-bold"
-              >
-                Qo'sh
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-};
-// ── End ClientDropdown ──────────────────────────────────────────────────────────
-
+import { Plus, Trash2, Search, ClipboardList, Send, RotateCcw, XCircle, Edit3, LayoutGrid, List } from 'lucide-react';
+import { WorkflowQueueTab } from './Workflow/WorkflowQueueTab';
+import { WorkflowCancelledTab } from './Workflow/WorkflowCancelledTab';
 
 interface WorkflowProps {
   products: Product[];
-  setProducts: (p: Product[]) => void;
   workflowOrders: WorkflowOrder[];
-  setWorkflowOrders: (o: WorkflowOrder[]) => void;
   orders: Order[];
   setOrders: (o: Order[]) => void;
   clients: Client[];
   onSaveClients: (c: Client[]) => void;
   transactions: Transaction[];
-  setTransactions: (t: Transaction[]) => void;
   employees: Employee[];
   settings: AppSettings;
   currentUserEmail?: string | null;
@@ -169,15 +34,12 @@ type Currency = 'USD' | 'UZS';
 
 export const Workflow: React.FC<WorkflowProps> = ({
   products,
-  setProducts,
   workflowOrders,
-  setWorkflowOrders,
   orders,
   setOrders,
   clients,
   onSaveClients,
   transactions,
-  setTransactions,
   employees,
   settings,
   currentUserEmail,
@@ -211,7 +73,7 @@ export const Workflow: React.FC<WorkflowProps> = ({
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [notes, setNotes] = useState('');
-  const [exchangeRate, setExchangeRate] = useState(settings.defaultExchangeRate || 12800);
+  const [exchangeRate, setExchangeRate] = useState(settings.defaultExchangeRate || DEFAULT_EXCHANGE_RATE);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [paymentCurrency, setPaymentCurrency] = useState<Currency>('UZS');
   const [wfViewMode, setWfViewMode] = useState<'grid' | 'list'>(() => {
@@ -305,10 +167,10 @@ export const Workflow: React.FC<WorkflowProps> = ({
   }, []);
   // === End split pane resize ===
 
-  const toUZS = (usd: number) => Math.round(usd * (exchangeRate || 1));
+  const toUZS = useCallback((usd: number) => Math.round(usd * (exchangeRate || 1)), [exchangeRate]);
 
   // Расчёт скидки для заказа относительно прайс-листа
-  const getOrderDiscount = (items: OrderItem[]) => {
+  const getOrderDiscount = useCallback((items: OrderItem[]) => {
     if (!Array.isArray(items) || items.length === 0) return { hasDiscount: false, totalDiscount: 0, discountPercent: 0 };
 
     let priceListTotal = 0;
@@ -325,13 +187,13 @@ export const Workflow: React.FC<WorkflowProps> = ({
     const discountPercent = priceListTotal > 0 ? (totalDiscount / priceListTotal) * 100 : 0;
 
     return {
-      hasDiscount: totalDiscount > 0.01, // Есть скидка если разница больше 1 цента
+      hasDiscount: totalDiscount > 0.01,
       totalDiscount,
       discountPercent,
       priceListTotal,
       actualTotal
     };
-  };
+  }, [products]);
 
   const filteredProducts = useMemo(() => {
     const q = searchTerm.toLowerCase().trim();
@@ -340,60 +202,51 @@ export const Workflow: React.FC<WorkflowProps> = ({
       .sort((a, b) => b.quantity - a.quantity);
   }, [products, searchTerm]);
 
-  const addToCart = (p: Product) => {
-    if (cart.some(i => i.productId === p.id)) return;
-    const item: OrderItem = {
-      productId: p.id,
-      productName: p.name,
-      dimensions: p.dimensions,
-      quantity: 1,
-      priceAtSale: p.pricePerUnit,
-      costAtSale: p.costPrice || 0, // скрываем от продавца, но сохраняем для учета
-      unit: p.unit,
-      total: p.pricePerUnit
-    };
-    setCart(prev => [...prev, item]);
-  };
+  const addToCart = useCallback((p: Product) => {
+    setCart(prev => {
+      if (prev.some(i => i.productId === p.id)) return prev;
+      const item: OrderItem = {
+        productId: p.id,
+        productName: p.name,
+        dimensions: p.dimensions,
+        quantity: 1,
+        priceAtSale: p.pricePerUnit,
+        costAtSale: p.costPrice || 0,
+        unit: p.unit,
+        total: p.pricePerUnit
+      };
+      return [...prev, item];
+    });
+  }, []);
 
-  const updateQty = (productId: string, qty: number) => {
+  const updateQty = useCallback((productId: string, qty: number) => {
     setCart(prev => prev.map(i => {
       if (i.productId !== productId) return i;
       const valid = Math.max(0, qty);
       return { ...i, quantity: valid, total: valid * i.priceAtSale };
     }));
-  };
+  }, []);
 
-  const updatePrice = (productId: string, price: number) => {
+  const updatePrice = useCallback((productId: string, price: number) => {
     setCart(prev => prev.map(i => {
       if (i.productId !== productId) return i;
       const validPrice = Math.max(0, price);
       return { ...i, priceAtSale: validPrice, total: i.quantity * validPrice };
     }));
-  };
+  }, []);
 
-  const removeItem = (productId: string) => setCart(prev => prev.filter(i => i.productId !== productId));
+  const removeItem = useCallback((productId: string) => setCart(prev => prev.filter(i => i.productId !== productId)), []);
 
-  const subtotalUSD = cart.reduce((s, i) => s + i.total, 0);
-  const vatAmountUSD = subtotalUSD * ((settings.vatRate || 0) / 100);
-  const totalUSD = subtotalUSD + vatAmountUSD;
-  const totalUZS = toUZS(totalUSD);
-
-  const getMissingItems = (items: OrderItem[]) => {
-    const missing: { item: OrderItem; available: number }[] = [];
-    items.forEach(it => {
-      const p = products.find(pp => pp.id === it.productId);
-      const available = p?.quantity ?? 0;
-      if (!p || available < it.quantity) {
-        missing.push({ item: it, available });
-      }
-    });
-    return missing;
-  };
+  const { subtotalUSD, vatAmountUSD, totalUSD, totalUZS } = useMemo(() => {
+    const sub = cart.reduce((s, i) => s + i.total, 0);
+    const vat = sub * ((settings.vatRate || 0) / 100);
+    const total = sub + vat;
+    return { subtotalUSD: sub, vatAmountUSD: vat, totalUSD: total, totalUZS: Math.round(total * (exchangeRate || 1)) };
+  }, [cart, settings.vatRate, exchangeRate]);
 
   const saveWorkflowOrders = async (next: WorkflowOrder[]) => {
     // CRITICAL: Save to Sheets FIRST, then update state
     await onSaveWorkflowOrders?.(next);
-    setWorkflowOrders(next);
   };
 
   const submitWorkflowOrder = async () => {
@@ -410,7 +263,7 @@ export const Workflow: React.FC<WorkflowProps> = ({
       return;
     }
 
-    const missing = getMissingItems(cart);
+    const missing = getMissingItems(cart, products);
     const status: WorkflowOrder['status'] = missing.length > 0 ? 'sent_to_procurement' : 'sent_to_cash';
 
     const isDebt = paymentMethod === 'debt';
@@ -468,7 +321,7 @@ export const Workflow: React.FC<WorkflowProps> = ({
       return;
     }
 
-    const missing = getMissingItems(wf.items);
+    const missing = getMissingItems(wf.items, products);
     if (missing.length > 0) {
       toast.warning('Недостаточно остатков. Заявка отправлена в закуп.');
       const next = workflowOrders.map(o => o.id === wf.id ? { ...o, status: 'sent_to_procurement' as const } : o);
@@ -505,28 +358,12 @@ export const Workflow: React.FC<WorkflowProps> = ({
     });
     // CRITICAL: Save to Sheets FIRST, then update state
     await onSaveProducts?.(updatedProducts);
-    setProducts(updatedProducts);
 
     // Update clients stats (auto-create if missing)
-    let currentClients = [...clients];
-    let idx = currentClients.findIndex(c => c.name.toLowerCase() === wf.customerName.toLowerCase());
-    let clientId = '';
-    if (idx === -1) {
-      const c: Client = {
-        id: IdGenerator.client(),
-        name: wf.customerName,
-        phone: wf.customerPhone || '',
-        creditLimit: 0,
-        totalPurchases: 0,
-        totalDebt: 0,
-        notes: 'Автоматически создан из Workflow'
-      };
-      currentClients.push(c);
-      idx = currentClients.length - 1;
-      clientId = c.id;
-    } else {
-      clientId = currentClients[idx].id;
-    }
+    const { client: foundClient, index: idx, clients: currentClients } = findOrCreateClient(
+      clients, wf.customerName, wf.customerPhone || '', 'Автоматически создан из Workflow'
+    );
+    const clientId = foundClient.id;
     const isDebt = wf.paymentMethod === 'debt';
     currentClients[idx] = {
       ...currentClients[idx],
@@ -550,7 +387,6 @@ export const Workflow: React.FC<WorkflowProps> = ({
       const updatedTx = [...transactions, trx];
       // CRITICAL: Save to Sheets FIRST, then update state
       await onSaveTransactions?.(updatedTx);
-      setTransactions(updatedTx);
     }
 
     // Save orders
@@ -607,7 +443,7 @@ export const Workflow: React.FC<WorkflowProps> = ({
       return;
     }
 
-    const missing = getMissingItems(cart);
+    const missing = getMissingItems(cart, products);
     const status: WorkflowOrder['status'] = missing.length > 0 ? 'sent_to_procurement' : 'sent_to_cash';
 
     const isDebt = paymentMethod === 'debt';
@@ -684,22 +520,22 @@ export const Workflow: React.FC<WorkflowProps> = ({
     setPaymentCurrency('UZS');
   };
 
-  const statusBadge = (s: WorkflowOrder['status']) => {
+  const statusBadge = useCallback((s: WorkflowOrder['status']) => {
     const base = 'text-[11px] font-bold px-2 py-1 rounded border';
     if (s === 'sent_to_cash') return `${base} bg-emerald-500/10 text-emerald-400 border-emerald-500/20`;
     if (s === 'sent_to_procurement') return `${base} bg-amber-500/10 text-amber-400 border-amber-500/20`;
     if (s === 'completed') return `${base} bg-blue-500/10 text-blue-400 border-blue-500/20`;
     if (s === 'cancelled') return `${base} bg-red-500/10 text-red-400 border-red-500/20`;
     return `${base} bg-slate-700/30 text-slate-300 border-slate-600/30`;
-  };
+  }, []);
 
-  const statusLabel = (s: WorkflowOrder['status']) => {
+  const statusLabel = useCallback((s: WorkflowOrder['status']) => {
     if (s === 'sent_to_cash') return 'На кассе';
     if (s === 'sent_to_procurement') return 'В закупе';
     if (s === 'completed') return 'Выполнен';
     if (s === 'cancelled') return 'Аннулирован';
     return s;
-  };
+  }, []);
 
   const queue = useMemo(() => {
     // Sales sees own + all if manager/admin
@@ -1121,145 +957,31 @@ export const Workflow: React.FC<WorkflowProps> = ({
       )}
 
       {tab === 'queue' && (
-        <div className="flex-1 overflow-y-auto custom-scrollbar" style={{ maxHeight: 'calc(100vh - 140px)' }}>
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
-            {queue.map(wf => {
-              const discount = getOrderDiscount(wf.items);
-              return (
-                <div key={wf.id} className={`${t.bgCard} border ${discount.hasDiscount ? 'border-amber-500/50' : t.border} rounded-xl p-3 ${t.shadow}`}>
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <div className={`${t.text} font-bold text-sm`}>{wf.customerName}</div>
-                      <div className={`text-[10px] ${t.textMuted}`}>{new Date(wf.date).toLocaleString('ru-RU')}</div>
-                      <div className={`text-[10px] ${t.textMuted}`}>ID: {wf.id}</div>
-                    </div>
-                    <div className="flex flex-col items-end gap-1">
-                      <span className={statusBadge(wf.status)}>{statusLabel(wf.status)}</span>
-                      {discount.hasDiscount && (
-                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-500 border border-amber-500/30">
-                          -{discount.discountPercent.toFixed(1)}% скидка
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="mt-2 space-y-0.5 text-xs">
-                    {(Array.isArray(wf.items) ? wf.items : []).slice(0, 3).map((it, idx) => {
-                      const product = products.find(p => p.id === it.productId);
-                      const priceListPrice = product?.pricePerUnit || it.priceAtSale;
-                      const itemDiscount = priceListPrice > it.priceAtSale;
-                      return (
-                        <div key={idx} className={`flex justify-between ${t.textSecondary}`}>
-                          <span className="truncate max-w-[140px]">
-                            {it.productName}
-                            <span className={`${t.textMuted} ml-1`}>× {it.quantity}</span>
-                          </span>
-                          <div className="flex items-center gap-1">
-                            {itemDiscount && (
-                              <span className="text-[9px] text-amber-500 line-through">${priceListPrice.toFixed(2)}</span>
-                            )}
-                            <span className={`font-mono text-[10px] ${itemDiscount ? 'text-amber-400 font-bold' : t.textMuted}`}>
-                              ${it.priceAtSale.toFixed(2)}
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                    {Array.isArray(wf.items) && wf.items.length > 3 && <div className={`text-[10px] ${t.textMuted}`}>+ ещё {wf.items.length - 3}</div>}
-                  </div>
-
-                  {/* Показываем инфо о скидке */}
-                  {discount.hasDiscount && (
-                    <div className={`mt-2 p-1.5 rounded ${theme === 'light' ? 'bg-amber-50 border border-amber-200' : 'bg-amber-500/10 border border-amber-500/20'}`}>
-                      <div className="flex justify-between text-[10px]">
-                        <span className={t.textMuted}>По прайсу:</span>
-                        <span className={`${t.textMuted} line-through font-mono`}>${discount.priceListTotal?.toFixed(2)}</span>
-                      </div>
-                      <div className="flex justify-between text-[10px]">
-                        <span className="text-amber-500 font-medium">Скидка:</span>
-                        <span className="text-amber-500 font-mono font-bold">-${discount.totalDiscount.toFixed(2)}</span>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="mt-2 flex items-center justify-between">
-                    <div className={`font-mono font-bold ${t.success} text-sm`}>{wf.totalAmountUZS.toLocaleString()} сум</div>
-                    {wf.status === 'sent_to_procurement' && (
-                      <button onClick={onNavigateToProcurement} className={`px-2 py-1 rounded ${t.warningBg} border ${theme === 'light' ? 'border-amber-200' : 'border-amber-500/20'} ${t.warning} text-[10px] font-medium`}>
-                        В закуп
-                      </button>
-                    )}
-                  </div>
-
-                  {isCashier && wf.status === 'sent_to_cash' && (
-                    <button onClick={() => approveAndConvert(wf)} className="w-full mt-2 bg-emerald-500 hover:bg-emerald-600 text-white py-2 rounded-lg font-bold flex items-center justify-center gap-1 text-sm">
-                      <BadgeCheck size={14} /> Подтвердить
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-
-          {queue.length === 0 && (
-            <div className={`text-center ${t.textMuted} py-8`}>Заявок нет</div>
-          )}
-        </div>
+        <WorkflowQueueTab
+          queue={queue}
+          products={products}
+          isCashier={isCashier}
+          theme={theme}
+          t={t}
+          approveAndConvert={approveAndConvert}
+          onNavigateToProcurement={onNavigateToProcurement}
+          getOrderDiscount={getOrderDiscount}
+          statusBadge={statusBadge}
+          statusLabel={statusLabel}
+        />
       )}
 
       {tab === 'cancelled' && (
-        <div className="flex-1 overflow-y-auto custom-scrollbar" style={{ maxHeight: 'calc(100vh - 140px)' }}>
-          <div className={`${t.dangerBg} border ${theme === 'light' ? 'border-red-200' : 'border-red-500/20'} rounded-lg p-3 mb-3`}>
-            <div className={`flex items-center gap-2 ${t.danger} text-sm`}>
-              <XCircle size={14} />
-              <span className="font-medium">Аннулированные заказы</span>
-            </div>
-            <p className={`text-xs ${t.textMuted} mt-1`}>Можно отредактировать и переотправить.</p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
-            {cancelledOrders.map(wf => (
-              <div key={wf.id} className={`${t.bgCard} border ${theme === 'light' ? 'border-red-200' : 'border-red-500/30'} rounded-xl p-3 ${t.shadow}`}>
-                <div className="flex justify-between items-start">
-                  <div>
-                    <div className={`${t.text} font-bold text-sm`}>{wf.customerName}</div>
-                    <div className={`text-[10px] ${t.textMuted}`}>{new Date(wf.date).toLocaleString('ru-RU')}</div>
-                    {wf.cancellationReason && (
-                      <div className={`text-[10px] ${t.danger} mt-1 ${t.dangerBg} px-1.5 py-0.5 rounded truncate max-w-[180px]`}>
-                        {wf.cancellationReason}
-                      </div>
-                    )}
-                  </div>
-                  <span className={statusBadge('cancelled')}>{statusLabel('cancelled')}</span>
-                </div>
-
-                <div className="mt-2 space-y-0.5 text-xs">
-                  {(Array.isArray(wf.items) ? wf.items : []).slice(0, 3).map((it, idx) => (
-                    <div key={idx} className={`flex justify-between ${t.textSecondary}`}>
-                      <span className="truncate max-w-[160px]">
-                        {it.productName} × {it.quantity}
-                      </span>
-                      <span className={`font-mono ${t.textMuted} text-[10px]`}>{toUZS(it.total).toLocaleString()}</span>
-                    </div>
-                  ))}
-                  {Array.isArray(wf.items) && wf.items.length > 3 && <div className={`text-[10px] ${t.textMuted}`}>+ ещё {wf.items.length - 3}</div>}
-                </div>
-
-                <div className={`mt-2 font-mono font-bold ${t.textMuted} line-through text-sm`}>{wf.totalAmountUZS.toLocaleString()} сум</div>
-
-                {isSales && (
-                  <button onClick={() => startEditCancelled(wf)} className="w-full mt-2 bg-amber-500 hover:bg-amber-600 text-white py-2 rounded-lg font-bold flex items-center justify-center gap-1 text-sm">
-                    <Edit3 size={14} /> Редактировать
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-
-          {cancelledOrders.length === 0 && (
-            <div className={`text-center ${t.textMuted} py-8`}>Аннулированных заказов нет</div>
-          )}
-        </div>
+        <WorkflowCancelledTab
+          cancelledOrders={cancelledOrders}
+          isSales={isSales}
+          theme={theme}
+          t={t}
+          startEditCancelled={startEditCancelled}
+          toUZS={toUZS}
+          statusBadge={statusBadge}
+          statusLabel={statusLabel}
+        />
       )}
     </div>
   );

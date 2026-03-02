@@ -9,13 +9,16 @@ import {
     query,
     orderBy,
     onSnapshot,
-    writeBatch,
     getDoc,
     setDoc,
     serverTimestamp,
     Timestamp
 } from '../lib/firebase';
 import { Product } from '../types';
+import { executeSafeBatch } from '../utils/batchWriter';
+import { logger } from '../utils/logger';
+
+import { validateProduct } from '../utils/validation';
 
 const COLLECTION_NAME = 'products';
 
@@ -30,7 +33,7 @@ export const productService = {
                 ...doc.data()
             } as Product));
         } catch (error) {
-            console.error('Error getting products:', error);
+            logger.error('ProductService', 'Error getting products:', error);
             throw error;
         }
     },
@@ -45,16 +48,21 @@ export const productService = {
             } as Product));
             callback(products);
         }, (error) => {
-            console.error('Error subscribing to products:', error);
+            logger.error('ProductService', 'Error subscribing to products:', error);
         });
     },
 
     // Add a new product (supports custom ID)
     add: async (product: Product | Omit<Product, 'id'>): Promise<Product> => {
         try {
+            const validation = validateProduct(product);
+            if (!validation.isValid) {
+                throw new Error(`Ошибка валидации: ${validation.errors.join(', ')}`);
+            }
+
             // Clean undefined fields
             const data = JSON.parse(JSON.stringify(product));
-            const id = (product as any).id;
+            const id = 'id' in product ? product.id : undefined;
 
             if (id) {
                 // Use provided ID with setDoc
@@ -77,7 +85,7 @@ export const productService = {
                 return { id: docRef.id, ...product } as Product;
             }
         } catch (error) {
-            console.error('Error adding product:', error);
+            logger.error('ProductService', 'Error adding product:', error);
             throw error;
         }
     },
@@ -85,6 +93,14 @@ export const productService = {
     // Update a product
     update: async (id: string, updates: Partial<Product>): Promise<void> => {
         try {
+            const hasProductFields = updates.name || updates.quantity !== undefined || updates.pricePerUnit !== undefined || updates.costPrice !== undefined;
+            if (hasProductFields) {
+                const validation = validateProduct(updates);
+                if (!validation.isValid) {
+                    throw new Error(`Ошибка валидации: ${validation.errors.join(', ')}`);
+                }
+            }
+
             const docRef = doc(db, COLLECTION_NAME, id);
             const data = JSON.parse(JSON.stringify(updates));
             delete data.id; // Don't update ID
@@ -96,7 +112,7 @@ export const productService = {
                 updatedAt: new Date().toISOString(),
             }, { merge: true });
         } catch (error) {
-            console.error('Error updating product:', error);
+            logger.error('ProductService', 'Error updating product:', error);
             throw error;
         }
     },
@@ -106,7 +122,7 @@ export const productService = {
         try {
             await deleteDoc(doc(db, COLLECTION_NAME, id));
         } catch (error) {
-            console.error('Error deleting product:', error);
+            logger.error('ProductService', 'Error deleting product:', error);
             throw error;
         }
     },
@@ -114,45 +130,22 @@ export const productService = {
     // Batch create/import (for migration)
     batchCreate: async (products: Product[]): Promise<number> => {
         try {
-            let count = 0;
-            const CHUNK_SIZE = 450; // Firestore batch limit is 500
+            const stats = await executeSafeBatch(products, { collectionName: COLLECTION_NAME }, (product, batch) => {
+                const finalDocRef = product.id ? doc(db, COLLECTION_NAME, product.id) : doc(collection(db, COLLECTION_NAME));
+                const data = JSON.parse(JSON.stringify(product));
+                delete data.id;
 
-            // Process in chunks
-            for (let i = 0; i < products.length; i += CHUNK_SIZE) {
-                const chunk = products.slice(i, i + CHUNK_SIZE);
-                const currentBatch = writeBatch(db);
-
-                chunk.forEach(product => {
-                    // Use specific ID if provided in migration, or generate new
-                    // For consistency with Sheets, we might want to keep IDs if they are UUIDs
-                    const docRef = doc(collection(db, COLLECTION_NAME));
-                    // Note: If we want to preserve IDs from Sheets (if they are good UUIDs), we would use:
-                    // const docRef = doc(db, COLLECTION_NAME, product.id);
-                    // But Sheets often has varied ID formats, so letting Firebase gen IDs might be safer
-                    // UNLESS these IDs are referenced in orders.
-
-                    // CRITICAL: We MUST preserve IDs if they are referenced in Orders/Purchases
-                    // Assuming Sheets IDs are stable UUIDs generated by IdGenerator.product()
-                    const finalDocRef = product.id ? doc(db, COLLECTION_NAME, product.id) : doc(collection(db, COLLECTION_NAME));
-
-                    const data = JSON.parse(JSON.stringify(product));
-                    delete data.id; // ID is key
-
-                    currentBatch.set(finalDocRef, {
-                        ...data,
-                        createdAt: serverTimestamp(),
-                        updatedAt: new Date().toISOString(),
-                        _version: 1
-                    });
-                    count++;
+                batch.set(finalDocRef, {
+                    ...data,
+                    createdAt: serverTimestamp(),
+                    updatedAt: new Date().toISOString(),
+                    _version: 1
                 });
+            });
 
-                await currentBatch.commit();
-            }
-
-            return count;
+            return stats.totalProcessed;
         } catch (error) {
-            console.error('Error batch creating products:', error);
+            logger.error('ProductService', 'Error batch creating products:', error);
             throw error;
         }
     }

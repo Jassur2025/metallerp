@@ -10,17 +10,19 @@ import {
   getDocs, 
   getDoc, 
   setDoc, 
-  updateDoc, 
   deleteDoc, 
   query, 
   where, 
   orderBy,
   onSnapshot,
-  writeBatch,
-  Timestamp 
+  Timestamp,
+  runTransaction 
 } from '../lib/firebase';
 import { Employee, UserRole } from '../types';
 import { IdGenerator } from '../utils/idGenerator';
+import { validateEmployee } from '../utils/validation';
+import { executeSafeBatch } from '../utils/batchWriter';
+import { logger } from '../utils/logger';
 
 // Collection name
 const EMPLOYEES_COLLECTION = 'employees';
@@ -47,23 +49,23 @@ interface EmployeeDocument {
 }
 
 // Convert Firestore document to Employee
-const fromFirestore = (doc: any): Employee => {
+const fromFirestore = (doc: import('firebase/firestore').DocumentSnapshot): Employee => {
   const data = doc.data();
   return {
     ...data,
     id: doc.id,
-    hireDate: data.hireDate?.toDate?.()?.toISOString?.().split('T')[0] || data.hireDate,
-    terminationDate: data.terminationDate?.toDate?.()?.toISOString?.().split('T')[0] || data.terminationDate,
-    _version: data._version || 1,
-    updatedAt: data.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString()
-  };
+    hireDate: data?.hireDate?.toDate?.()?.toISOString?.().split('T')[0] || data?.hireDate,
+    terminationDate: data?.terminationDate?.toDate?.()?.toISOString?.().split('T')[0] || data?.terminationDate,
+    _version: data?._version || 1,
+    updatedAt: data?.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString()
+  } as Employee;
 };
 
 // Convert Employee to Firestore document
 const toFirestore = (employee: Employee): Partial<EmployeeDocument> => {
   const { id, ...data } = employee;
   
-  const doc: any = {
+  const doc: Record<string, unknown> = {
     ...data,
     hireDate: Timestamp.fromDate(new Date(employee.hireDate)),
     updatedAt: Timestamp.now()
@@ -97,7 +99,7 @@ export const employeeService = {
       // Sort client-side
       return employees.sort((a, b) => a.name.localeCompare(b.name));
     } catch (error) {
-      console.error('Error fetching employees:', error);
+      logger.error('EmployeeService', 'Error fetching employees:', error);
       throw error;
     }
   },
@@ -115,7 +117,7 @@ export const employeeService = {
       }
       return null;
     } catch (error) {
-      console.error('Error fetching employee:', error);
+      logger.error('EmployeeService', 'Error fetching employee:', error);
       throw error;
     }
   },
@@ -136,7 +138,7 @@ export const employeeService = {
       }
       return null;
     } catch (error) {
-      console.error('Error fetching employee by email:', error);
+      logger.error('EmployeeService', 'Error fetching employee by email:', error);
       throw error;
     }
   },
@@ -154,7 +156,7 @@ export const employeeService = {
       const querySnapshot = await getDocs(q);
       return querySnapshot.docs.map(fromFirestore);
     } catch (error) {
-      console.error('Error fetching employees by role:', error);
+      logger.error('EmployeeService', 'Error fetching employees by role:', error);
       throw error;
     }
   },
@@ -172,7 +174,7 @@ export const employeeService = {
       const querySnapshot = await getDocs(q);
       return querySnapshot.docs.map(fromFirestore);
     } catch (error) {
-      console.error('Error fetching active employees:', error);
+      logger.error('EmployeeService', 'Error fetching active employees:', error);
       throw error;
     }
   },
@@ -182,6 +184,11 @@ export const employeeService = {
    */
   async create(employee: Omit<Employee, 'id'>): Promise<Employee> {
     try {
+      const validation = validateEmployee(employee);
+      if (!validation.isValid) {
+        throw new Error(`Ошибка валидации: ${validation.errors.join(', ')}`);
+      }
+
       const id = IdGenerator.employee();
       const now = Timestamp.now();
       
@@ -200,7 +207,7 @@ export const employeeService = {
         updatedAt: new Date().toISOString()
       };
     } catch (error) {
-      console.error('Error creating employee:', error);
+      logger.error('EmployeeService', 'Error creating employee:', error);
       throw error;
     }
   },
@@ -210,40 +217,54 @@ export const employeeService = {
    */
   async update(id: string, updates: Partial<Employee>): Promise<Employee> {
     try {
-      const docRef = doc(db, EMPLOYEES_COLLECTION, id);
-      const docSnap = await getDoc(docRef);
-      
-      if (!docSnap.exists()) {
-        throw new Error(`Employee with id ${id} not found`);
+      // Skip validation for partial updates with only status/system fields
+      const hasUserFields = updates.name || updates.email || updates.position || updates.salary !== undefined;
+      if (hasUserFields) {
+        const validation = validateEmployee(updates);
+        if (!validation.isValid) {
+          throw new Error(`Ошибка валидации: ${validation.errors.join(', ')}`);
+        }
       }
 
-      const currentData = fromFirestore(docSnap);
-      const newVersion = (currentData._version || 0) + 1;
+      const docRef = doc(db, EMPLOYEES_COLLECTION, id);
 
-      const updateData: any = {
-        ...toFirestore({ ...currentData, ...updates, id } as Employee),
-        _version: newVersion,
-        updatedAt: Timestamp.now()
-      };
-
-      // Remove undefined values
-      Object.keys(updateData).forEach(key => {
-        if (updateData[key] === undefined) {
-          delete updateData[key];
+      const result = await runTransaction(db, async (transaction) => {
+        const docSnap = await transaction.get(docRef);
+        
+        if (!docSnap.exists()) {
+          throw new Error(`Employee with id ${id} not found`);
         }
+
+        const currentData = fromFirestore(docSnap);
+        const newVersion = (currentData._version || 0) + 1;
+
+        const updateData: Record<string, unknown> = {
+          ...toFirestore({ ...currentData, ...updates, id } as Employee),
+          _version: newVersion,
+          updatedAt: Timestamp.now()
+        };
+
+        // Remove undefined values
+        Object.keys(updateData).forEach(key => {
+          if (updateData[key] === undefined) {
+            delete updateData[key];
+          }
+        });
+
+      transaction.update(docRef, updateData as Record<string, import('firebase/firestore').FieldValue | Partial<unknown> | undefined>);
+
+        return {
+          ...currentData,
+          ...updates,
+          id,
+          _version: newVersion,
+          updatedAt: new Date().toISOString()
+        } as Employee;
       });
 
-      await updateDoc(docRef, updateData);
-      
-      return {
-        ...currentData,
-        ...updates,
-        id,
-        _version: newVersion,
-        updatedAt: new Date().toISOString()
-      };
+      return result;
     } catch (error) {
-      console.error('Error updating employee:', error);
+      logger.error('EmployeeService', 'Error updating employee:', error);
       throw error;
     }
   },
@@ -258,7 +279,7 @@ export const employeeService = {
         terminationDate: new Date().toISOString().split('T')[0] 
       });
     } catch (error) {
-      console.error('Error soft deleting employee:', error);
+      logger.error('EmployeeService', 'Error soft deleting employee:', error);
       throw error;
     }
   },
@@ -270,7 +291,7 @@ export const employeeService = {
     try {
       await deleteDoc(doc(db, EMPLOYEES_COLLECTION, id));
     } catch (error) {
-      console.error('Error deleting employee:', error);
+      logger.error('EmployeeService', 'Error deleting employee:', error);
       throw error;
     }
   },
@@ -280,23 +301,19 @@ export const employeeService = {
    */
   async batchCreate(employees: Employee[]): Promise<void> {
     try {
-      const batch = writeBatch(db);
       const now = Timestamp.now();
 
-      for (const employee of employees) {
+      await executeSafeBatch(employees, { collectionName: EMPLOYEES_COLLECTION }, (employee, batch) => {
         const id = employee.id || IdGenerator.employee();
         const docRef = doc(db, EMPLOYEES_COLLECTION, id);
-        
         batch.set(docRef, {
           ...toFirestore({ ...employee, id }),
           createdAt: now,
           _version: employee._version || 1
         });
-      }
-
-      await batch.commit();
+      });
     } catch (error) {
-      console.error('Error batch creating employees:', error);
+      logger.error('EmployeeService', 'Error batch creating employees:', error);
       throw error;
     }
   },
@@ -314,7 +331,7 @@ export const employeeService = {
       employees.sort((a, b) => a.name.localeCompare(b.name));
       callback(employees);
     }, (error) => {
-      console.error('Error subscribing to employees:', error);
+      logger.error('EmployeeService', 'Error subscribing to employees:', error);
       // Return empty array on error to stop loading
       callback([]);
     });
@@ -345,7 +362,7 @@ export const employeeService = {
         e.position.toLowerCase().includes(term)
       );
     } catch (error) {
-      console.error('Error searching employees:', error);
+      logger.error('EmployeeService', 'Error searching employees:', error);
       throw error;
     }
   },
@@ -375,7 +392,7 @@ export const employeeService = {
 
       return stats;
     } catch (error) {
-      console.error('Error getting employee stats:', error);
+      logger.error('EmployeeService', 'Error getting employee stats:', error);
       throw error;
     }
   }

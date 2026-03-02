@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Order, Expense, AppSettings, Transaction as TransactionType } from '../types';
+import { DEFAULT_EXCHANGE_RATE } from '../constants';
 import { IdGenerator } from '../utils/idGenerator';
 import { validateUSD } from '../utils/finance';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, Cell, PieChart, Pie, Legend } from 'recharts';
@@ -7,9 +8,7 @@ import { ArrowUpRight, ArrowDownRight, Wallet, Plus, Calendar, DollarSign, Tag, 
 import { useToast } from '../contexts/ToastContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { getThemeClasses } from '../contexts/ThemeContext';
-
-const isDev = import.meta.env.DEV;
-const errorDev = (...args: unknown[]) => { if (isDev) console.error(...args); };
+import { logger } from '../utils/logger';
 
 interface CashFlowProps {
     orders: Order[];
@@ -49,7 +48,7 @@ export const CashFlow: React.FC<CashFlowProps> = ({ orders, expenses, settings, 
         date: new Date().toISOString().split('T')[0]
     });
 
-    const rate = settings.defaultExchangeRate || 12800;
+    const rate = settings.defaultExchangeRate || DEFAULT_EXCHANGE_RATE;
 
     // Merge and Sort Transactions с поддержкой обеих валют
     const transactions: Transaction[] = useMemo(() => {
@@ -179,15 +178,6 @@ export const CashFlow: React.FC<CashFlowProps> = ({ orders, expenses, settings, 
     }, [orders, expenses, rawTransactions, settings.defaultExchangeRate, rate]);
 
     // Stats
-    const num = (v: any): number => {
-        if (typeof v === 'number') return isFinite(v) ? v : 0;
-        if (typeof v === 'string') {
-            const p = parseFloat(v.replace(/[^\d.-]/g, ''));
-            return isFinite(p) ? p : 0;
-        }
-        return 0;
-    };
-
     const totalIncome = useMemo(() => {
         return transactions
             .filter(t => t.type === 'income')
@@ -335,7 +325,7 @@ export const CashFlow: React.FC<CashFlowProps> = ({ orders, expenses, settings, 
             pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, finalHeight);
             pdf.save(`CashFlow_Report_${new Date().toISOString().split('T')[0]}.pdf`);
         } catch (err) {
-            errorDev("PDF Generation failed", err);
+            logger.error('CashFlow', 'PDF Generation failed', err);
             toast.error("Ошибка при создании PDF. Пожалуйста, воспользуйтесь функцией печати (Ctrl+P).");
         } finally {
             setIsGeneratingPdf(false);

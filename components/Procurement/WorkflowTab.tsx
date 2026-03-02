@@ -3,17 +3,11 @@ import { ClipboardList, Plus, Send, XCircle } from 'lucide-react';
 import type { Product, WorkflowOrder, OrderItem } from '../../types';
 import { useTheme } from '../../contexts/ThemeContext';
 import { getThemeClasses } from '../../contexts/ThemeContext';
-
-interface MissingRow {
-  item: OrderItem;
-  available: number;
-  missingQty: number;
-}
+import { getMissingItems } from '../../utils/inventoryHelpers';
 
 interface WorkflowTabProps {
   workflowQueue: WorkflowOrder[];
   products: Product[];
-  getMissingItems: (items: OrderItem[]) => MissingRow[];
   createDraftPurchaseFromWorkflow: (wf: WorkflowOrder) => void;
   sendWorkflowToCash: (wf: WorkflowOrder) => void;
   onCancelWorkflow?: (wf: WorkflowOrder) => void;
@@ -22,7 +16,6 @@ interface WorkflowTabProps {
 export const WorkflowTab: React.FC<WorkflowTabProps> = ({
   workflowQueue,
   products,
-  getMissingItems,
   createDraftPurchaseFromWorkflow,
   sendWorkflowToCash,
   onCancelWorkflow,
@@ -71,7 +64,7 @@ export const WorkflowTab: React.FC<WorkflowTabProps> = ({
         ) : (
           <div className={`divide-y ${t.divide}`}>
             {workflowQueue.map((wf) => {
-              const missing = getMissingItems(wf.items);
+              const missing = getMissingItems(wf.items, products);
               const ready = missing.length === 0;
               const discount = getOrderDiscount(wf.items);
               return (

@@ -1,31 +1,28 @@
 
 import React, { useState, useRef, useCallback, useMemo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Product, ProductType, Unit, WarehouseType, WarehouseLabels, AppSettings } from '../types';
-import { geminiService } from '../services/geminiService';
+import { Product, ProductType, Unit, WarehouseType, WarehouseLabels, AppSettings, Employee } from '../types';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
-import { Plus, Search, Loader2, BrainCircuit, Trash2, DollarSign, Pencil, TrendingUp, Lock, Warehouse, Building2, Cloud, RefreshCw } from 'lucide-react';
-import { useAuth } from '../contexts/AuthContext';
+import { Plus, Search, Trash2, DollarSign, Pencil, TrendingUp, Lock, Warehouse, Building2, Cloud, RefreshCw } from 'lucide-react';
+import { DEFAULT_EXCHANGE_RATE } from '../constants';
 import { IdGenerator } from '../utils/idGenerator';
 
 
 interface InventoryProps {
   products: Product[];
-  setProducts: (products: Product[]) => void;
   onSaveProducts?: (products: Product[]) => Promise<void>;
   settings?: AppSettings;
+  currentEmployee?: Employee;
 }
 
-export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onSaveProducts, settings }) => {
-  const { user } = useAuth();
+export const Inventory: React.FC<InventoryProps> = ({ products, onSaveProducts, settings, currentEmployee }) => {
   const toast = useToast();
   const { theme } = useTheme();
   const t = getThemeClasses(theme);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
-  const [isAiLoading, setIsAiLoading] = useState(false);
   const [sortMode, setSortMode] = useState<'qty_desc' | 'qty_asc' | 'name_asc'>('qty_desc');
 
   // Warehouse filter: 'all' | 'main' | 'cloud'
@@ -33,7 +30,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
 
   // Currency toggle for display
   const [displayCurrency, setDisplayCurrency] = useState<'USD' | 'UZS'>('USD');
-  const rate = settings?.defaultExchangeRate || 12800;
+  const rate = settings?.defaultExchangeRate || DEFAULT_EXCHANGE_RATE;
   const fmtPrice = (usd: number) => {
     if (displayCurrency === 'UZS') {
       const uzs = usd * rate;
@@ -61,13 +58,9 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
     manufacturer: 'INSIGHT UNION'
   });
 
-  // Smart Add Text
-  const [smartInput, setSmartInput] = useState('');
-
   const handleDelete = (id: string) => {
     if (confirm('Вы уверены, что хотите удалить этот товар?')) {
       const updatedProducts = products.filter(p => p.id !== id);
-      setProducts(updatedProducts);
       if (onSaveProducts) {
         onSaveProducts(updatedProducts);
       }
@@ -137,32 +130,12 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
       updatedProducts = [...products, product];
     }
 
-    setProducts(updatedProducts);
     if (onSaveProducts) {
       onSaveProducts(updatedProducts);
     }
 
     setShowAddModal(false);
     setEditingId(null);
-  };
-
-  const handleSmartParse = async () => {
-    if (!smartInput.trim()) return;
-    setIsAiLoading(true);
-    try {
-      const parsedItems = await geminiService.parseProductInput(smartInput);
-      if (parsedItems && parsedItems.length > 0) {
-        const first = parsedItems[0];
-        setFormData({
-          ...formData,
-          ...first
-        });
-      }
-    } catch (e) {
-      toast.error('Ошибка распознавания текста. Проверьте подключение к интернету и API ключ Gemini.');
-    } finally {
-      setIsAiLoading(false);
-    }
   };
 
   // Memoized filtered and sorted products
@@ -348,7 +321,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
         </div>
       )}
 
-      {((user as any)?.permissions?.canEditProducts !== false) && (
+      {(currentEmployee?.permissions?.canEditProducts !== false) && (
         <button
           onClick={openAddModal}
           className={`${theme === 'light' ? 'bg-[#1A73E8] hover:bg-[#1557B0]' : 'bg-primary-600 hover:bg-primary-500'} text-white px-3 sm:px-4 py-2 rounded-lg flex items-center justify-center gap-2 transition-colors ${t.shadow} text-sm sm:text-base`}
@@ -464,7 +437,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
                         {product.quantity} <span className={`text-xs ${t.textMuted}`}>{product.unit}</span>
                       </div>
                       <div className="px-6 text-right font-mono text-slate-400">
-                        {(user as any)?.permissions?.canViewCostPrice !== false ? (
+                        {currentEmployee?.permissions?.canViewCostPrice !== false ? (
                           fmtPrice(product.costPrice || 0)
                         ) : (
                           <span className={`${t.textMuted} flex justify-end gap-1 items-center`}><Lock size={12} /> ***</span>
@@ -604,7 +577,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
                             <div>
                               <p className={`${t.textMuted} mb-0.5`}>Себест.</p>
                               <p className={`font-mono ${t.textMuted}`}>
-                                {(user as any)?.permissions?.canViewCostPrice !== false ? fmtPrice(product.costPrice || 0) : '***'}
+                                {currentEmployee?.permissions?.canViewCostPrice !== false ? fmtPrice(product.costPrice || 0) : '***'}
                               </p>
                             </div>
                             <div>
@@ -643,32 +616,6 @@ export const Inventory: React.FC<InventoryProps> = ({ products, setProducts, onS
               </div>
 
               <div className="p-6 overflow-y-auto space-y-6">
-                {/* AI Input Section - Only show for new items */}
-                {!editingId && (
-                  <div className={`${t.accentBg} border ${theme === 'light' ? 'border-blue-200' : 'border-indigo-500/20'} rounded-xl p-4 space-y-3`}>
-                    <div className={`flex items-center gap-2 ${t.accent} font-medium`}>
-                      <BrainCircuit size={18} />
-                      <span>AI Автозаполнение</span>
-                    </div>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        className={`flex-1 ${t.bgInput} border ${t.borderInput} rounded-lg px-3 py-2 text-sm ${t.text} ${t.focusRing} outline-none`}
-                        placeholder='Например: "Труба 50мм сталь 20 100м по $3.5"'
-                        value={smartInput}
-                        onChange={e => setSmartInput(e.target.value)}
-                      />
-                      <button
-                        onClick={handleSmartParse}
-                        disabled={isAiLoading}
-                        className={`${t.buttonPrimary} px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center`}
-                      >
-                        {isAiLoading ? <Loader2 size={16} className="animate-spin" /> : 'Распознать'}
-                      </button>
-                    </div>
-                  </div>
-                )}
-
                 {/* Form Fields */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-1 md:col-span-2">

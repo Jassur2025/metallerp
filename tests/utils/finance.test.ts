@@ -14,7 +14,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { validateUSD, calculateBaseTotals, formatCurrency, CorrectionDetails, FinancialTotals } from '../../utils/finance';
+import { validateUSD, calculateBaseTotals, formatCurrency, CorrectionDetails, FinancialTotals, num, getSafeRate } from '../../utils/finance';
 import { Order, Transaction, Expense, Unit } from '../../types';
 
 // ─── Helpers to build test fixtures ────────────────────────────────────────
@@ -72,7 +72,7 @@ describe('finance.ts', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════
-  //  validateUSD — Auto-correction of UZS→USD confusion
+  //  validateUSD — Now simply sanitizes input (no auto-correction)
   // ═══════════════════════════════════════════════════════════════════════
 
   describe('validateUSD', () => {
@@ -82,39 +82,20 @@ describe('finance.ts', () => {
       expect(validateUSD(499999, DEFAULT_RATE)).toBe(499999);
     });
 
-    it('should auto-correct amounts > $500K that look like UZS', () => {
-      // 6,400,000 UZS ÷ 12,800 = $500 — reasonable after correction
-      const result = validateUSD(6_400_000, DEFAULT_RATE);
-      expect(result).toBe(500);
+    it('should return large amounts unchanged (no auto-correction)', () => {
+      // Previously this was auto-divided by rate. Now returns as-is.
+      expect(validateUSD(6_400_000, DEFAULT_RATE)).toBe(6_400_000);
+      expect(validateUSD(1_280_000, DEFAULT_RATE)).toBe(1_280_000);
+      expect(validateUSD(12_800_000_000, DEFAULT_RATE)).toBe(12_800_000_000);
     });
 
-    it('should auto-correct large UZS-like amount entered in USD field', () => {
-      // 1,280,000 UZS ÷ 12,800 = $100
-      const result = validateUSD(1_280_000, DEFAULT_RATE);
-      expect(result).toBe(100);
-    });
-
-    it('should NOT auto-correct if corrected amount is still > $500K', () => {
-      // 12,800,000,000 ÷ 12,800 = $1,000,000 — still huge after correction, keep original
-      const result = validateUSD(12_800_000_000, DEFAULT_RATE);
-      expect(result).toBe(12_800_000_000);
-    });
-
-    it('should call onCorrection callback when correction occurs', () => {
+    it('should NOT call onCorrection callback (no corrections happen)', () => {
       const corrections: CorrectionDetails[] = [];
       const cb = (d: CorrectionDetails) => corrections.push(d);
       const context = { id: 'ORD-050', type: 'order' as const };
 
       validateUSD(6_400_000, DEFAULT_RATE, context, cb);
-
-      expect(corrections).toHaveLength(1);
-      expect(corrections[0]).toEqual({
-        id: 'ORD-050',
-        type: 'order',
-        originalAmount: 6_400_000,
-        correctedAmount: 500,
-        reason: 'Auto-corrected UZS entry in USD field',
-      });
+      expect(corrections).toHaveLength(0);
     });
 
     it('should NOT call onCorrection when no correction is needed', () => {
@@ -130,11 +111,10 @@ describe('finance.ts', () => {
       expect(validateUSD(Infinity, DEFAULT_RATE)).toBe(0);
     });
 
-    it('should use DEFAULT_EXCHANGE_RATE fallback when rate < 100', () => {
-      // rate=0 → falls back to DEFAULT_EXCHANGE_RATE (12800)
-      // 6,400,000 / 12800 = 500
+    it('should return large amounts unchanged regardless of rate', () => {
+      // rate doesn't matter anymore — no auto-correction
       const result = validateUSD(6_400_000, 0);
-      expect(result).toBe(500);
+      expect(result).toBe(6_400_000);
     });
   });
 
@@ -235,6 +215,26 @@ describe('finance.ts', () => {
     // ─── Transactions ───────────────────────────────────────────
 
     describe('Transaction processing', () => {
+      it('should NOT double-count standard cash order with order-linked client_payment', () => {
+        const order = makeOrder({
+          id: 'ORD-AB12-CD34',
+          paymentMethod: 'cash',
+          totalAmount: 400,
+          amountPaid: 400,
+        });
+        const tx = makeTransaction({
+          type: 'client_payment',
+          amount: 400,
+          currency: 'USD',
+          method: 'cash',
+          orderId: order.id,
+          description: `Оплата заказа ${order.id}`,
+        });
+
+        const result = calculateBaseTotals([order], [tx], [], DEFAULT_RATE);
+        expect(result.cashUSD).toBe(400);
+      });
+
       it('should add mixed-order client_payment to cashUSD', () => {
         const order = makeOrder({ id: 'ORD-010', paymentMethod: 'mixed' });
         const tx = makeTransaction({
@@ -247,6 +247,21 @@ describe('finance.ts', () => {
         const result = calculateBaseTotals([order], [tx], [], DEFAULT_RATE);
         // order (mixed → not counted directly) + tx payment
         expect(result.cashUSD).toBe(300);
+      });
+
+      it('should add mixed-order payment linked via explicit orderId', () => {
+        const order = makeOrder({ id: 'ORD-ABC123-XYZ789', paymentMethod: 'mixed' });
+        const tx = makeTransaction({
+          type: 'client_payment',
+          amount: 150,
+          currency: 'USD',
+          method: 'cash',
+          orderId: order.id,
+          description: 'Оплата заказа (новый формат)',
+        });
+
+        const result = calculateBaseTotals([order], [tx], [], DEFAULT_RATE);
+        expect(result.cashUSD).toBe(150);
       });
 
       it('should add debt-payment (no order link) to cashUSD', () => {
@@ -436,45 +451,42 @@ describe('finance.ts', () => {
         expect(result.cardUZS).toBe(5_000_000);
       });
 
-      it('should auto-correct UZS amount in USD field for orders', () => {
-        // Order with totalAmount = 6,400,000 (looks like UZS in USD field)
+      it('should NOT auto-correct large amounts (no more auto-correction)', () => {
+        // Order with totalAmount = 6,400,000 — now kept as-is
         const order = makeOrder({
           paymentMethod: 'cash',
-          totalAmount: 6_400_000, // mistake: should be UZS
+          totalAmount: 6_400_000,
           amountPaid: 6_400_000,
         });
         const result = calculateBaseTotals([order], [], [], DEFAULT_RATE);
-        // 6,400,000 / 12,800 = $500 (auto-corrected)
-        expect(result.cashUSD).toBe(500);
-        expect(result.corrections).toHaveLength(1);
-        expect(result.corrections[0].originalAmount).toBe(6_400_000);
-        expect(result.corrections[0].correctedAmount).toBe(500);
+        // No auto-correction — amount used as entered
+        expect(result.cashUSD).toBe(6_400_000);
+        expect(result.corrections).toHaveLength(0);
       });
 
-      it('tracks all corrections from orders, transactions, and expenses', () => {
+      it('should not produce corrections (auto-correction removed)', () => {
         const order = makeOrder({
           id: 'ORD-BIG',
           paymentMethod: 'cash',
-          totalAmount: 1_280_000, // auto-corrects to $100
+          totalAmount: 1_280_000,
           amountPaid: 1_280_000,
         });
         const tx = makeTransaction({
           id: 'TX-BIG',
           type: 'supplier_payment',
-          amount: 640_000, // auto-corrects to $50
+          amount: 640_000,
           currency: 'USD',
           method: 'cash',
           description: 'Big supplier',
         });
         const exp = makeExpense({
           id: 'EXP-BIG',
-          amount: 2_560_000, // auto-corrects to $200
+          amount: 2_560_000,
           currency: 'USD',
           paymentMethod: 'cash',
         });
         const result = calculateBaseTotals([order], [tx], [exp], DEFAULT_RATE);
-        expect(result.corrections).toHaveLength(3);
-        expect(result.corrections.map(c => c.id).sort()).toEqual(['EXP-BIG', 'ORD-BIG', 'TX-BIG']);
+        expect(result.corrections).toHaveLength(0);
       });
 
       it('debt orders are not added to any cash balance', () => {
@@ -632,14 +644,6 @@ describe('finance.ts', () => {
   // ═══════════════════════════════════════════════════════════════════════
 
   describe('Balance sheet calculations', () => {
-    const num = (v: any): number => {
-      if (typeof v === 'number') return isFinite(v) ? v : 0;
-      if (typeof v === 'string') {
-        const p = parseFloat(v.replace(/[^\d.-]/g, ''));
-        return isFinite(p) ? p : 0;
-      }
-      return 0;
-    };
 
     it('should calculate inventory value as sum(quantity × costPrice)', () => {
       const products = [

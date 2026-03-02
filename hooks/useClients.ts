@@ -44,24 +44,12 @@ export function useClients() {
         }
     }, []);
 
-    const migrateClients = useCallback(async (legacyClients: Client[]) => {
-        // Find clients that are NOT in Firebase yet (by ID)
-        const currentIds = new Set(clients.map(c => c.id));
-        const toMigrate = legacyClients.filter(c => !currentIds.has(c.id));
-
-        if (toMigrate.length === 0) return 0;
-
-        await clientService.batchCreate(toMigrate);
-        return toMigrate.length;
-    }, [clients]);
-
     return {
         clients,
         loading,
         error,
         addClient,
         updateClient,
-        deleteClient,
-        migrateClients
+        deleteClient
     };
 }

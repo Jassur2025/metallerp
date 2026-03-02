@@ -44,26 +44,12 @@ export function useFixedAssets() {
         }
     }, []);
 
-    const migrateAssets = useCallback(async (legacyAssets: FixedAsset[]) => {
-        // Find assets that are NOT in Firebase yet (by ID)
-        // Since IDs might differ if they were generated differently, be careful. 
-        // Assuming legacy IDs are what we want to keep or detect duplicates by name/date?
-        // For simplicity, checking by ID.
-        const currentIds = new Set(fixedAssets.map(a => a.id));
-        const toMigrate = legacyAssets.filter(a => !currentIds.has(a.id));
-
-        if (toMigrate.length === 0) return 0;
-
-        return await fixedAssetsService.batchCreate(toMigrate);
-    }, [fixedAssets]);
-
     return {
         fixedAssets,
         loading,
         error,
         addAsset,
         updateAsset,
-        deleteAsset,
-        migrateAssets
+        deleteAsset
     };
 }

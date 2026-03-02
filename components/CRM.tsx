@@ -1,20 +1,21 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Client, Order, Transaction, AppSettings } from '../types';
 import { User } from 'firebase/auth';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
-import { Plus, Search, Phone, Mail, MapPin, Edit, Trash2, DollarSign, Wallet, History, ArrowDownLeft, CheckCircle, XCircle, AlertCircle, Smartphone, MessageSquare, LayoutGrid, List } from 'lucide-react';
+import { Plus, Search, Smartphone, LayoutGrid, List } from 'lucide-react';
 import { checkAllPhones } from '../utils/phoneFormatter';
-import { SUPER_ADMIN_EMAILS } from '../constants';
+import { SUPER_ADMIN_EMAILS, DEFAULT_EXCHANGE_RATE } from '../constants';
 import { IdGenerator } from '../utils/idGenerator';
 import { useClients } from '../hooks/useClients';
 import { useOrders } from '../hooks/useOrders';
 import { transactionService } from '../services/transactionService';
 import { ClientNotesModal } from './Sales/ClientNotesModal';
-import { ClientCard } from './CRM/ClientCard';
-import { RepaymentStatsView } from './CRM/RepaymentStatsView';
-import { DebtHistoryModal } from './CRM/DebtHistoryModal';
-import type { HistoryItem } from './CRM/DebtHistoryModal';
+import { ClientCard, ClientFormModal, ClientListView, RepaymentModal, PhoneCheckModal, RepaymentStatsView, DebtHistoryModal } from './CRM/index';
+import type { HistoryItem } from './CRM/index';
+import type { UnpaidOrder, PaymentRecord } from './CRM/index';
+import { useCRMDebt, orderMatchesClient } from '../hooks/useCRMDebt';
+import { logger } from '../utils/logger';
 
 interface CRMProps {
     clients: Client[]; // Legacy prop (ignored - using Firebase)
@@ -22,7 +23,6 @@ interface CRMProps {
     orders: Order[]; // Legacy prop (ignored - using Firebase)
     onSaveOrders?: (orders: Order[]) => void;
     transactions: Transaction[];
-    setTransactions: (t: Transaction[]) => void;
     onSaveTransactions?: (transactions: Transaction[]) => Promise<boolean | void>;
     currentUser?: User | null;
     settings?: AppSettings;
@@ -32,7 +32,7 @@ type CRMView = 'clients' | 'repaymentStats';
 
 // HistoryItem type imported from ./CRM/DebtHistoryModal
 
-export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders: legacyOrders, onSaveOrders, transactions, setTransactions, onSaveTransactions, currentUser, settings: settingsProp }) => {
+export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders: legacyOrders, onSaveOrders, transactions, onSaveTransactions, currentUser, settings: settingsProp }) => {
     const toast = useToast();
     const { theme } = useTheme();
     const t = getThemeClasses(theme);
@@ -44,8 +44,7 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
         error: clientsError, 
         addClient, 
         updateClient, 
-        deleteClient,
-        migrateClients: migrateFromSheets 
+        deleteClient
     } = useClients();
 
     // Firebase Hook for Orders - use Firebase orders instead of legacy prop!
@@ -82,15 +81,12 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
         try { localStorage.setItem('erp_crm_view', mode); } catch {}
     };
 
-    // Initial Migration Check (One-time, simplistic)
+    // Initial data check
     React.useEffect(() => {
-        if (!clientsLoading && clients.length === 0 && legacyClients && legacyClients.length > 0) {
-           // Optional: Silent auto-migration or just ignore. 
-           // User asked to remove migration button, so we won't nag.
-           // However, if the user explicitly wants to restore data, we can invoke migrateFromSheets(legacyClients)
-           // For now, we assume we start fresh or manual entry, unless requested.
+        if (!clientsLoading && clients.length === 0) {
+           // Data loaded but empty - user can add clients manually
         }
-    }, [clientsLoading, clients.length, legacyClients]);
+    }, [clientsLoading, clients.length]);
 
     // Check if current user is admin
     const isAdmin = currentUser?.email && (
@@ -109,7 +105,7 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
     const [repaymentAmount, setRepaymentAmount] = useState<number>(0);
     const [repaymentMethod, setRepaymentMethod] = useState<'cash' | 'bank' | 'card' | 'mixed'>('cash');
     const [repaymentCurrency, setRepaymentCurrency] = useState<'USD' | 'UZS'>('UZS');
-    const [exchangeRate, setExchangeRate] = useState<number>(settingsProp?.defaultExchangeRate || 12800);
+    const [exchangeRate, setExchangeRate] = useState<number>(settingsProp?.defaultExchangeRate || DEFAULT_EXCHANGE_RATE);
     const [selectedOrderForRepayment, setSelectedOrderForRepayment] = useState<string | null>(null); // ID выбранного заказа
 
     // Keep exchange rate in sync with settings
@@ -143,7 +139,7 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
         addressLegal: ''
     });
 
-    const handleOpenModal = (client?: Client) => {
+    const handleOpenModal = useCallback((client?: Client) => {
         if (client) {
             setEditingClient(client);
             setFormData(client);
@@ -166,9 +162,9 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
             });
         }
         setIsModalOpen(true);
-    };
+    }, []);
 
-    const handleOpenRepayModal = (client: Client) => {
+    const handleOpenRepayModal = useCallback((client: Client) => {
         setSelectedClientForRepayment(client);
         setRepaymentAmount(0);
         setRepaymentMethod('cash');
@@ -180,431 +176,31 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
         setMixCard(0);
         setMixBank(0);
         setIsRepayModalOpen(true);
-    };
+    }, []);
 
     // Получить непогашенные заказы клиента для погашения
     // Тип для истории платежей
-    type PaymentRecord = {
-        date: string;
-        amount: number;
-        amountUSD: number;
-        currency: string;
-        method: string;
-    };
-    
-    const getOrderPaidUSD = (order: any) => {
-        if (typeof order.amountPaidUSD === 'number') return order.amountPaidUSD;
-        if (order.paymentCurrency === 'USD') return order.amountPaid || 0;
-        // Fallback: best effort if currency unknown
-        return order.amountPaid || 0;
-    };
+    // --- Debt computation (extracted to hook) ---
+    const {
+        calculateClientPurchases, calculateClientDebt,
+        unpaidOrders: getUnpaidOrdersForClient,
+        debtHistory: getClientDebtHistory,
+        totalDebtFromOrders
+    } = useCRMDebt({
+        orders, transactions,
+        selectedClientForRepayment,
+        selectedClientForHistory
+    });
 
-    const hasOpenBalance = (order: any) => {
-        const paidUSD = getOrderPaidUSD(order);
-        return ((order.totalAmount || 0) - paidUSD) > 0.01;
-    };
-
-    const isDebtOrder = (order: any) => {
-        const status = order.paymentStatus;
-        return order.paymentMethod === 'debt' || status === 'unpaid' || status === 'partial' || hasOpenBalance(order);
-    };
-
-    // Строгое сопоставление заказа с клиентом: по clientId, затем точное совпадение имени
-    const orderMatchesClient = (order: Order, client: Client): boolean => {
-        // 1. По clientId — самый надёжный способ
-        if (order.clientId && order.clientId === client.id) return true;
-        // 2. Точное совпадение имени (не includes!) — для legacy заказов без clientId
-        const orderName = (order.customerName || '').toLowerCase().trim();
-        const clientName = (client.name || '').toLowerCase().trim();
-        if (clientName && orderName === clientName) return true;
-        // 3. Точное совпадение с названием компании
-        const companyName = (client.companyName || '').toLowerCase().trim();
-        if (companyName && orderName === companyName) return true;
-        return false;
-    };
-
-    // Строгое сопоставление транзакции с клиентом: по relatedId = clientId или relatedId = orderId клиента
-    const txMatchesClient = (tx: Transaction, clientId: string, clientOrderIds: string[]): boolean => {
-        // 1. relatedId === clientId
-        if (tx.relatedId === clientId) return true;
-        // 2. relatedId === один из заказов клиента
-        if (tx.relatedId && clientOrderIds.includes(tx.relatedId)) return true;
-        return false;
-    };
-
-    // Функция для расчёта общей суммы покупок клиента
-    const calculateClientPurchases = (client: Client): number => {
-        let totalPurchases = 0;
-        orders.forEach(order => {
-            if (orderMatchesClient(order, client)) {
-                totalPurchases += order.totalAmount || 0;
-            }
-        });
-        return totalPurchases;
-    };
-
-    // Функция для расчёта актуального долга клиента из заказов и транзакций
-    // Единый источник правды: долг = сумма заказов в долг − сумма client_payment транзакций (только по долговым заказам)
-    const calculateClientDebt = (client: Client): number => {
-        const clientId = client.id;
-        
-        let totalDebt = 0;
-        let totalRepaid = 0;
-        
-        // 1. Найти ВСЕ заказы клиента которые БЫЛИ в долг — берём ПОЛНУЮ сумму заказа
-        const debtOrderIds = new Set<string>();
-        orders.forEach(order => {
-            if (!orderMatchesClient(order, client)) return;
-            
-            const wasDebtOrder = order.paymentMethod === 'debt' || 
-                                 order.paymentStatus === 'unpaid' || 
-                                 order.paymentStatus === 'partial';
-            
-            if (wasDebtOrder) {
-                totalDebt += (order.totalAmount || 0);
-                debtOrderIds.add(order.id);
-            }
-        });
-        
-        // 2. Найти транзакции погашений — только РЕАЛЬНЫЕ погашения долга
-        // Проблема: ВСЕ client_payment транзакции из Sales имеют relatedId = clientId,
-        // включая оплаты обычных cash/card/bank заказов. Нужно отфильтровать их.
-        transactions.forEach(tx => {
-            if (tx.type !== 'client_payment') return;
-            
-            // a) relatedId = ID долгового заказа — точное совпадение
-            const isDebtOrderPayment = tx.relatedId ? debtOrderIds.has(tx.relatedId) : false;
-            
-            // b) relatedId = clientId — может быть как погашение долга, так и оплата обычного заказа
-            //    Проверяем описание: если есть ID заказа — проверяем, долговой ли он
-            let isDirectDebtRepayment = false;
-            if (tx.relatedId === clientId) {
-                const orderIdInDesc = tx.description?.match(/заказа\s+(\S+)/i);
-                if (orderIdInDesc) {
-                    // Транзакция привязана к конкретному заказу — считаем только если заказ долговой
-                    const orderId = orderIdInDesc[1].replace(/\s*\(.*$/, ''); // убрать "(Workflow)" и т.п.
-                    isDirectDebtRepayment = debtOrderIds.has(orderId);
-                } else {
-                    // Нет ID заказа в описании — это прямое погашение долга (из CRM)
-                    isDirectDebtRepayment = true;
-                }
-            }
-            
-            if (!isDirectDebtRepayment && !isDebtOrderPayment) return;
-            
-            let amountInUSD = tx.amount || 0;
-            if (tx.currency === 'UZS' && tx.exchangeRate) {
-                amountInUSD = (tx.amount || 0) / tx.exchangeRate;
-            }
-            totalRepaid += amountInUSD;
-        });
-        
-        return Math.max(0, totalDebt - totalRepaid);
-    };
-    
-    const getUnpaidOrdersForClient = useMemo(() => {
-        if (!selectedClientForRepayment) return [];
-        
-        const clientId = selectedClientForRepayment.id;
-        
-        const unpaidOrders: { 
-            id: string; 
-            date: string; 
-            totalAmount: number; 
-            amountPaid: number; 
-            debtAmount: number; 
-            items: string;
-            reportNo?: number;
-            paymentDueDate?: string;
-            payments: PaymentRecord[];
-        }[] = [];
-
-        // Хелпер: конвертация суммы транзакции в USD
-        const txToUSD = (tx: Transaction): number => {
-            if (tx.currency === 'UZS' && tx.exchangeRate) {
-                return (tx.amount || 0) / tx.exchangeRate;
-            }
-            return tx.amount || 0;
-        };
-
-        // Хелпер: собрать PaymentRecord из транзакции
-        const toPaymentRecord = (r: Transaction): PaymentRecord => ({
-            date: r.date,
-            amount: r.amount || 0,
-            amountUSD: txToUSD(r),
-            currency: r.currency || 'USD',
-            method: r.method || 'cash'
-        });
-        
-        // 1. Найти заказы в долг (строгое сопоставление)
-        orders.forEach(order => {
-            if (!orderMatchesClient(order, selectedClientForRepayment)) return;
-            
-            const wasDebtOrder = order.paymentMethod === 'debt' || 
-                                 order.paymentStatus === 'unpaid' || 
-                                 order.paymentStatus === 'partial';
-            
-            if (!wasDebtOrder) return;
-
-            // Погашения привязанные к этому заказу (по relatedId)
-            const repayments = transactions.filter(t =>
-                t.type === 'client_payment' && t.relatedId === order.id
-            );
-            
-            const payments: PaymentRecord[] = repayments.map(toPaymentRecord);
-            
-            let totalRepaidUSD = 0;
-            repayments.forEach(r => { totalRepaidUSD += txToUSD(r); });
-            
-            const debtAmount = (order.totalAmount || 0) - totalRepaidUSD;
-            if (debtAmount > 0.01) {
-                unpaidOrders.push({
-                    id: order.id,
-                    date: order.date,
-                    totalAmount: order.totalAmount || 0,
-                    amountPaid: totalRepaidUSD,
-                    debtAmount,
-                    items: (order.items || []).map(it => it.productName).slice(0, 2).join(', ') + (order.items && order.items.length > 2 ? '...' : ''),
-                    reportNo: order.reportNo,
-                    paymentDueDate: order.paymentDueDate,
-                    payments
-                });
-            }
-        });
-        
-        // 2. Проверить транзакции debt_obligation для этого клиента
-        transactions.forEach(tx => {
-            if (tx.type !== 'debt_obligation') return;
-            if (tx.relatedId !== clientId) return;
-            
-            // Проверить не добавлен ли уже этот заказ
-            const existingOrder = unpaidOrders.find(o => o.id === tx.id);
-            if (existingOrder) return;
-
-            // Погашения по этому обязательству
-            const repayments = transactions.filter(t =>
-                t.type === 'client_payment' && t.relatedId === tx.id
-            );
-            
-            const payments: PaymentRecord[] = repayments.map(toPaymentRecord);
-            let totalRepaidUSD = 0;
-            repayments.forEach(r => { totalRepaidUSD += txToUSD(r); });
-            
-            const debtAmount = (tx.amount || 0) - totalRepaidUSD;
-            if (debtAmount > 0.01) {
-                unpaidOrders.push({
-                    id: tx.id,
-                    date: tx.date,
-                    totalAmount: tx.amount || 0,
-                    amountPaid: totalRepaidUSD,
-                    debtAmount,
-                    items: tx.description || '',
-                    payments
-                });
-            }
-        });
-        
-        // 3. Сортировать по дате (FIFO)
-        unpaidOrders.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-        
-        // 4. Найти погашения клиента БЕЗ привязки к конкретному заказу (relatedId = clientId)
-        const orderIdsSet = new Set(unpaidOrders.map(o => o.id));
-        const clientPaymentsWithoutOrder = transactions.filter(t =>
-            t.type === 'client_payment' &&
-            t.relatedId === clientId &&
-            !orderIdsSet.has(t.relatedId)
-        );
-        
-        // 5. Распределяем неразмеченные погашения по заказам (FIFO)
-        let unallocatedPaymentsUSD = 0;
-        clientPaymentsWithoutOrder.forEach(t => { unallocatedPaymentsUSD += txToUSD(t); });
-        
-        if (unallocatedPaymentsUSD > 0) {
-            for (const order of unpaidOrders) {
-                if (unallocatedPaymentsUSD <= 0) break;
-                const canPay = Math.min(unallocatedPaymentsUSD, order.debtAmount);
-                order.amountPaid += canPay;
-                order.debtAmount -= canPay;
-                unallocatedPaymentsUSD -= canPay;
-            }
-        }
-        
-        // 6. Убираем полностью оплаченные
-        const stillUnpaid = unpaidOrders.filter(o => o.debtAmount > 0.01);
-        
-        // 7. Fallback: если заказы не нашлись, но по расчёту есть долг
-        const calculatedDebt = selectedClientForRepayment ? calculateClientDebt(selectedClientForRepayment) : 0;
-        if (stillUnpaid.length === 0 && calculatedDebt > 0.01) {
-            stillUnpaid.push({
-                id: `DEBT-${clientId}`,
-                date: new Date().toISOString(),
-                totalAmount: calculatedDebt,
-                amountPaid: 0,
-                debtAmount: calculatedDebt,
-                items: 'Общий долг клиента',
-                payments: []
-            });
-        }
-        
-        return stillUnpaid;
-    }, [selectedClientForRepayment, orders, transactions]);
-
-    const handleOpenDebtHistoryModal = (client: Client) => {
+    const handleOpenDebtHistoryModal = useCallback((client: Client) => {
         setSelectedClientForHistory(client);
         setIsDebtHistoryModalOpen(true);
-    };
+    }, []);
 
-    const handleOpenNotesModal = (client: Client) => {
+    const handleOpenNotesModal = useCallback((client: Client) => {
         setSelectedClientForNotes(client);
         setIsNotesModalOpen(true);
-    };
-
-    // Получить полную историю долгов клиента - заказы в долг + транзакции
-    const getClientDebtHistory = useMemo(() => {
-        if (!selectedClientForHistory) return [] as HistoryItem[];
-        
-        const clientId = selectedClientForHistory.id;
-        const allHistory: HistoryItem[] = [];
-        
-        // 1. Найти все заказы в долг (строгое сопоставление)
-        orders.forEach(order => {
-            if (!orderMatchesClient(order, selectedClientForHistory)) return;
-            
-            const wasDebtOrder = order.paymentMethod === 'debt' || 
-                                 order.paymentStatus === 'unpaid' || 
-                                 order.paymentStatus === 'partial';
-            
-            if (!wasDebtOrder) return;
-
-            allHistory.push({
-                id: order.id,
-                date: order.date,
-                type: 'order',
-                description: order.reportNo ? `Отчёт №${order.reportNo}` : `Заказ #${order.id.slice(-6)}`,
-                items: (order.items || []).map(it => ({
-                    name: it.productName || 'Товар',
-                    qty: it.quantity || 0,
-                    price: it.priceAtSale || 0
-                })),
-                totalAmount: order.totalAmount || 0,
-                amountPaid: 0,
-                debtChange: order.totalAmount || 0,
-                balance: 0,
-                reportNo: order.reportNo,
-                paymentDueDate: order.paymentDueDate
-            });
-        });
-        
-        // 2. Собираем ID долговых заказов клиента (только debt/partial/unpaid)
-        const debtOrderIds = new Set<string>();
-        orders.forEach(order => {
-            if (!orderMatchesClient(order, selectedClientForHistory)) return;
-            const wasDebt = order.paymentMethod === 'debt' || order.paymentStatus === 'unpaid' || order.paymentStatus === 'partial';
-            if (wasDebt) debtOrderIds.add(order.id);
-        });
-        
-        // 3. Найти транзакции связанные с долгом клиента
-        transactions.forEach(tx => {
-            if (tx.type !== 'client_payment' && tx.type !== 'debt_obligation') return;
-            
-            // Для debt_obligation: стандартная проверка по relatedId
-            const isDebtRelatedBasic = tx.relatedId === clientId || (tx.relatedId ? debtOrderIds.has(tx.relatedId) : false);
-            if (tx.type === 'debt_obligation' && !isDebtRelatedBasic) return;
-            
-            // Для client_payment: строгая фильтрация — только РЕАЛЬНЫЕ погашения долга
-            if (tx.type === 'client_payment') {
-                const isDebtOrderPayment = tx.relatedId ? debtOrderIds.has(tx.relatedId) : false;
-                let isDirectDebtRepayment = false;
-                if (tx.relatedId === clientId) {
-                    const orderIdInDesc = tx.description?.match(/заказа\s+(\S+)/i);
-                    if (orderIdInDesc) {
-                        // Привязана к заказу — считаем только если заказ долговой
-                        const orderId = orderIdInDesc[1].replace(/\s*\(.*$/, '');
-                        isDirectDebtRepayment = debtOrderIds.has(orderId);
-                    } else {
-                        // Нет ID заказа — прямое погашение долга (из CRM)
-                        isDirectDebtRepayment = true;
-                    }
-                }
-                if (!isDirectDebtRepayment && !isDebtOrderPayment) return;
-            }
-            
-            // Долг по обязательству
-            if (tx.type === 'debt_obligation') {
-                // Проверяем дубликаты: debt_obligation дублирует заказ
-                // 1. Извлекаем ID заказа из описания "Долг по заказу ORDER_ID"
-                const descOrderMatch = tx.description?.match(/заказу?\s+(\S+)/i);
-                const mentionedOrderId = descOrderMatch ? descOrderMatch[1] : null;
-                
-                // 2. Проверяем: если упомянутый заказ существует в массиве orders — это дубликат
-                const orderExistsInDB = mentionedOrderId 
-                    ? orders.some(o => o.id === mentionedOrderId)
-                    : false;
-                
-                // 3. Также проверяем по relatedId и по уже добавленным записям
-                const alreadyInHistory = allHistory.some(h => 
-                    h.id === tx.id || 
-                    (tx.relatedId && h.id === tx.relatedId && h.type === 'order') ||
-                    (mentionedOrderId && h.id === mentionedOrderId && h.type === 'order')
-                );
-                
-                if (orderExistsInDB || alreadyInHistory) return;
-                
-                // Только для обязательств БЕЗ соответствующего заказа (начальный долг и т.п.)
-                allHistory.push({
-                    id: tx.id,
-                    date: tx.date,
-                    type: 'order',
-                    description: tx.description || 'Начальный долг / Обязательство',
-                    totalAmount: tx.amount || 0,
-                    amountPaid: 0,
-                    debtChange: tx.amount || 0,
-                    balance: 0,
-                });
-            }
-            // FIX #7: Все client_payment считаются погашениями (убран фильтр по слову "погашение")
-            else if (tx.type === 'client_payment') {
-                let amountInUSD = tx.amount || 0;
-                if (tx.currency === 'UZS' && tx.exchangeRate) {
-                    amountInUSD = (tx.amount || 0) / tx.exchangeRate;
-                }
-                
-                allHistory.push({
-                    id: tx.id,
-                    date: tx.date,
-                    type: 'repayment',
-                    description: tx.description || 'Погашение долга',
-                    totalAmount: tx.amount || 0,
-                    amountPaid: tx.amount || 0,
-                    debtChange: -amountInUSD,
-                    balance: 0,
-                    paymentMethod: tx.method,
-                    currency: tx.currency || 'USD',
-                    exchangeRate: tx.exchangeRate,
-                    amountInUSD
-                });
-            }
-        });
-        
-        // 4. Сортировать по дате
-        allHistory.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-        
-        // 5. Рассчитать баланс (накопительный долг)
-        let runningBalance = 0;
-        allHistory.forEach(item => {
-            runningBalance += item.debtChange;
-            item.balance = Math.max(0, runningBalance);
-        });
-        
-        // Вернуть в обратном порядке (новые сверху)
-        return allHistory.reverse();
-    }, [selectedClientForHistory, orders, transactions]);
-
-    // Общая сумма долга из истории
-    const totalDebtFromOrders = useMemo(() => {
-        if (!Array.isArray(getClientDebtHistory)) return 0;
-        return getClientDebtHistory.filter(h => h.type === 'order').reduce((sum, h) => sum + h.debtChange, 0);
-    }, [getClientDebtHistory]);
+    }, []);
 
     const handleSave = async () => {
         if (!formData.name || !formData.phone) {
@@ -733,9 +329,9 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
                 onSaveOrders(updatedOrders as Order[]); // Type cast if necessary
             }
 
-        } catch (error: any) {
-            console.error('Payment error:', error);
-            toast.error('Ошибка при проведении платежа: ' + error.message);
+        } catch (error: unknown) {
+            logger.error('CRM', 'Payment error:', error);
+            toast.error('Ошибка при проведении платежа: ' + (error instanceof Error ? error.message : String(error)));
         }
     };
 
@@ -1013,83 +609,16 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
 
                     {/* === LIST VIEW === */}
                     {crmViewMode === 'list' && (
-                        <div className={`${t.bgCard} border ${t.border} rounded-xl overflow-hidden overflow-y-auto pb-12 custom-scrollbar`}>
-                            {/* Table Header */}
-                            <div className={`grid grid-cols-[1fr_140px_80px_120px_100px_140px] gap-3 px-4 py-2.5 ${theme === 'light' ? 'bg-slate-50 border-b border-slate-200' : 'bg-slate-800/60 border-b border-slate-700'} text-[11px] font-semibold uppercase ${t.textMuted} sticky top-0 z-10`}>
-                                <span>Клиент</span>
-                                <span>Телефон</span>
-                                <span>Тип</span>
-                                <span className="text-right">Покупки</span>
-                                <span className="text-right">Долг</span>
-                                <span className="text-right">Действия</span>
-                            </div>
-                            {/* Rows */}
-                            {displayedClients.map((client, i) => {
-                                const debt = calculateClientDebt(client);
-                                const purchases = calculateClientPurchases(client);
-                                const isLegal = client.type === 'legal';
-                                return (
-                                    <div
-                                        key={client.id}
-                                        className={`grid grid-cols-[1fr_140px_80px_120px_100px_140px] gap-3 items-center px-4 py-3 transition-colors group
-                                            ${i % 2 === 0 ? '' : (theme === 'light' ? 'bg-slate-50/50' : 'bg-slate-800/30')}
-                                            ${theme === 'light' ? 'hover:bg-blue-50/60' : 'hover:bg-slate-700/40'}`}
-                                    >
-                                        {/* Client name + avatar */}
-                                        <div className="flex items-center gap-3 min-w-0">
-                                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-xs flex-shrink-0 ${isLegal ? 'bg-gradient-to-br from-blue-500 to-cyan-600' : 'bg-gradient-to-br from-indigo-500 to-purple-600'}`}>
-                                                {isLegal ? '🏢' : client.name.charAt(0).toUpperCase()}
-                                            </div>
-                                            <div className="min-w-0">
-                                                <div className={`text-sm font-medium ${t.text} truncate`}>
-                                                    {isLegal && client.companyName ? client.companyName : client.name}
-                                                </div>
-                                                {isLegal && client.companyName && (
-                                                    <div className={`text-[10px] ${t.textMuted} truncate`}>{client.name}</div>
-                                                )}
-                                            </div>
-                                        </div>
-                                        {/* Phone */}
-                                        <span className={`text-xs ${t.textMuted} font-mono`}>{client.phone}</span>
-                                        {/* Type */}
-                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${isLegal ? 'bg-blue-500/20 text-blue-500' : 'bg-emerald-500/20 text-emerald-500'}`}>
-                                            {isLegal ? 'Юр' : 'Физ'}
-                                        </span>
-                                        {/* Purchases */}
-                                        <span className="text-sm font-mono text-emerald-500 font-medium text-right">
-                                            ${purchases.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                                        </span>
-                                        {/* Debt */}
-                                        <span className={`text-sm font-mono font-bold text-right ${debt > 0 ? 'text-red-500' : t.textMuted}`}>
-                                            ${debt.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                                        </span>
-                                        {/* Actions */}
-                                        <div className="flex items-center justify-end gap-1">
-                                            <button onClick={() => handleOpenNotesModal(client)} className={`p-1.5 rounded-lg ${theme === 'dark' ? 'hover:bg-slate-600' : 'hover:bg-slate-200'} ${t.textMuted} transition-colors`} title="Заметки">
-                                                <MessageSquare size={14} />
-                                            </button>
-                                            <button onClick={() => handleOpenDebtHistoryModal(client)} className={`p-1.5 rounded-lg ${theme === 'dark' ? 'hover:bg-slate-600' : 'hover:bg-slate-200'} ${t.textMuted} transition-colors`} title="История">
-                                                <History size={14} />
-                                            </button>
-                                            <button onClick={() => handleOpenModal(client)} className={`p-1.5 rounded-lg ${theme === 'dark' ? 'hover:bg-slate-600' : 'hover:bg-slate-200'} ${t.textMuted} transition-colors`} title="Редактировать">
-                                                <Edit size={14} />
-                                            </button>
-                                            <button
-                                                onClick={() => handleOpenRepayModal(client)}
-                                                disabled={debt <= 0}
-                                                className={`p-1.5 rounded-lg transition-colors disabled:opacity-30 ${theme === 'dark' ? 'hover:bg-emerald-900/40 text-emerald-400' : 'hover:bg-emerald-100 text-emerald-600'}`}
-                                                title="Погасить долг"
-                                            >
-                                                <Wallet size={14} />
-                                            </button>
-                                            <button onClick={() => handleDelete(client.id)} className={`p-1.5 rounded-lg ${theme === 'dark' ? 'hover:bg-red-900/40' : 'hover:bg-red-100'} ${t.textMuted} hover:text-red-500 transition-colors`} title="Удалить">
-                                                <Trash2 size={14} />
-                                            </button>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
+                        <ClientListView
+                            clients={displayedClients}
+                            calculateClientDebt={calculateClientDebt}
+                            calculateClientPurchases={calculateClientPurchases}
+                            onEdit={handleOpenModal}
+                            onDelete={handleDelete}
+                            onRepay={handleOpenRepayModal}
+                            onHistory={handleOpenDebtHistoryModal}
+                            onNotes={handleOpenNotesModal}
+                        />
                     )}
 
                     {/* Pagination */}
@@ -1119,612 +648,52 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
 
             {/* Modals - Available in all views */}
             {/* Edit/Create Modal */}
-            {isModalOpen && (
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className={`${t.bgCard} rounded-2xl w-full max-w-lg border ${t.border} shadow-2xl animate-scale-in max-h-[90vh] overflow-hidden flex flex-col`}>
-                        <div className={`p-6 border-b ${t.border} flex justify-between items-center flex-shrink-0`}>
-                            <h3 className={`text-xl font-bold ${t.text}`}>
-                                {editingClient ? 'Редактировать клиента' : 'Новый клиент'}
-                            </h3>
-                            <button onClick={() => setIsModalOpen(false)} className={`${t.textMuted} hover:${t.text}`}>
-                                <Plus size={24} className="rotate-45" />
-                            </button>
-                        </div>
-                        <div className="p-6 space-y-4 overflow-y-auto custom-scrollbar">
-                            {/* Client Type Selector */}
-                            <div className="space-y-2">
-                                <label className={`text-sm font-medium ${t.textMuted}`}>Тип клиента</label>
-                                <div className="grid grid-cols-2 gap-2">
-                                    <button
-                                        type="button"
-                                        onClick={() => setFormData({ ...formData, type: 'individual' })}
-                                        className={`py-3 rounded-xl text-sm font-bold transition-all border ${formData.type !== 'legal' 
-                                            ? 'bg-emerald-500/20 border-emerald-500 text-emerald-500' 
-                                            : `${t.bg} ${t.border} ${t.textMuted} hover:${t.bgHover}`}`}
-                                    >
-                                        👤 Физ. лицо
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => setFormData({ ...formData, type: 'legal' })}
-                                        className={`py-3 rounded-xl text-sm font-bold transition-all border ${formData.type === 'legal' 
-                                            ? 'bg-blue-500/20 border-blue-500 text-blue-500' 
-                                            : `${t.bg} ${t.border} ${t.textMuted} hover:${t.bgHover}`}`}
-                                    >
-                                        🏢 Юр. лицо
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* Common Fields */}
-                            <div className="space-y-2">
-                                <label className={`text-sm font-medium ${t.textMuted}`}>
-                                    {formData.type === 'legal' ? 'Контактное лицо *' : 'Имя клиента *'}
-                                </label>
-                                <input
-                                    type="text"
-                                    className={`w-full ${t.input} border ${t.border} rounded-lg px-3 py-2 ${t.text} focus:ring-2 focus:ring-primary-500 outline-none`}
-                                    value={formData.name}
-                                    onChange={e => setFormData({ ...formData, name: e.target.value })}
-                                    placeholder={formData.type === 'legal' ? 'ФИО контактного лица' : 'ФИО клиента'}
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <label className={`text-sm font-medium ${t.textMuted}`}>Телефон *</label>
-                                <input
-                                    type="text"
-                                    className={`w-full ${t.input} border ${t.border} rounded-lg px-3 py-2 ${t.text} focus:ring-2 focus:ring-primary-500 outline-none`}
-                                    value={formData.phone}
-                                    onChange={e => setFormData({ ...formData, phone: e.target.value })}
-                                    placeholder="+998 XX XXX XX XX"
-                                />
-                            </div>
-
-                            {/* Legal Entity Fields */}
-                            {formData.type === 'legal' && (
-                                <div className="space-y-4 p-4 bg-blue-500/5 rounded-xl border border-blue-500/20">
-                                    <h4 className="text-sm font-bold text-blue-500 flex items-center gap-2">
-                                        🏢 Реквизиты организации
-                                    </h4>
-                                    <div className="space-y-2">
-                                        <label className={`text-sm font-medium ${t.textMuted}`}>Название организации *</label>
-                                        <input
-                                            type="text"
-                                            className={`w-full ${t.input} border ${t.border} rounded-lg px-3 py-2 ${t.text} focus:ring-2 focus:ring-blue-500 outline-none`}
-                                            value={formData.companyName || ''}
-                                            onChange={e => setFormData({ ...formData, companyName: e.target.value })}
-                                            placeholder="ООО, АО, ИП..."
-                                        />
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <div className="space-y-2">
-                                            <label className={`text-sm font-medium ${t.textMuted}`}>ИНН</label>
-                                            <input
-                                                type="text"
-                                                className={`w-full ${t.input} border ${t.border} rounded-lg px-3 py-2 ${t.text} focus:ring-2 focus:ring-blue-500 outline-none`}
-                                                value={formData.inn || ''}
-                                                onChange={e => setFormData({ ...formData, inn: e.target.value })}
-                                                placeholder="123456789"
-                                            />
-                                        </div>
-                                        <div className="space-y-2">
-                                            <label className={`text-sm font-medium ${t.textMuted}`}>МФО</label>
-                                            <input
-                                                type="text"
-                                                className={`w-full ${t.input} border ${t.border} rounded-lg px-3 py-2 ${t.text} focus:ring-2 focus:ring-blue-500 outline-none`}
-                                                value={formData.mfo || ''}
-                                                onChange={e => setFormData({ ...formData, mfo: e.target.value })}
-                                                placeholder="00000"
-                                            />
-                                        </div>
-                                    </div>
-                                    <div className="space-y-2">
-                                        <label className={`text-sm font-medium ${t.textMuted}`}>Расчётный счёт</label>
-                                        <input
-                                            type="text"
-                                            className={`w-full ${t.input} border ${t.border} rounded-lg px-3 py-2 ${t.text} focus:ring-2 focus:ring-blue-500 outline-none`}
-                                            value={formData.bankAccount || ''}
-                                            onChange={e => setFormData({ ...formData, bankAccount: e.target.value })}
-                                            placeholder="20208000..."
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <label className={`text-sm font-medium ${t.textMuted}`}>Название банка</label>
-                                        <input
-                                            type="text"
-                                            className={`w-full ${t.input} border ${t.border} rounded-lg px-3 py-2 ${t.text} focus:ring-2 focus:ring-blue-500 outline-none`}
-                                            value={formData.bankName || ''}
-                                            onChange={e => setFormData({ ...formData, bankName: e.target.value })}
-                                            placeholder="АКБ Капиталбанк"
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <label className={`text-sm font-medium ${t.textMuted}`}>Юридический адрес</label>
-                                        <input
-                                            type="text"
-                                            className={`w-full ${t.input} border ${t.border} rounded-lg px-3 py-2 ${t.text} focus:ring-2 focus:ring-blue-500 outline-none`}
-                                            value={formData.addressLegal || ''}
-                                            onChange={e => setFormData({ ...formData, addressLegal: e.target.value })}
-                                            placeholder="г. Ташкент, ул..."
-                                        />
-                                    </div>
-                                </div>
-                            )}
-
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-2">
-                                    <label className={`text-sm font-medium ${t.textMuted}`}>Email</label>
-                                    <input
-                                        type="email"
-                                        className={`w-full ${t.input} border ${t.border} rounded-lg px-3 py-2 ${t.text} focus:ring-2 focus:ring-primary-500 outline-none`}
-                                        value={formData.email}
-                                        onChange={e => setFormData({ ...formData, email: e.target.value })}
-                                    />
-                                </div>
-                                <div className="space-y-2">
-                                    <label className={`text-sm font-medium ${t.textMuted}`}>Кредитный лимит ($)</label>
-                                    <input
-                                        type="number"
-                                        className={`w-full ${t.input} border ${t.border} rounded-lg px-3 py-2 ${t.text} focus:ring-2 focus:ring-primary-500 outline-none`}
-                                        value={formData.creditLimit}
-                                        onChange={e => setFormData({ ...formData, creditLimit: Number(e.target.value) })}
-                                    />
-                                </div>
-                            </div>
-                            <div className="space-y-2">
-                                <label className={`text-sm font-medium ${t.textMuted}`}>
-                                    {formData.type === 'legal' ? 'Фактический адрес' : 'Адрес'}
-                                </label>
-                                <input
-                                    type="text"
-                                    className={`w-full ${t.input} border ${t.border} rounded-lg px-3 py-2 ${t.text} focus:ring-2 focus:ring-primary-500 outline-none`}
-                                    value={formData.address}
-                                    onChange={e => setFormData({ ...formData, address: e.target.value })}
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <label className={`text-sm font-medium ${t.textMuted}`}>Заметки</label>
-                                <textarea
-                                    className={`w-full ${t.input} border ${t.border} rounded-lg px-3 py-2 ${t.text} focus:ring-2 focus:ring-primary-500 outline-none h-20 resize-none`}
-                                    value={formData.notes}
-                                    onChange={e => setFormData({ ...formData, notes: e.target.value })}
-                                />
-                            </div>
-                            <button
-                                onClick={handleSave}
-                                className="w-full bg-primary-600 hover:bg-primary-500 text-white py-3 rounded-xl font-bold transition-colors shadow-lg shadow-primary-600/20 mt-4"
-                            >
-                                Сохранить
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            <ClientFormModal
+                isOpen={isModalOpen}
+                onClose={() => setIsModalOpen(false)}
+                formData={formData}
+                setFormData={setFormData}
+                editingClient={editingClient}
+                onSave={handleSave}
+            />
 
             {/* Repayment Modal */}
-            {isRepayModalOpen && selectedClientForRepayment && (
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className={`${t.bgCard} rounded-2xl w-full max-w-md border ${t.border} shadow-2xl animate-scale-in max-h-[90vh] overflow-y-auto`}>
-                        <div className={`p-6 border-b ${t.border} flex justify-between items-center sticky top-0 ${t.bgCard} z-10`}>
-                            <h3 className={`text-xl font-bold ${t.text} flex items-center gap-2`}>
-                                <Wallet className="text-emerald-500" /> Погашение долга
-                            </h3>
-                            <button onClick={() => setIsRepayModalOpen(false)} className={`${t.textMuted} hover:${t.text}`}>
-                                <Plus size={24} className="rotate-45" />
-                            </button>
-                        </div>
-                        <div className="p-6 space-y-4">
-                            <div className={`${theme === 'dark' ? 'bg-slate-900' : 'bg-slate-100'} p-4 rounded-xl border ${t.border}`}>
-                                <p className={`text-sm ${t.textMuted} mb-1`}>Клиент</p>
-                                <p className={`text-lg font-bold ${t.text}`}>{selectedClientForRepayment.name}</p>
-                                <div className="mt-3 flex justify-between items-end">
-                                    <span className={`text-sm ${t.textMuted}`}>Общий долг:</span>
-                                    <span className="text-xl font-mono font-bold text-red-500">
-                                        ${calculateClientDebt(selectedClientForRepayment).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                                    </span>
-                                </div>
-                            </div>
-
-                            {/* Выбор заказа для погашения */}
-                            {getUnpaidOrdersForClient.length > 0 && (
-                                <div className="space-y-2">
-                                    <label className={`text-sm font-medium ${t.textMuted}`}>Выберите чек для погашения</label>
-                                    <div className={`max-h-64 overflow-y-auto space-y-2 ${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-50'} p-2 rounded-lg border ${t.border}`}>
-                                        {getUnpaidOrdersForClient.map(order => (
-                                            <div
-                                                key={order.id}
-                                                onClick={() => {
-                                                    setSelectedOrderForRepayment(selectedOrderForRepayment === order.id ? null : order.id);
-                                                    if (selectedOrderForRepayment !== order.id) {
-                                                        setRepaymentAmount(order.debtAmount);
-                                                    }
-                                                }}
-                                                className={`p-3 rounded-lg border cursor-pointer transition-all ${
-                                                    selectedOrderForRepayment === order.id
-                                                        ? 'border-emerald-500 bg-emerald-500/10'
-                                                        : `${t.border} hover:border-slate-400`
-                                                }`}
-                                            >
-                                                <div className="flex justify-between items-start">
-                                                    <div>
-                                                        <div className={`text-xs ${t.textMuted}`}>
-                                                            {new Date(order.date).toLocaleDateString('ru-RU')}
-                                                            {order.paymentDueDate && (
-                                                                <span className="ml-2 text-amber-500">
-                                                                    • До: {new Date(order.paymentDueDate).toLocaleDateString('ru-RU')}
-                                                                </span>
-                                                            )}
-                                                        </div>
-                                                        <div className={`font-mono text-sm font-bold ${t.text}`}>
-                                                            Отчёт №{order.reportNo || order.id.slice(-4)}
-                                                        </div>
-                                                        <div className={`text-xs ${t.textMuted} truncate max-w-[180px]`}>{order.items}</div>
-                                                    </div>
-                                                    <div className="text-right">
-                                                        <div className={`text-xs ${t.textMuted}`}>Сумма: ${order.totalAmount.toLocaleString()}</div>
-                                                        <div className="text-sm font-mono font-bold text-red-500">
-                                                            Долг: ${order.debtAmount.toLocaleString()}
-                                                        </div>
-                                                        {order.amountPaid > 0 && (
-                                                            <div className={`text-xs ${t.success}`}>
-                                                                Оплачено: ${order.amountPaid.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                                {/* История платежей */}
-                                                {order.payments && order.payments.length > 0 && (
-                                                    <div className={`mt-2 pt-2 border-t ${t.border}`}>
-                                                        <div className={`text-xs ${t.textMuted} mb-1`}>История оплат:</div>
-                                                        <div className="space-y-1">
-                                                            {order.payments.map((payment, idx) => (
-                                                                <div key={idx} className={`flex justify-between text-xs ${t.text}`}>
-                                                                    <span>
-                                                                        {new Date(payment.date).toLocaleDateString('ru-RU')} • 
-                                                                        {payment.method === 'cash' ? ' 💵 Нал' : 
-                                                                         payment.method === 'card' ? ' 💳 Карта' : 
-                                                                         payment.method === 'bank' ? ' 🏦 Банк' : ' Микс'}
-                                                                    </span>
-                                                                    <span className={t.success}>
-                                                                        {payment.currency === 'UZS' 
-                                                                            ? `${payment.amount.toLocaleString()} сум ($${payment.amountUSD.toLocaleString(undefined, { maximumFractionDigits: 2 })})`
-                                                                            : `$${payment.amount.toLocaleString()}`
-                                                                        }
-                                                                    </span>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        ))}
-                                    </div>
-                                    {selectedOrderForRepayment && (
-                                        <div className="text-xs text-emerald-500">
-                                            ✓ Выбран: Отчёт №{getUnpaidOrdersForClient.find(o => o.id === selectedOrderForRepayment)?.reportNo || selectedOrderForRepayment.slice(-4)} — долг ${getUnpaidOrdersForClient.find(o => o.id === selectedOrderForRepayment)?.debtAmount.toLocaleString()}
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-
-                            <div className="space-y-2">
-                                <label className={`text-sm font-medium ${t.textMuted}`}>Способ оплаты</label>
-                                <div className="grid grid-cols-4 gap-2">
-                                    <button
-                                        onClick={() => {
-                                            setRepaymentMethod('cash');
-                                            setRepaymentCurrency('UZS');
-                                        }}
-                                        className={`py-2 rounded-lg text-xs font-medium border transition-all ${repaymentMethod === 'cash' ? 'bg-emerald-500/20 border-emerald-500 text-emerald-500' : `${t.bgCard} ${t.border} ${t.textMuted} hover:${t.text}`}`}
-                                    >
-                                        Нал
-                                    </button>
-                                    <button
-                                        onClick={() => {
-                                            setRepaymentMethod('bank');
-                                            setRepaymentCurrency('UZS');
-                                        }}
-                                        className={`py-2 rounded-lg text-xs font-medium border transition-all ${repaymentMethod === 'bank' ? 'bg-purple-500/20 border-purple-500 text-purple-500' : `${t.bgCard} ${t.border} ${t.textMuted} hover:${t.text}`}`}
-                                    >
-                                        Банк
-                                    </button>
-                                    <button
-                                        onClick={() => {
-                                            setRepaymentMethod('card');
-                                            setRepaymentCurrency('UZS');
-                                        }}
-                                        className={`py-2 rounded-lg text-xs font-medium border transition-all ${repaymentMethod === 'card' ? 'bg-blue-500/20 border-blue-500 text-blue-500' : `${t.bgCard} ${t.border} ${t.textMuted} hover:${t.text}`}`}
-                                    >
-                                        Карта
-                                    </button>
-                                    <button
-                                        onClick={() => setRepaymentMethod('mixed')}
-                                        className={`py-2 rounded-lg text-xs font-medium border transition-all ${repaymentMethod === 'mixed' ? 'bg-amber-500/20 border-amber-500 text-amber-500' : `${t.bgCard} ${t.border} ${t.textMuted} hover:${t.text}`}`}
-                                    >
-                                        Микс
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* Курс обмена - всегда показываем */}
-                            <div className="space-y-2">
-                                <label className={`text-sm font-medium ${t.textMuted}`}>Курс обмена (1 USD = ? UZS)</label>
-                                <input
-                                    type="number"
-                                    className={`w-full ${t.input} border ${t.border} rounded-lg px-4 py-2 ${t.text} font-mono focus:ring-2 focus:ring-emerald-500 outline-none`}
-                                    value={exchangeRate}
-                                    onChange={e => setExchangeRate(Number(e.target.value))}
-                                />
-                            </div>
-
-                            {/* Микс-оплата */}
-                            {repaymentMethod === 'mixed' ? (
-                                <div className="space-y-3">
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <div className="space-y-1">
-                                            <label className={`text-xs font-medium ${t.textMuted}`}>💵 Нал (сум)</label>
-                                            <input
-                                                type="number"
-                                                className={`w-full ${t.input} border ${t.border} rounded-lg px-3 py-2 ${t.text} font-mono text-sm focus:ring-2 focus:ring-emerald-500 outline-none`}
-                                                value={mixCashUZS || ''}
-                                                onChange={e => setMixCashUZS(Number(e.target.value))}
-                                                placeholder="0"
-                                            />
-                                        </div>
-                                        <div className="space-y-1">
-                                            <label className={`text-xs font-medium ${t.textMuted}`}>💵 Нал ($)</label>
-                                            <input
-                                                type="number"
-                                                className={`w-full ${t.input} border ${t.border} rounded-lg px-3 py-2 ${t.text} font-mono text-sm focus:ring-2 focus:ring-emerald-500 outline-none`}
-                                                value={mixCashUSD || ''}
-                                                onChange={e => setMixCashUSD(Number(e.target.value))}
-                                                placeholder="0"
-                                            />
-                                        </div>
-                                        <div className="space-y-1">
-                                            <label className={`text-xs font-medium ${t.textMuted}`}>💳 Карта (сум)</label>
-                                            <input
-                                                type="number"
-                                                className={`w-full ${t.input} border ${t.border} rounded-lg px-3 py-2 ${t.text} font-mono text-sm focus:ring-2 focus:ring-blue-500 outline-none`}
-                                                value={mixCard || ''}
-                                                onChange={e => setMixCard(Number(e.target.value))}
-                                                placeholder="0"
-                                            />
-                                        </div>
-                                        <div className="space-y-1">
-                                            <label className={`text-xs font-medium ${t.textMuted}`}>🏦 Перечисл. (сум)</label>
-                                            <input
-                                                type="number"
-                                                className={`w-full ${t.input} border ${t.border} rounded-lg px-3 py-2 ${t.text} font-mono text-sm focus:ring-2 focus:ring-purple-500 outline-none`}
-                                                value={mixBank || ''}
-                                                onChange={e => setMixBank(Number(e.target.value))}
-                                                placeholder="0"
-                                            />
-                                        </div>
-                                    </div>
-                                    
-                                    {/* Итоги микс-оплаты */}
-                                    <div className={`${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-100'} p-3 rounded-lg border ${t.border}`}>
-                                        <div className="flex justify-between text-sm mb-1">
-                                            <span className={`${t.textMuted}`}>Итого в USD:</span>
-                                            <span className={`${t.success} font-mono font-bold`}>
-                                                ${((mixCashUZS / exchangeRate) + mixCashUSD + (mixCard / exchangeRate) + (mixBank / exchangeRate)).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                                            </span>
-                                        </div>
-                                        <div className="flex justify-between text-sm">
-                                            <span className={`${t.textMuted}`}>Остаток долга:</span>
-                                            <span className={`${t.text} font-mono opacity-80`}>
-                                                ${Math.max(0, calculateClientDebt(selectedClientForRepayment) - ((mixCashUZS / exchangeRate) + mixCashUSD + (mixCard / exchangeRate) + (mixBank / exchangeRate))).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                                            </span>
-                                        </div>
-                                    </div>
-                                </div>
-                            ) : (
-                                <>
-                                    {/* Currency Selector (Only for Cash) */}
-                                    {repaymentMethod === 'cash' && (
-                                        <div className="space-y-2">
-                                            <label className={`text-sm font-medium ${t.textMuted}`}>Валюта</label>
-                                            <div className={`flex ${theme === 'dark' ? 'bg-slate-900' : 'bg-slate-100'} rounded-lg p-1 border ${t.border}`}>
-                                                <button
-                                                    onClick={() => setRepaymentCurrency('UZS')}
-                                                    className={`flex-1 py-1.5 rounded text-xs font-medium transition-all ${repaymentCurrency === 'UZS' ? 'bg-slate-700 text-white' : `${t.textMuted} hover:${t.text}`}`}
-                                                >
-                                                    UZS (Сумы)
-                                                </button>
-                                                <button
-                                                    onClick={() => setRepaymentCurrency('USD')}
-                                                    className={`flex-1 py-1.5 rounded text-xs font-medium transition-all ${repaymentCurrency === 'USD' ? 'bg-slate-700 text-white' : `${t.textMuted} hover:${t.text}`}`}
-                                                >
-                                                    USD (Доллары)
-                                                </button>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    <div className="space-y-2">
-                                        <label className={`text-sm font-medium ${t.textMuted}`}>
-                                            Сумма погашения ({repaymentCurrency})
-                                        </label>
-                                        <div className="relative">
-                                            <DollarSign className={`absolute left-3 top-1/2 -translate-y-1/2 ${t.textMuted}`} size={18} />
-                                            <input
-                                                type="number"
-                                                className={`w-full ${t.input} border ${t.border} rounded-lg pl-10 pr-4 py-3 ${t.text} text-lg font-mono focus:ring-2 focus:ring-emerald-500 outline-none`}
-                                                value={repaymentAmount || ''}
-                                                onChange={e => setRepaymentAmount(Number(e.target.value))}
-                                            />
-                                        </div>
-                                    </div>
-
-                                    <div className={`${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-100'} p-3 rounded-lg border ${t.border}`}>
-                                        <div className="flex justify-between text-sm mb-1">
-                                            <span className={`${t.textMuted}`}>Сумма в USD:</span>
-                                            <span className={`${t.text} font-mono`}>
-                                                ${(repaymentCurrency === 'UZS' && exchangeRate > 0 ? (repaymentAmount / exchangeRate) : repaymentAmount).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                                            </span>
-                                        </div>
-                                        <div className="flex justify-between text-sm">
-                                            <span className={`${t.textMuted}`}>Остаток долга:</span>
-                                            <span className={`${t.text} font-mono opacity-80`}>
-                                                ${Math.max(0, calculateClientDebt(selectedClientForRepayment) - (repaymentCurrency === 'UZS' && exchangeRate > 0 ? (repaymentAmount / exchangeRate) : repaymentAmount)).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                                            </span>
-                                        </div>
-                                    </div>
-                                </>
-                            )}
-
-                            <button
-                                onClick={handleRepayDebt}
-                                disabled={repaymentMethod === 'mixed' 
-                                    ? (mixCashUZS + mixCashUSD + mixCard + mixBank) <= 0 
-                                    : repaymentAmount <= 0}
-                                className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 disabled:text-slate-500 text-white py-3 rounded-xl font-bold transition-colors shadow-lg shadow-emerald-600/20"
-                            >
-                                Подтвердить оплату
-                            </button>
-                        </div>
-                    </div>
-                </div>
+            {selectedClientForRepayment && (
+                <RepaymentModal
+                    isOpen={isRepayModalOpen}
+                    onClose={() => setIsRepayModalOpen(false)}
+                    client={selectedClientForRepayment}
+                    debt={calculateClientDebt(selectedClientForRepayment)}
+                    unpaidOrders={getUnpaidOrdersForClient}
+                    repaymentAmount={repaymentAmount}
+                    setRepaymentAmount={setRepaymentAmount}
+                    repaymentMethod={repaymentMethod}
+                    setRepaymentMethod={setRepaymentMethod}
+                    repaymentCurrency={repaymentCurrency}
+                    setRepaymentCurrency={setRepaymentCurrency}
+                    exchangeRate={exchangeRate}
+                    setExchangeRate={setExchangeRate}
+                    selectedOrderForRepayment={selectedOrderForRepayment}
+                    setSelectedOrderForRepayment={setSelectedOrderForRepayment}
+                    mixCashUZS={mixCashUZS}
+                    setMixCashUZS={setMixCashUZS}
+                    mixCashUSD={mixCashUSD}
+                    setMixCashUSD={setMixCashUSD}
+                    mixCard={mixCard}
+                    setMixCard={setMixCard}
+                    mixBank={mixBank}
+                    setMixBank={setMixBank}
+                    onSubmit={handleRepayDebt}
+                />
             )}
             
             {/* Phone Check Modal - Only for Admin */}
-            {isPhoneCheckModalOpen && phoneCheckResults && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                    <div className={`${t.bgCard} rounded-xl border ${t.border} max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col`}>
-                        <div className={`p-6 border-b ${t.border} flex items-center justify-between`}>
-                            <h2 className={`text-xl font-bold ${t.text} flex items-center gap-2`}>
-                                <Smartphone size={24} className="text-indigo-400" />
-                                Проверка формата телефонов
-                            </h2>
-                            <button
-                                onClick={() => setIsPhoneCheckModalOpen(false)}
-                                className={`p-2 hover:${theme === 'dark' ? 'bg-slate-700' : 'bg-slate-200'} rounded-lg ${t.textMuted} hover:${t.text} transition-colors`}
-                            >
-                                <XCircle size={20} />
-                            </button>
-                        </div>
-                        
-                        <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
-                            {/* Summary */}
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-4">
-                                    <div className="flex items-center gap-2 mb-2">
-                                        <CheckCircle className="text-emerald-400" size={20} />
-                                        <span className="text-emerald-400 font-bold text-lg">{phoneCheckResults.valid.length}</span>
-                                    </div>
-                                    <p className={`${t.textMuted} text-sm`}>Валидные телефоны</p>
-                                </div>
-                                <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4">
-                                    <div className="flex items-center gap-2 mb-2">
-                                        <XCircle className="text-red-400" size={20} />
-                                        <span className="text-red-400 font-bold text-lg">{phoneCheckResults.invalid.length}</span>
-                                    </div>
-                                    <p className={`${t.textMuted} text-sm`}>Невалидные телефоны</p>
-                                </div>
-                                <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-4">
-                                    <div className="flex items-center gap-2 mb-2">
-                                        <AlertCircle className="text-yellow-400" size={20} />
-                                        <span className="text-yellow-400 font-bold text-lg">{phoneCheckResults.missing.length}</span>
-                                    </div>
-                                    <p className={`${t.textMuted} text-sm`}>Без телефона</p>
-                                </div>
-                            </div>
-                            
-                            {/* Valid Phones */}
-                            {phoneCheckResults.valid.length > 0 && (
-                                <div>
-                                    <h3 className={`text-lg font-bold ${t.text} mb-3 flex items-center gap-2`}>
-                                        <CheckCircle className="text-emerald-400" size={18} />
-                                        Валидные телефоны ({phoneCheckResults.valid.length})
-                                    </h3>
-                                    <div className={`${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-100'} rounded-lg border ${t.border} overflow-hidden`}>
-                                        <div className="max-h-60 overflow-y-auto custom-scrollbar">
-                                            <table className="w-full text-sm">
-                                                <thead className={`${theme === 'dark' ? 'bg-slate-800/50' : 'bg-slate-200'} sticky top-0`}>
-                                                    <tr>
-                                                        <th className={`px-4 py-2 text-left ${t.textMuted} font-medium`}>Клиент</th>
-                                                        <th className={`px-4 py-2 text-left ${t.textMuted} font-medium`}>Исходный</th>
-                                                        <th className={`px-4 py-2 text-left ${t.textMuted} font-medium`}>Формат для планшета</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className={`divide-y ${t.divide}`}>
-                                                    {phoneCheckResults.valid.map(client => (
-                                                        <tr key={client.id} className={`hover:${theme === 'dark' ? 'bg-slate-700/30' : 'bg-slate-200/50'}`}>
-                                                            <td className={`px-4 py-2 ${t.text}`}>{client.name}</td>
-                                                            <td className={`px-4 py-2 ${t.textMuted} font-mono`}>{client.phone}</td>
-                                                            <td className="px-4 py-2 text-emerald-400 font-mono">{client.formatted}</td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-                            
-                            {/* Invalid Phones */}
-                            {phoneCheckResults.invalid.length > 0 && (
-                                <div>
-                                    <h3 className={`text-lg font-bold ${t.text} mb-3 flex items-center gap-2`}>
-                                        <XCircle className="text-red-400" size={18} />
-                                        Невалидные телефоны ({phoneCheckResults.invalid.length})
-                                    </h3>
-                                    <div className={`${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-100'} rounded-lg border ${t.border} overflow-hidden`}>
-                                        <div className="max-h-60 overflow-y-auto custom-scrollbar">
-                                            <table className="w-full text-sm">
-                                                <thead className={`${theme === 'dark' ? 'bg-slate-800/50' : 'bg-slate-200'} sticky top-0`}>
-                                                    <tr>
-                                                        <th className={`px-4 py-2 text-left ${t.textMuted} font-medium`}>Клиент</th>
-                                                        <th className={`px-4 py-2 text-left ${t.textMuted} font-medium`}>Телефон</th>
-                                                        <th className={`px-4 py-2 text-left ${t.textMuted} font-medium`}>Ошибка</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className={`divide-y ${t.divide}`}>
-                                                    {phoneCheckResults.invalid.map(client => (
-                                                        <tr key={client.id} className={`hover:${theme === 'dark' ? 'bg-slate-700/30' : 'bg-slate-200/50'}`}>
-                                                            <td className={`px-4 py-2 ${t.text}`}>{client.name}</td>
-                                                            <td className={`px-4 py-2 ${t.textMuted} font-mono`}>{client.phone}</td>
-                                                            <td className="px-4 py-2 text-red-400 text-xs">{client.error}</td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-                            
-                            {/* Missing Phones */}
-                            {phoneCheckResults.missing.length > 0 && (
-                                <div>
-                                    <h3 className={`text-lg font-bold ${t.text} mb-3 flex items-center gap-2`}>
-                                        <AlertCircle className="text-yellow-400" size={18} />
-                                        Без телефона ({phoneCheckResults.missing.length})
-                                    </h3>
-                                    <div className={`${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-100'} rounded-lg border ${t.border} p-4`}>
-                                        <div className="flex flex-wrap gap-2">
-                                            {phoneCheckResults.missing.map(client => (
-                                                <span key={client.id} className="px-3 py-1 bg-yellow-500/10 text-yellow-400 rounded-lg text-sm border border-yellow-500/20">
-                                                    {client.name}
-                                                </span>
-                                            ))}
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                        
-                        <div className={`p-6 border-t ${t.border} flex justify-end gap-3`}>
-                            <button
-                                onClick={() => setIsPhoneCheckModalOpen(false)}
-                                className={`px-6 py-2 ${theme === 'dark' ? 'bg-slate-700 hover:bg-slate-600' : 'bg-slate-200 hover:bg-slate-300'} ${t.text} rounded-lg font-medium transition-colors`}
-                            >
-                                Закрыть
-                            </button>
-                        </div>
-                    </div>
-                </div>
+            {phoneCheckResults && (
+                <PhoneCheckModal
+                    isOpen={isPhoneCheckModalOpen}
+                    onClose={() => setIsPhoneCheckModalOpen(false)}
+                    results={phoneCheckResults}
+                />
             )}
 
             {/* Debt History Modal */}

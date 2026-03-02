@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Purchase, Order, Expense, AppSettings } from '../types';
+import { DEFAULT_EXCHANGE_RATE } from '../constants';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
 import { Calendar, Filter, ArrowDownRight, ArrowUpRight, Scale, FileText, List } from 'lucide-react';
 
@@ -22,7 +23,7 @@ export const VatReport: React.FC<VatReportProps> = ({ purchases, orders, expense
     const [endDate, setEndDate] = useState(lastDay);
 
     // Курс для конвертации USD → UZS (НДС отчёт в национальной валюте)
-    const exchangeRate = settings.defaultExchangeRate || 12800;
+    const exchangeRate = settings.defaultExchangeRate || DEFAULT_EXCHANGE_RATE;
 
     // Форматирование в сумах
     const formatUZS = (usd: number) => {
@@ -54,14 +55,14 @@ export const VatReport: React.FC<VatReportProps> = ({ purchases, orders, expense
         // Purchase invoice VAT (totalVatAmountUZS stored in UZS, convert to USD)
         const purchaseVat = filteredPurchases.reduce((sum, p) => {
             if (p.totalVatAmountUZS && p.totalVatAmountUZS > 0) {
-                const purchaseRate = p.exchangeRate || (settings.defaultExchangeRate || 12800);
+                const purchaseRate = p.exchangeRate || (settings.defaultExchangeRate || DEFAULT_EXCHANGE_RATE);
                 return sum + (p.totalVatAmountUZS / purchaseRate);
             }
             // Legacy: per-item VAT (UZS)
             if (p.items && Array.isArray(p.items)) {
                 const itemsVatUZS = p.items.reduce((s, item) => s + (item.vatAmount || 0), 0);
                 if (itemsVatUZS > 0) {
-                    const purchaseRate = p.exchangeRate || (settings.defaultExchangeRate || 12800);
+                    const purchaseRate = p.exchangeRate || (settings.defaultExchangeRate || DEFAULT_EXCHANGE_RATE);
                     return sum + (itemsVatUZS / purchaseRate);
                 }
             }
@@ -87,7 +88,7 @@ export const VatReport: React.FC<VatReportProps> = ({ purchases, orders, expense
         // 5. Registry (Combined List)
         const registry = [
             ...filteredPurchases.map(p => {
-                const pRate = p.exchangeRate || (settings.defaultExchangeRate || 12800);
+                const pRate = p.exchangeRate || (settings.defaultExchangeRate || DEFAULT_EXCHANGE_RATE);
                 const invoiceVatUSD = (p.totalVatAmountUZS || 0) / pRate;
                 return {
                     id: p.id,

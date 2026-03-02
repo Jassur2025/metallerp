@@ -193,8 +193,8 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({
                                 <div className="flex flex-wrap gap-4">
                                   {transactions.filter(tx => tx.relatedId === purchase.id).map(tx => (
                                     <div key={tx.id} className={`${t.bg} p-3 rounded-lg border ${t.border} min-w-[140px]`}>
-                                      <div className={`text-[10px] ${t.textMuted} uppercase mb-1`}>{(tx as any).method === 'cash' ? 'Наличные' : (tx as any).method === 'card' ? 'Карта' : 'Банк'}</div>
-                                      <div className={`text-sm font-mono font-bold ${(tx as any).method === 'cash' && tx.currency === 'USD' ? (theme === 'dark' ? 'text-emerald-400' : 'text-emerald-600') : (theme === 'dark' ? 'text-blue-400' : 'text-blue-600')}`}>
+                                      <div className={`text-[10px] ${t.textMuted} uppercase mb-1`}>{tx.method === 'cash' ? 'Наличные' : tx.method === 'card' ? 'Карта' : 'Банк'}</div>
+                                      <div className={`text-sm font-mono font-bold ${tx.method === 'cash' && tx.currency === 'USD' ? (theme === 'dark' ? 'text-emerald-400' : 'text-emerald-600') : (theme === 'dark' ? 'text-blue-400' : 'text-blue-600')}`}>
                                         {tx.currency === 'UZS' ? `${tx.amount.toLocaleString()} UZS` : `$${tx.amount.toFixed(2)}`}
                                       </div>
                                     </div>

@@ -9,12 +9,10 @@ export interface Balances {
 
 export interface ProcurementProps {
   products: Product[];
-  setProducts: (products: Product[]) => void;
   settings: AppSettings;
   purchases: Purchase[];
   onSavePurchases: (purchases: Purchase[]) => void;
   transactions: Transaction[];
-  setTransactions: (t: Transaction[]) => void;
   workflowOrders: WorkflowOrder[];
   onSaveWorkflowOrders: (workflowOrders: WorkflowOrder[]) => Promise<boolean | void>;
   onSaveProducts?: (products: Product[]) => Promise<void>;

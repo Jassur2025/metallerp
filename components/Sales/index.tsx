@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { Product, Order, OrderItem, Expense, Client, Transaction, JournalEvent, WorkflowOrder, Employee, AppSettings } from '../../types';
-import { ShoppingCart, ArrowDownRight, ArrowUpRight, RefreshCw, FileText, ClipboardList, BadgeCheck, AlertTriangle, List, ChevronDown, ChevronUp } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { Product, Order, OrderItem, Expense, Client, Transaction, JournalEvent, WorkflowOrder } from '../../types';
+import { ShoppingCart, ArrowDownRight, ArrowUpRight, RefreshCw, FileText, ClipboardList, List } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import { useTheme, getThemeClasses } from '../../contexts/ThemeContext';
-import { SUPER_ADMIN_EMAILS, IS_DEV_MODE } from '../../constants';
+import { SUPER_ADMIN_EMAILS } from '../../constants';
 import { useAuth } from '../../contexts/AuthContext';
 import { IdGenerator } from '../../utils/idGenerator';
 
@@ -22,15 +22,23 @@ import { ClientModal } from './ClientModal';
 import { StaffModal } from './StaffModal';
 import { generateInvoicePDF, generateWaybillPDF } from '../../utils/DocumentTemplates';
 import { PaymentSplitModal, PaymentDistribution } from './PaymentSplitModal';
-import { TransactionsManager } from './TransactionsManager';
-import { calculateBaseTotals } from '../../utils/finance';
+import { WorkflowQueue } from './WorkflowQueue';
+import { OrderEditModal } from './OrderEditModal';
+import { SalesTransactionsView } from './SalesTransactionsView';
+import { AuditAlert } from './AuditAlert';
+import { calculateBaseTotals, num, getSafeRate } from '../../utils/finance';
+import { findOrCreateClient } from '../../services/clientService';
+import { CancelWorkflowModal } from '../CancelWorkflowModal';
+
+import { logger } from '../../utils/logger';
+import { getMissingItems } from '../../utils/inventoryHelpers';
 
 const isDev = import.meta.env.DEV;
-const errorDev = (...args: unknown[]) => { if (isDev) console.error(...args); };
+const errorDev = (...args: unknown[]) => { if (isDev) logger.error('Sales', String(args[0]), ...args.slice(1)); };
 
 export const Sales: React.FC<SalesProps> = ({
-  products, setProducts, orders, setOrders, settings, setSettings, expenses, setExpenses,
-  employees, onNavigateToStaff, clients, onSaveClients, transactions, setTransactions,
+  products, orders, setOrders, settings, setSettings, expenses,
+  employees, onNavigateToStaff, clients, onSaveClients, transactions,
   workflowOrders, onSaveWorkflowOrders, currentUserEmail, onNavigateToProcurement,
   onSaveOrders, onSaveTransactions, onSaveProducts, onSaveExpenses, onAddExpense, onAddJournalEvent,
   onDeleteTransaction, onDeleteExpense, onSaveEmployees
@@ -61,7 +69,6 @@ export const Sales: React.FC<SalesProps> = ({
     [employees, currentUserEmail]
   );
   const isCashier =
-    IS_DEV_MODE ||
     (!!currentUserEmail && SUPER_ADMIN_EMAILS.includes(currentUserEmail.toLowerCase())) ||
     currentEmployee?.role === 'accountant' ||
     currentEmployee?.role === 'manager' ||
@@ -163,11 +170,11 @@ export const Sales: React.FC<SalesProps> = ({
   }, [settings.defaultExchangeRate]);
 
   // Helpers
-  const toUZS = (usd: number) => Math.round(usd * exchangeRate);
-  const toUSD = (uzs: number) => exchangeRate > 0 ? uzs / exchangeRate : 0;
+  const toUZS = useCallback((usd: number) => Math.round(usd * exchangeRate), [exchangeRate]);
+  const toUSD = useCallback((uzs: number) => exchangeRate > 0 ? uzs / exchangeRate : 0, [exchangeRate]);
 
   // Расчёт скидки для заказа относительно прайс-листа
-  const getOrderDiscount = (items: OrderItem[]) => {
+  const getOrderDiscount = useCallback((items: OrderItem[]) => {
     if (!Array.isArray(items) || items.length === 0) return { hasDiscount: false, totalDiscount: 0, discountPercent: 0 };
 
     let priceListTotal = 0;
@@ -190,7 +197,7 @@ export const Sales: React.FC<SalesProps> = ({
       priceListTotal,
       actualTotal
     };
-  };
+  }, [products]);
 
   const workflowCashQueue = React.useMemo(() => {
     return (workflowOrders || [])
@@ -198,25 +205,13 @@ export const Sales: React.FC<SalesProps> = ({
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [workflowOrders]);
 
-  const getMissingItems = (items: OrderItem[]) => {
-    const missing: { productId: string; need: number; available: number }[] = [];
-    items.forEach(it => {
-      const p = products.find(pp => pp.id === it.productId);
-      const available = p?.quantity ?? 0;
-      if (!p || available < it.quantity) {
-        missing.push({ productId: it.productId, need: it.quantity, available });
-      }
-    });
-    return missing;
-  };
-
   const openWorkflowPaymentModal = (wf: WorkflowOrder) => {
     if (!isCashier) {
       toast.error('Нет прав: только кассир/финансист может подтверждать.');
       return;
     }
 
-    const missing = getMissingItems(wf.items || []);
+    const missing = getMissingItems(wf.items || [], products);
     if (missing.length > 0) {
       toast.warning('Недостаточно остатков. Заявка отправлена в закуп.');
       // ... (existing logic to return to procurement)
@@ -275,28 +270,12 @@ export const Sales: React.FC<SalesProps> = ({
     });
     // CRITICAL: Save to Sheets FIRST, then update state
     await onSaveProducts?.(updatedProducts);
-    setProducts(updatedProducts);
 
     // Update client (create if missing)
-    const nextClients = [...clients];
-    let idx = nextClients.findIndex(c => c.name.toLowerCase() === String(wf.customerName || '').toLowerCase());
-    let clientId = '';
-    if (idx === -1) {
-      const c: Client = {
-        id: IdGenerator.client(),
-        name: wf.customerName,
-        phone: wf.customerPhone || '',
-        creditLimit: 0,
-        totalPurchases: 0,
-        totalDebt: 0,
-        notes: 'Автоматически создан из Workflow'
-      };
-      nextClients.push(c);
-      idx = nextClients.length - 1;
-      clientId = c.id;
-    } else {
-      clientId = nextClients[idx].id;
-    }
+    const { client: foundClient, index: idx, clients: nextClients } = findOrCreateClient(
+      clients, wf.customerName, wf.customerPhone || '', 'Автоматически создан из Workflow'
+    );
+    const clientId = foundClient.id;
 
     // Add clientId to order
     const newOrderWithClient: Order = {
@@ -304,33 +283,9 @@ export const Sales: React.FC<SalesProps> = ({
       clientId
     };
 
-    // Update Client Debt
-    // Add full amount to purchase history, add remaining debt
-    // NOTE: If we record transactions for payments, we should add TOTAL amount to debt first, then reduce by payments? 
-    // OR: Current logic says `totalDebt` tracks UNPAID amount?
-    // Let's stick to: Total Debt += (Total Amount - Paid Amount).
-    // Wait, if we use transactions model, `totalDebt` is usually calculated from (Purchases - Payments).
-    // But we are storing a static `totalDebt` field.
-    // So: Debt += newOrder.totalAmount (increase debt by purchase)
-    // Then Debt -= payments (decrease debt by payment)
-    // Net result: Debt += remainingUSD.
-
-    // BUT! Our transactions logic below creates `client_payment` which usually implies reducing debt.
-    // To keep it consistent: We add the FULL order amount to debt/purchases.
-    // Then the `client_payment` transactions will physically reduce it (if we had a ledger re-calc). 
-    // Since we manually update `totalDebt` here:
-
-    const debtIncrease = remainingUSD; // Only add the unpaid part?
-    // Logic: 
-    // 1. Client buys for $100. Debt +100.
-    // 2. Client pays $40. Debt -40.
-    // Result: Debt +60.
-    // So YES, we increase debt by remaining amount.
-
     nextClients[idx] = {
       ...nextClients[idx],
-      totalPurchases: (nextClients[idx].totalPurchases || 0) + (wf.totalAmount || 0),
-      totalDebt: (nextClients[idx].totalDebt || 0) + remainingUSD
+      totalPurchases: (nextClients[idx].totalPurchases || 0) + (wf.totalAmount || 0)
     };
     onSaveClients(nextClients);
 
@@ -338,7 +293,7 @@ export const Sales: React.FC<SalesProps> = ({
     const newTrx: Transaction[] = [];
     const baseTrx = {
       id: '', date: new Date().toISOString(), type: 'client_payment' as const,
-      description: `Оплата заказа ${newOrder.id} (Workflow)`, relatedId: clientId
+      description: `Оплата заказа ${newOrder.id} (Workflow)`, relatedId: clientId, orderId: newOrder.id
     };
 
     if (cashUSD > 0) newTrx.push({ ...baseTrx, id: IdGenerator.transaction(), amount: cashUSD, currency: 'USD', method: 'cash' });
@@ -355,14 +310,13 @@ export const Sales: React.FC<SalesProps> = ({
     if (remainingUSD > 0.05) {
       newTrx.push({
         ...baseTrx, id: IdGenerator.transaction(), type: 'debt_obligation', amount: remainingUSD, currency: 'USD', method: 'debt',
-        description: `Долг по заказу ${newOrder.id}`
+        description: `Долг по заказу ${newOrder.id}`, orderId: newOrder.id
       });
     }
 
     const updatedTx = [...transactions, ...newTrx];
     // CRITICAL: Save to Sheets FIRST, then update state
     await onSaveTransactions?.(updatedTx);
-    setTransactions(updatedTx);
 
     const updatedOrders = [newOrderWithClient, ...orders];
     // CRITICAL: Save to Sheets FIRST, then update state
@@ -394,75 +348,16 @@ export const Sales: React.FC<SalesProps> = ({
   };
 
   // --- Cancel Workflow Order ---
-  const [cancelReason, setCancelReason] = useState('');
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
   const [orderToCancel, setOrderToCancel] = useState<WorkflowOrder | null>(null);
 
   const openCancelModal = (wf: WorkflowOrder) => {
     setOrderToCancel(wf);
-    setCancelReason('');
     setCancelModalOpen(true);
   };
 
-  const confirmCancelWorkflow = async () => {
-    if (!orderToCancel) return;
-    if (!cancelReason.trim()) {
-      toast.warning('Укажите причину аннулирования');
-      return;
-    }
-
-    const updatedWorkflow = workflowOrders.map(o =>
-      o.id === orderToCancel.id
-        ? {
-          ...o,
-          status: 'cancelled' as const,
-          cancellationReason: cancelReason.trim(),
-          cancelledBy: currentEmployee?.name || currentUserEmail || 'Кассир',
-          cancelledAt: new Date().toISOString()
-        }
-        : o
-    );
-
-    await onSaveWorkflowOrders(updatedWorkflow);
-
-    await onAddJournalEvent?.({
-      id: IdGenerator.journalEvent(),
-      date: new Date().toISOString(),
-      type: 'employee_action',
-      employeeName: currentEmployee?.name || 'Кассир',
-      action: 'Workflow аннулирован',
-      description: `Заказ ${orderToCancel.id} аннулирован. Причина: ${cancelReason.trim()}`,
-      module: 'sales',
-      relatedType: 'workflow',
-      relatedId: orderToCancel.id
-    });
-
-    toast.success('Заказ аннулирован');
-    setCancelModalOpen(false);
-    setOrderToCancel(null);
-    setCancelReason('');
-  };
-
-  // --- Balance Calculations ---
-  // --- Helpers ---
-  const num = (v: any): number => {
-    if (typeof v === 'number') return isFinite(v) ? v : 0;
-    if (typeof v === 'string') {
-      const p = parseFloat(v.replace(/[^\d.-]/g, ''));
-      return isFinite(p) ? p : 0;
-    }
-    return 0;
-  };
-
-  const getRate = (rate: any) => {
-    const r = num(rate);
-    // Минимальный реалистичный курс UZS/USD около 12000
-    const defaultRate = num(exchangeRate);
-    const safeDefault = defaultRate > 100 ? defaultRate : 12800;
-    return r > 100 ? r : safeDefault;
-  };
-
-  const calculateBalance = (): { balances: Balances; debugStats: any; suspicious: { orders: Order[]; transactions: Transaction[]; expenses: Expense[] } } => {
+  // --- Balance Calculations (memoized) ---
+  const { balances, debugStats, suspicious } = useMemo(() => {
     const { cashUSD, cashUZS, bankUZS, cardUZS } = calculateBaseTotals(
       orders || [],
       transactions || [],
@@ -470,6 +365,7 @@ export const Sales: React.FC<SalesProps> = ({
       settings.defaultExchangeRate
     );
 
+    const getRate = (rate: number | undefined) => getSafeRate(rate, num(exchangeRate));
     const suspiciousThreshold = 1000000; // $1M
 
     return {
@@ -478,7 +374,7 @@ export const Sales: React.FC<SalesProps> = ({
         balanceCashUZS: cashUZS,
         balanceBankUZS: bankUZS,
         balanceCardUZS: cardUZS
-      },
+      } as Balances,
       debugStats: {
         salesUSD: 0,
         trxInUSD: 0,
@@ -499,23 +395,23 @@ export const Sales: React.FC<SalesProps> = ({
         })
       }
     };
-  };
-
-  const { balances, debugStats, suspicious } = calculateBalance();
+  }, [orders, transactions, expenses, settings.defaultExchangeRate, exchangeRate]);
 
   // --- Cart Logic ---
-  const addToCart = (product: Product) => {
-    const existing = cart.find(item => item.productId === product.id);
-    if (existing) return;
-    const newItem: OrderItem = {
-      productId: product.id, productName: product.name, dimensions: product.dimensions,
-      quantity: 1, priceAtSale: product.pricePerUnit, costAtSale: product.costPrice || 0,
-      unit: product.unit, total: product.pricePerUnit
-    };
-    setCart([...cart, newItem]);
-  };
+  const addToCart = useCallback((product: Product) => {
+    setCart(prev => {
+      const existing = prev.find(item => item.productId === product.id);
+      if (existing) return prev;
+      const newItem: OrderItem = {
+        productId: product.id, productName: product.name, dimensions: product.dimensions,
+        quantity: 1, priceAtSale: product.pricePerUnit, costAtSale: product.costPrice || 0,
+        unit: product.unit, total: product.pricePerUnit
+      };
+      return [...prev, newItem];
+    });
+  }, []);
 
-  const handleAddToCart = (e: React.MouseEvent<HTMLButtonElement>, product: Product) => {
+  const handleAddToCart = useCallback((e: React.MouseEvent<HTMLElement>, product: Product) => {
     addToCart(product);
     const btnRect = e.currentTarget.getBoundingClientRect();
     const isMobile = window.innerWidth < 1024;
@@ -536,12 +432,12 @@ export const Sales: React.FC<SalesProps> = ({
         }]);
       }
     }
-  };
+  }, [addToCart]);
 
-  const removeFlyingItem = (id: number) => setFlyingItems(prev => prev.filter(item => item.id !== id));
+  const removeFlyingItem = useCallback((id: number) => setFlyingItems(prev => prev.filter(item => item.id !== id)), []);
 
-  const updateQuantity = (productId: string, qty: number) => {
-    setCart(cart.map(item => {
+  const updateQuantity = useCallback((productId: string, qty: number) => {
+    setCart(prev => prev.map(item => {
       if (item.productId === productId) {
         const product = products.find(p => p.id === productId);
         if (!product) return item;
@@ -550,18 +446,9 @@ export const Sales: React.FC<SalesProps> = ({
       }
       return item;
     }));
-  };
+  }, [products]);
 
-  const updatePrice = (productId: string, price: number) => {
-    setCart(cart.map(item => {
-      if (item.productId === productId) {
-        return { ...item, priceAtSale: price, total: item.quantity * price };
-      }
-      return item;
-    }));
-  };
-
-  const removeFromCart = (id: string) => setCart(cart.filter(item => item.productId !== id));
+  const removeFromCart = useCallback((id: string) => setCart(prev => prev.filter(item => item.productId !== id)), []);
 
   // Totals — IFRS 15: discount applies to net amount (before VAT)
   const subtotalUSD = cart.reduce((sum, item) => sum + item.total, 0);
@@ -612,9 +499,6 @@ export const Sales: React.FC<SalesProps> = ({
       paymentDueDate, // Payment deadline for debts
     };
 
-    // Save original products for rollback on error
-    const originalProducts = [...products];
-
     try {
       // Update products
       const updatedProducts = products.map(p => {
@@ -622,21 +506,12 @@ export const Sales: React.FC<SalesProps> = ({
         return cartItem ? { ...p, quantity: p.quantity - cartItem.quantity } : p;
       });
       await onSaveProducts?.(updatedProducts);
-      setProducts(updatedProducts);
 
       // Update/Create Client
-      let currentClients = [...clients];
-      let clientIndex = currentClients.findIndex(c => c.name.toLowerCase() === customerName.toLowerCase());
-      let clientId = '';
-
-      if (clientIndex === -1) {
-        const newClient: Client = { id: IdGenerator.client(), name: customerName, phone: '', creditLimit: 0, totalPurchases: 0, totalDebt: 0, notes: 'Автоматически создан при продаже' };
-        currentClients.push(newClient);
-        clientIndex = currentClients.length - 1;
-        clientId = newClient.id;
-      } else {
-        clientId = currentClients[clientIndex].id;
-      }
+      const { client: foundClient, index: clientIndex, clients: currentClients } = findOrCreateClient(
+        clients, customerName, '', 'Автоматически создан при продаже'
+      );
+      const clientId = foundClient.id;
 
       // Add clientId to order for proper linking
       const newOrderWithClient = {
@@ -644,11 +519,10 @@ export const Sales: React.FC<SalesProps> = ({
         clientId
       };
 
-      // Update Client Debt (Purchase + Remaining Debt)
+      // Update Client stats. Debt is updated via debt transactions only.
       currentClients[clientIndex] = {
         ...currentClients[clientIndex],
-        totalPurchases: (currentClients[clientIndex].totalPurchases || 0) + totalAmountUSD,
-        totalDebt: (currentClients[clientIndex].totalDebt || 0) + remainingUSD
+        totalPurchases: (currentClients[clientIndex].totalPurchases || 0) + totalAmountUSD
       };
       await onSaveClients(currentClients);
 
@@ -656,25 +530,26 @@ export const Sales: React.FC<SalesProps> = ({
       const newTrx: Transaction[] = [];
       const baseTrx = {
         id: '', date: new Date().toISOString(), type: 'client_payment' as const,
-        description: `Оплата заказа ${newOrder.id}`, relatedId: clientId
+        description: `Оплата заказа ${newOrder.id}`, relatedId: clientId, orderId: newOrder.id
       };
 
-      if (cashUSD > 0) newTrx.push({ ...baseTrx, id: IdGenerator.transaction(), amount: cashUSD, currency: 'USD', method: 'cash' });
-      if (cashUZS > 0) newTrx.push({ ...baseTrx, id: IdGenerator.transaction(), amount: cashUZS, currency: 'UZS', method: 'cash' });
-      if (cardUZS > 0) newTrx.push({ ...baseTrx, id: IdGenerator.transaction(), amount: cardUZS, currency: 'UZS', method: 'card' });
-      if (bankUZS > 0) newTrx.push({ ...baseTrx, id: IdGenerator.transaction(), amount: bankUZS, currency: 'UZS', method: 'bank' });
+      if (method === 'mixed') {
+        if (cashUSD > 0) newTrx.push({ ...baseTrx, id: IdGenerator.transaction(), amount: cashUSD, currency: 'USD', method: 'cash' });
+        if (cashUZS > 0) newTrx.push({ ...baseTrx, id: IdGenerator.transaction(), amount: cashUZS, currency: 'UZS', method: 'cash' });
+        if (cardUZS > 0) newTrx.push({ ...baseTrx, id: IdGenerator.transaction(), amount: cardUZS, currency: 'UZS', method: 'card' });
+        if (bankUZS > 0) newTrx.push({ ...baseTrx, id: IdGenerator.transaction(), amount: bankUZS, currency: 'UZS', method: 'bank' });
+      }
 
       // Debt Obligation
       if (remainingUSD > 0.05) {
         newTrx.push({
           ...baseTrx, id: IdGenerator.transaction(), type: 'debt_obligation', amount: remainingUSD, currency: 'USD', method: 'debt',
-          description: `Долг по заказу ${newOrder.id}`
+          description: `Долг по заказу ${newOrder.id}`, orderId: newOrder.id
         });
       }
 
       const updatedTransactions = [...transactions, ...newTrx];
       await onSaveTransactions?.(updatedTransactions);
-      setTransactions(updatedTransactions);
 
       // Save order
       const updatedOrders = [newOrderWithClient, ...orders];
@@ -703,10 +578,8 @@ export const Sales: React.FC<SalesProps> = ({
         receiptDetails: { orderId: newOrder.id, customerName, totalAmount: totalAmountUSD, itemsCount: cart.length, paymentMethod, operation: 'created' }
       });
     } catch (error) {
-      // Rollback products to original state on failure
-      setProducts(originalProducts);
       errorDev('finalizeSale failed:', error);
-      toast.error('Ошибка при сохранении заказа! Данные были восстановлены. Попробуйте снова.');
+      toast.error('Ошибка при сохранении заказа! Попробуйте снова.');
     }
   };
 
@@ -825,7 +698,6 @@ export const Sales: React.FC<SalesProps> = ({
         // Fallback to legacy batch save
         const updatedExpenses = [newExpense, ...expenses];
         await onSaveExpenses?.(updatedExpenses);
-        setExpenses(updatedExpenses);
       }
       setExpenseDesc(''); setExpenseAmount(''); setWithVat(false); setExpenseVatAmount(''); setSelectedEmployeeId('');
       toast.success('Расход добавлен!');
@@ -871,7 +743,6 @@ export const Sales: React.FC<SalesProps> = ({
       }
       return p;
     });
-    setProducts(updatedProducts);
     onSaveProducts?.(updatedProducts);
 
     const returnAmountUSD = qty * returnPricePerUnit;
@@ -887,7 +758,6 @@ export const Sales: React.FC<SalesProps> = ({
       description: `Возврат товара: ${product.name} (${qty} ${product.unit})`, relatedId: client?.id
     };
     const updatedTransactions = [...transactions, newTransaction];
-    setTransactions(updatedTransactions);
     onSaveTransactions?.(updatedTransactions);
 
     toast.success(`Возврат оформлен!\nТовар: ${product.name} (+${qty})\nСумма: $${returnAmountUSD.toFixed(2)}`);
@@ -914,7 +784,6 @@ export const Sales: React.FC<SalesProps> = ({
     const updatedTransactions = [...transactions, newTransaction];
     // CRITICAL: Save to Sheets FIRST, then update state
     await onSaveTransactions?.(updatedTransactions);
-    setTransactions(updatedTransactions);
 
     // Update client debt if exists
     if (client) {
@@ -1014,7 +883,7 @@ export const Sales: React.FC<SalesProps> = ({
             <button onClick={() => setMode('expense')} className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${mode === 'expense' ? 'bg-red-600 text-white shadow-lg shadow-red-900/20' : `${t.bgCard} ${t.textMuted} ${t.bgCardHover}`}`}>
               <ArrowUpRight size={20} /> Новый Расход
             </button>
-            {((user as any)?.permissions?.canProcessReturns !== false) && (
+            {(currentEmployee?.permissions?.canProcessReturns !== false) && (
               <button onClick={() => setMode('return')} className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${mode === 'return' ? 'bg-amber-600 text-white shadow-lg shadow-amber-900/20' : `${t.bgCard} ${t.textMuted} ${t.bgCardHover}`}`}>
                 <RefreshCw size={20} /> Возврат
               </button>
@@ -1033,130 +902,18 @@ export const Sales: React.FC<SalesProps> = ({
             )}
           </div>
 
-          {/* Audit Alert - Collapsible */}
-          {(suspicious.orders.length > 0 || suspicious.transactions.length > 0 || suspicious.expenses.length > 0) && (
-            <div className={`mb-6 bg-red-500/10 border border-red-500/30 rounded-2xl overflow-hidden transition-all duration-300`}>
-              <button
-                onClick={() => setShowAuditAlert(!showAuditAlert)}
-                className="w-full flex items-center justify-between p-3 px-4 hover:bg-red-500/5 transition-colors"
-              >
-                <div className="flex items-center gap-2 text-red-400 font-bold text-sm">
-                  <AlertTriangle size={16} />
-                  <span>Аномальные записи ({suspicious.orders.length + suspicious.transactions.length + suspicious.expenses.length})</span>
-                </div>
-                {showAuditAlert ? <ChevronUp size={16} className="text-red-400" /> : <ChevronDown size={16} className="text-red-400" />}
-              </button>
-              {showAuditAlert && (
-                <div className="px-4 pb-3 space-y-2 animate-fade-in">
-                  <div className="space-y-1.5 max-h-[160px] overflow-y-auto custom-scrollbar">
-                    {suspicious.orders.map(o => (
-                      <div key={o.id} className={`text-xs ${theme === 'light' ? 'bg-red-50' : 'bg-slate-900/50'} p-2 rounded-lg flex justify-between border border-red-500/20`}>
-                        <span className={theme === 'light' ? 'text-slate-600' : 'text-slate-300'}>Заказ {o.id} ({o.customerName})</span>
-                        <span className="text-red-400 font-bold font-mono">${num(o.totalAmount).toLocaleString()}</span>
-                      </div>
-                    ))}
-                    {suspicious.transactions.map(tx => (
-                      <div key={tx.id} className={`text-xs ${theme === 'light' ? 'bg-red-50' : 'bg-slate-900/50'} p-2 rounded-lg flex justify-between border border-red-500/20`}>
-                        <span className={theme === 'light' ? 'text-slate-600' : 'text-slate-300'}>Транзакция {tx.id} ({tx.type})</span>
-                        <span className="text-red-400 font-bold font-mono">${(tx.currency === 'USD' ? num(tx.amount) : num(tx.amount) / getRate(tx.exchangeRate)).toLocaleString()}</span>
-                      </div>
-                    ))}
-                    {suspicious.expenses.map(e => (
-                      <div key={e.id} className={`text-xs ${theme === 'light' ? 'bg-red-50' : 'bg-slate-900/50'} p-2 rounded-lg flex justify-between border border-red-500/20`}>
-                        <span className={theme === 'light' ? 'text-slate-600' : 'text-slate-300'}>Расход {e.id} ({e.description})</span>
-                        <span className="text-red-400 font-bold font-mono">${(e.currency === 'USD' ? num(e.amount) : num(e.amount) / getRate(e.exchangeRate)).toLocaleString()}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <p className={`text-[10px] ${theme === 'light' ? 'text-slate-500' : 'text-slate-500'} italic`}>* Измените валюту на UZS или исправьте сумму.</p>
-                </div>
-              )}
-            </div>
-          )}
+          <AuditAlert
+            suspicious={suspicious} showAuditAlert={showAuditAlert}
+            setShowAuditAlert={setShowAuditAlert} exchangeRate={exchangeRate}
+            t={t} theme={theme}
+          />
 
           {mode === 'workflow' ? (
-            <div className={`${t.bgCard} rounded-2xl border ${t.border} p-5 overflow-y-auto custom-scrollbar`}>
-              <div className="flex items-center justify-between mb-4">
-                <h3 className={`${t.text} font-bold flex items-center gap-2`}>
-                  <ClipboardList size={18} className="text-indigo-400" /> Заявки из Workflow (в кассу)
-                </h3>
-                <div className={`text-xs ${t.textMuted}`}>{workflowCashQueue.length} заявок</div>
-              </div>
-
-              {workflowCashQueue.length === 0 ? (
-                <div className={`${t.textMuted} text-center py-10`}>Пока нет заявок из Workflow</div>
-              ) : (
-                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                  {workflowCashQueue.map((wf: any) => {
-                    const discount = getOrderDiscount(wf.items);
-                    return (
-                      <div key={wf.id} className={`${t.bgPanelAlt} border ${t.border} rounded-2xl p-5`}>
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <div className={`${t.text} font-bold`}>{wf.customerName}</div>
-                            <div className={`text-xs ${t.textMuted} mt-1`}>{new Date(wf.date).toLocaleString('ru-RU')}</div>
-                            <div className={`text-xs ${t.textMuted} mt-1`}>ID: {wf.id} • Создал: {wf.createdBy}</div>
-                          </div>
-                          <div className="text-right">
-                            <div className="text-emerald-500 font-mono font-bold">{Number(wf.totalAmountUZS || 0).toLocaleString()} сум</div>
-                            <div className={`text-xs ${t.textMuted}`}>${Number(wf.totalAmount || 0).toFixed(2)}</div>
-                            {discount.hasDiscount && (
-                              <div className="text-xs text-orange-400 font-semibold mt-1">
-                                🏷️ Скидка: {discount.discountPercent.toFixed(1)}%
-                              </div>
-                            )}
-                          </div>
-                        </div>
-
-                        <div className="mt-3 space-y-1 text-sm">
-                          {(wf.items || []).slice(0, 5).map((it: OrderItem, idx: number) => {
-                            const prod = products.find(p => p.id === it.productId);
-                            const dims = prod?.dimensions || it.dimensions || '';
-                            return (
-                              <div key={idx} className={`flex justify-between ${t.textSecondary}`}>
-                                <span className="truncate max-w-[260px]">
-                                  {it.productName}
-                                  {dims && dims !== '-' && <span className={`${t.textMuted} ml-1`}>({dims})</span>}
-                                  <span className={`${t.textMuted} ml-1`}>× {it.quantity}</span>
-                                </span>
-                                <span className={`font-mono ${t.textMuted}`}>{Math.round(Number(it.total || 0) * Number(wf.exchangeRate || exchangeRate)).toLocaleString()} сум</span>
-                              </div>
-                            );
-                          })}
-                          {(wf.items || []).length > 5 && <div className={`text-xs ${t.textMuted}`}>+ ещё {(wf.items || []).length - 5} поз.</div>}
-                        </div>
-
-                        <div className="mt-4 flex items-center justify-between gap-2">
-                          <div className={`text-xs ${t.textMuted}`}>
-                            Оплата: <span className={`${t.text} font-semibold`}>{wf.paymentMethod}</span>
-                            {wf.paymentMethod === 'debt' && <span className="ml-2 text-amber-500 font-bold">ДОЛГ</span>}
-                          </div>
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => openCancelModal(wf)}
-                              className={`bg-red-500/10 hover:bg-red-500/20 text-red-500 px-3 py-2 rounded-xl font-medium flex items-center gap-1 border border-red-500/20`}
-                            >
-                              ✕ Аннулировать
-                            </button>
-                            <button
-                              onClick={() => openWorkflowPaymentModal(wf)}
-                              className={`${theme === 'light' ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-emerald-600 hover:bg-emerald-500'} text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2`}
-                            >
-                              <BadgeCheck size={18} /> Подтвердить
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className={`mt-3 text-xs ${t.textMuted} flex items-center gap-2`}>
-                          <AlertTriangle size={14} className="text-amber-500" />
-                          Если остатков не хватит — заявка уйдет обратно в закуп.
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+            <WorkflowQueue
+              workflowCashQueue={workflowCashQueue} products={products} exchangeRate={exchangeRate}
+              t={t} theme={theme} getOrderDiscount={getOrderDiscount}
+              openCancelModal={openCancelModal} openWorkflowPaymentModal={openWorkflowPaymentModal}
+            />
           ) : mode === 'sale' ? (
             <ProductGrid products={products} searchTerm={searchTerm} setSearchTerm={setSearchTerm}
               sortOption={sortOption} setSortOption={setSortOption} onAddToCart={handleAddToCart} toUZS={toUZS} />
@@ -1175,107 +932,16 @@ export const Sales: React.FC<SalesProps> = ({
               selectedEmployeeId={selectedEmployeeId}
               setSelectedEmployeeId={setSelectedEmployeeId} />
           ) : mode === 'transactions' ? (
-            <div className="space-y-6 flex-1 overflow-y-auto custom-scrollbar pr-2 pb-10">
-              {/* Детальный отчёт движения кассы */}
-              <div className={`${t.bgCard} rounded-2xl border ${t.border} p-5`}>
-                <h3 className={`${t.text} font-bold mb-4 flex items-center gap-2`}>
-                  📊 Детализация баланса кассы USD
-                </h3>
-
-                <div className="space-y-3 max-h-[400px] overflow-y-auto custom-scrollbar">
-                  <div className={`text-xs ${t.textMuted} font-bold border-b ${t.border} pb-2 grid grid-cols-6 gap-2`}>
-                    <span>ID Заказа</span>
-                    <span>Клиент</span>
-                    <span>Метод</span>
-                    <span>Валюта</span>
-                    <span className="text-right">Сумма (к балансу USD)</span>
-                    <span className="text-right">Действия</span>
-                  </div>
-
-                  {(orders || [])
-                    .filter(o => o.paymentMethod !== 'mixed' && o.paymentMethod !== 'debt')
-                    .map(o => {
-                      const rate = num(o.exchangeRate) > 100 ? num(o.exchangeRate) : 12800;
-                      let paidUSD = num(o.amountPaid);
-                      if (paidUSD > 100000) paidUSD = paidUSD / rate;
-                      let totalUSD = num(o.totalAmount);
-                      if (totalUSD > 100000) totalUSD = totalUSD / rate;
-                      const finalAmount = paidUSD > 0 ? paidUSD : totalUSD;
-
-                      const isCashUSD = o.paymentMethod === 'cash' && o.paymentCurrency !== 'UZS';
-                      const isLargeAmount = finalAmount > 10000;
-
-                      return (
-                        <div key={o.id} className={`text-xs grid grid-cols-6 gap-2 py-2 border-b ${theme === 'light' ? 'border-slate-200' : 'border-slate-700/50'} ${isLargeAmount ? 'bg-red-500/20 border-red-500/30' : isCashUSD ? 'bg-emerald-500/10' : t.bgPanelAlt}`}>
-                          <span className={`${t.textSecondary} font-mono`}>{o.id}</span>
-                          <span className={`${t.textMuted} truncate`}>{o.customerName}</span>
-                          <span className={`${t.textMuted}`}>{o.paymentMethod}</span>
-                          <span className={`${t.textMuted}`}>{o.paymentCurrency || 'USD'}</span>
-                          <span className={`text-right font-mono font-bold ${isLargeAmount ? 'text-red-500' : isCashUSD ? 'text-emerald-500' : t.textMuted}`}>
-                            {isCashUSD ? `+$${finalAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })}` : '-'}
-                          </span>
-                          <div className="flex justify-end gap-1">
-                            <button
-                              onClick={() => setEditingOrderId(o.id)}
-                              className="px-2 py-1 bg-blue-500/10 hover:bg-blue-500/20 text-blue-500 rounded text-[10px] font-bold"
-                            >
-                              ✎
-                            </button>
-                            <button
-                              onClick={async () => {
-                                if (confirm(`Удалить заказ ${o.id}?`)) {
-                                  const updated = orders.filter(ord => ord.id !== o.id);
-                                  // CRITICAL: Save to Sheets FIRST, then update state
-                                  await onSaveOrders?.(updated);
-                                  setOrders(updated);
-                                  toast.success('Заказ удалён');
-                                }
-                              }}
-                              className="px-2 py-1 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded text-[10px] font-bold"
-                            >
-                              ✕
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                </div>
-
-                <div className={`mt-4 pt-4 border-t ${t.border} flex justify-between items-center`}>
-                  <span className={`${t.textMuted}`}>Итого в кассе USD (из заказов):</span>
-                  <span className="text-emerald-500 font-mono font-bold text-xl">
-                    ${(orders || [])
-                      .filter(o => o.paymentMethod === 'cash' && o.paymentCurrency !== 'UZS')
-                      .reduce((sum, o) => {
-                        const rate = num(o.exchangeRate) > 100 ? num(o.exchangeRate) : 12800;
-                        let paidUSD = num(o.amountPaid);
-                        if (paidUSD > 100000) paidUSD = paidUSD / rate;
-                        let totalUSD = num(o.totalAmount);
-                        if (totalUSD > 100000) totalUSD = totalUSD / rate;
-                        return sum + (paidUSD > 0 ? paidUSD : totalUSD);
-                      }, 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                  </span>
-                </div>
-
-                <div className={`mt-2 text-xs ${theme === 'light' ? 'text-slate-600' : 'text-amber-500'} bg-amber-500/10 p-2 rounded-lg`}>
-                  💡 Зелёные строки добавляются к балансу USD. Если видите огромные суммы - это ошибки в данных.
-                </div>
-              </div>
-
-              <TransactionsManager
-                transactions={transactions}
-                onUpdateTransactions={setTransactions}
-                onSaveTransactions={onSaveTransactions}
-                onDeleteTransaction={onDeleteTransaction}
-                expenses={expenses}
-                onUpdateExpenses={setExpenses}
-                onSaveExpenses={onSaveExpenses}
-                onDeleteExpense={onDeleteExpense}
-                onAddJournalEvent={onAddJournalEvent}
-                currentUserEmail={currentUserEmail || undefined}
-                exchangeRate={exchangeRate}
-              />
-            </div>
+            <SalesTransactionsView
+              orders={orders} transactions={transactions} expenses={expenses}
+              setOrders={setOrders}
+              onSaveOrders={onSaveOrders} onSaveTransactions={onSaveTransactions} onSaveExpenses={onSaveExpenses}
+              onDeleteTransaction={onDeleteTransaction} onDeleteExpense={onDeleteExpense}
+              onAddJournalEvent={onAddJournalEvent} currentUserEmail={currentUserEmail || undefined}
+              exchangeRate={exchangeRate} t={t} theme={theme}
+              setEditingOrderId={setEditingOrderId}
+              onToast={(type, msg) => type === 'success' ? toast.success(msg) : toast.error(msg)}
+            />
           ) : null}
         </div>
 
@@ -1431,144 +1097,36 @@ export const Sales: React.FC<SalesProps> = ({
 
       {/* Cancel Workflow Modal */}
       {cancelModalOpen && orderToCancel && (
-        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-800 rounded-2xl border border-slate-700 w-full max-w-md p-6">
-            <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-              <AlertTriangle className="text-red-400" size={24} />
-              Аннулирование заказа
-            </h3>
-
-            <div className="bg-slate-900/50 rounded-xl p-4 mb-4">
-              <div className="text-sm text-slate-400">Заказ: <span className="text-white font-mono">{orderToCancel.id}</span></div>
-              <div className="text-sm text-slate-400 mt-1">Клиент: <span className="text-white">{orderToCancel.customerName}</span></div>
-              <div className="text-sm text-slate-400 mt-1">Сумма: <span className="text-emerald-300 font-mono">{Number(orderToCancel.totalAmountUZS || 0).toLocaleString()} сум</span></div>
-            </div>
-
-            <div className="mb-4">
-              <label className="text-sm text-slate-400 mb-2 block">Причина аннулирования *</label>
-              <textarea
-                value={cancelReason}
-                onChange={(e) => setCancelReason(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-red-500/50 h-24 resize-none"
-                placeholder="Укажите причину аннулирования..."
-              />
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                onClick={() => { setCancelModalOpen(false); setOrderToCancel(null); setCancelReason(''); }}
-                className="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-3 rounded-xl font-medium"
-              >
-                Отмена
-              </button>
-              <button
-                onClick={confirmCancelWorkflow}
-                className="flex-1 bg-red-600 hover:bg-red-500 text-white py-3 rounded-xl font-bold"
-              >
-                Аннулировать
-              </button>
-            </div>
-          </div>
-        </div>
+        <CancelWorkflowModal
+          order={orderToCancel}
+          workflowOrders={workflowOrders}
+          cancelledBy={currentEmployee?.name || currentUserEmail || 'Кассир'}
+          onSaveWorkflowOrders={onSaveWorkflowOrders}
+          onClose={() => { setCancelModalOpen(false); setOrderToCancel(null); }}
+          onAddJournalEvent={onAddJournalEvent}
+          journalEvent={{
+            id: IdGenerator.journalEvent(),
+            date: new Date().toISOString(),
+            type: 'employee_action',
+            employeeName: currentEmployee?.name || 'Кассир',
+            action: 'Workflow аннулирован',
+            description: '',
+            module: 'sales',
+            relatedType: 'workflow',
+            relatedId: orderToCancel.id
+          }}
+        />
       )}
 
       {/* Order Edit Modal */}
       {editingOrderId && (
-        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-800 rounded-2xl border border-slate-700 w-full max-w-md p-6">
-            <h3 className="text-xl font-bold text-white mb-4">
-              ✎ Редактирование заказа
-            </h3>
-
-            <div className="text-sm text-slate-400 mb-4">ID: <span className="text-white font-mono">{editingOrderId}</span></div>
-
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm text-slate-400 mb-1 block">Сумма (totalAmount) в USD</label>
-                <input
-                  type="number"
-                  value={editOrderData.totalAmount}
-                  onChange={(e) => setEditOrderData(prev => ({ ...prev, totalAmount: e.target.value }))}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="text-sm text-slate-400 mb-1 block">Оплачено (amountPaid) в USD</label>
-                <input
-                  type="number"
-                  value={editOrderData.amountPaid}
-                  onChange={(e) => setEditOrderData(prev => ({ ...prev, amountPaid: e.target.value }))}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="text-sm text-slate-400 mb-1 block">Метод оплаты</label>
-                <select
-                  value={editOrderData.paymentMethod}
-                  onChange={(e) => setEditOrderData(prev => ({ ...prev, paymentMethod: e.target.value }))}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white outline-none"
-                >
-                  <option value="cash">Cash</option>
-                  <option value="bank">Bank</option>
-                  <option value="card">Card</option>
-                  <option value="debt">Debt</option>
-                  <option value="mixed">Mixed</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="text-sm text-slate-400 mb-1 block">Валюта оплаты</label>
-                <select
-                  value={editOrderData.paymentCurrency}
-                  onChange={(e) => setEditOrderData(prev => ({ ...prev, paymentCurrency: e.target.value }))}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white outline-none"
-                >
-                  <option value="USD">USD</option>
-                  <option value="UZS">UZS</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="flex gap-3 mt-6">
-              <button
-                onClick={() => setEditingOrderId(null)}
-                className="flex-1 bg-slate-700 hover:bg-slate-600 text-white py-3 rounded-xl font-medium"
-              >
-                Отмена
-              </button>
-              <button
-                onClick={async () => {
-                  const updated = orders.map(o =>
-                    o.id === editingOrderId
-                      ? {
-                        ...o,
-                        totalAmount: parseFloat(editOrderData.totalAmount) || 0,
-                        amountPaid: parseFloat(editOrderData.amountPaid) || 0,
-                        paymentMethod: editOrderData.paymentMethod as any,
-                        paymentCurrency: editOrderData.paymentCurrency as any
-                      }
-                      : o
-                  );
-                  // CRITICAL: Save to Sheets FIRST, then update state
-                  await onSaveOrders?.(updated);
-                  setOrders(updated);
-                  toast.success('Заказ обновлён');
-                  setEditingOrderId(null);
-                }}
-                className="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-xl font-bold"
-              >
-                Сохранить
-              </button>
-            </div>
-          </div>
-        </div>
+        <OrderEditModal
+          editingOrderId={editingOrderId} editOrderData={editOrderData}
+          setEditOrderData={setEditOrderData} orders={orders} setOrders={setOrders}
+          onSaveOrders={onSaveOrders} onClose={() => setEditingOrderId(null)}
+          onSuccess={(msg) => toast.success(msg)}
+        />
       )}
     </div>
   );
 };
-
-// Helper for icon
-const SalesModeIcon = ({ icon, size }: { icon: any, size: number }) => <div style={{ width: size, height: size }}>{icon}</div>;
-

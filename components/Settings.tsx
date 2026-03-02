@@ -1,13 +1,13 @@
 
 import React, { useState } from 'react';
-import { AppSettings, CompanyDetails, ExpenseCategory, ExpensePnLCategory } from '../types';
+import { AppSettings, CompanyDetails, ExpenseCategory, ExchangeRateEntry } from '../types';
 import { IdGenerator } from '../utils/idGenerator';
-import { Save, Settings as SettingsIcon, AlertCircle, Database, CheckCircle, XCircle, Loader2, Send, Plus, Trash2, Receipt, RefreshCw, Factory, ShieldAlert, RotateCcw } from 'lucide-react';
-import { telegramService } from '../services/telegramService';
+import { Save, Settings as SettingsIcon, AlertCircle, Loader2, ShieldAlert, RotateCcw, History, TrendingUp, Receipt, Factory, RefreshCw } from 'lucide-react';
 import { resetAllData, COLLECTION_LABELS } from '../services/resetService';
-import { useAuth } from '../contexts/AuthContext';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
 import { useConfirm } from './ConfirmDialog';
+import { ExpenseCategoriesTab } from './Settings/ExpenseCategoriesTab';
+import { ManufacturersTab } from './Settings/ManufacturersTab';
 
 const EMPTY_COMPANY: CompanyDetails = {
   name: '', address: '', phone: '', inn: '', mfo: '', bankName: '', accountNumber: ''
@@ -64,83 +64,19 @@ const DEFAULT_EXPENSE_CATEGORIES: ExpenseCategory[] = [
 interface SettingsProps {
     settings: AppSettings;
     onSave: (settings: AppSettings) => void;
+    currentUserEmail?: string;
 }
 
-export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
+export const Settings: React.FC<SettingsProps> = React.memo(({ settings, onSave, currentUserEmail }) => {
     const { theme } = useTheme();
     const t = getThemeClasses(theme);
-    const { accessToken } = useAuth();
-    const envSheetId = import.meta.env.VITE_GOOGLE_SHEET_ID || '';
-    const envBotToken = import.meta.env.VITE_BOT_TOKEN || '';
-    const envChatId = import.meta.env.VITE_TELEGRAM_CHAT_ID || import.meta.env.VITE_ADMIN_CHAT_ID || '';
-
-    const isSheetFromEnv = Boolean(envSheetId);
-    const isBotFromEnv = Boolean(envBotToken);
-    const isChatFromEnv = Boolean(envChatId);
-
     const [formData, setFormData] = useState<AppSettings>({
         ...settings,
-        telegramBotToken: envBotToken || settings.telegramBotToken,
-        telegramChatId: envChatId || settings.telegramChatId,
         expenseCategories: settings.expenseCategories || DEFAULT_EXPENSE_CATEGORIES,
         manufacturers: settings.manufacturers || DEFAULT_MANUFACTURERS,
     });
     const [message, setMessage] = useState<string | null>(null);
 
-    // Expense Categories State
-    const [newCategoryName, setNewCategoryName] = useState('');
-    const [newCategoryPnL, setNewCategoryPnL] = useState<ExpensePnLCategory>('administrative');
-
-    // Manufacturer State
-    const [newManufacturer, setNewManufacturer] = useState('');
-
-    const addExpenseCategory = () => {
-        if (!newCategoryName.trim()) return;
-        const newCat: ExpenseCategory = {
-            id: IdGenerator.generate('CAT'),
-            name: newCategoryName.trim(),
-            pnlCategory: newCategoryPnL
-        };
-        setFormData(prev => ({
-            ...prev,
-            expenseCategories: [...(prev.expenseCategories || []), newCat]
-        }));
-        setNewCategoryName('');
-    };
-
-    const removeExpenseCategory = (id: string) => {
-        setFormData(prev => ({
-            ...prev,
-            expenseCategories: (prev.expenseCategories || []).filter(c => c.id !== id)
-        }));
-    };
-
-    const updateCategoryPnL = (id: string, pnl: ExpensePnLCategory) => {
-        setFormData(prev => ({
-            ...prev,
-            expenseCategories: (prev.expenseCategories || []).map(c =>
-                c.id === id ? { ...c, pnlCategory: pnl } : c
-            )
-        }));
-    };
-
-    const pnlCategoryLabel = (cat: ExpensePnLCategory) => {
-        switch (cat) {
-            case 'administrative': return 'Административные';
-            case 'operational': return 'Операционные';
-            case 'commercial': return 'Коммерческие';
-        }
-    };
-
-    const pnlCategoryColor = (cat: ExpensePnLCategory) => {
-        switch (cat) {
-            case 'administrative': return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
-            case 'operational': return 'bg-amber-500/20 text-amber-400 border-amber-500/30';
-            case 'commercial': return 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
-        }
-    };
-
-    // Tab state
     const [activeTab, setActiveTab] = useState<'general' | 'expenses' | 'manufacturers'>('general');
 
     // Reset state
@@ -153,31 +89,32 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
     React.useEffect(() => {
         setFormData((prev) => ({
             ...settings,
-            telegramBotToken: envBotToken || settings.telegramBotToken || prev.telegramBotToken,
-            telegramChatId: envChatId || settings.telegramChatId || prev.telegramChatId,
             expenseCategories: settings.expenseCategories || prev.expenseCategories || DEFAULT_EXPENSE_CATEGORIES,
             manufacturers: settings.manufacturers || prev.manufacturers || DEFAULT_MANUFACTURERS,
         }));
-    }, [settings, envBotToken, envChatId]);
+    }, [settings]);
 
 
-
-    const handleTestTelegram = async () => {
-        if (!formData.telegramBotToken || !formData.telegramChatId) {
-            setMessage('Введите Token и Chat ID');
-            return;
-        }
-        try {
-            await telegramService.sendMessage(formData.telegramBotToken, formData.telegramChatId, '🔔 Тестовое сообщение от Google ERP');
-            setMessage('Тестовое сообщение отправлено!');
-        } catch (e: unknown) {
-            setMessage(`Ошибка Telegram: ${e instanceof Error ? e.message : 'Unknown error'}`);
-        }
-        setTimeout(() => setMessage(null), 3000);
-    };
 
     const handleSave = () => {
-        onSave(formData);
+        let dataToSave = { ...formData };
+
+        // Track exchange rate changes in history
+        if (formData.defaultExchangeRate !== settings.defaultExchangeRate && formData.defaultExchangeRate > 0) {
+            const newEntry: ExchangeRateEntry = {
+                rate: formData.defaultExchangeRate,
+                date: new Date().toISOString(),
+                changedBy: currentUserEmail || 'unknown',
+            };
+            const history = [...(formData.exchangeRateHistory || [])];
+            history.push(newEntry);
+            // Keep last 50 entries
+            if (history.length > 50) history.splice(0, history.length - 50);
+            dataToSave = { ...dataToSave, exchangeRateHistory: history };
+            setFormData(dataToSave);
+        }
+
+        onSave(dataToSave);
         setMessage('Настройки успешно сохранены');
         setTimeout(() => setMessage(null), 3000);
     };
@@ -334,7 +271,7 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
                                     Курс валют по умолчанию (USD → UZS)
                                 </label>
                                 <p className={`text-xs ${t.textMuted} mb-2`}>
-                                    Базовый курс, используемый при инициализации продажи.
+                                    Текущий курс доллара. Используется во всех модулях системы.
                                 </p>
                                 <div className="relative">
                                     <input
@@ -345,8 +282,46 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
                                     />
                                     <span className={`absolute right-4 top-3 ${t.textMuted}`}>UZS</span>
                                 </div>
+                                {formData.defaultExchangeRate !== settings.defaultExchangeRate && (
+                                    <p className="text-xs text-amber-500 mt-1 flex items-center gap-1">
+                                        <TrendingUp size={12} />
+                                        Курс изменится с {settings.defaultExchangeRate.toLocaleString()} → {formData.defaultExchangeRate.toLocaleString()} UZS (сохранится в историю)
+                                    </p>
+                                )}
                             </div>
                         </div>
+
+                        {/* Exchange Rate History */}
+                        {(formData.exchangeRateHistory?.length ?? 0) > 0 && (
+                            <div className="mt-6">
+                                <h4 className={`text-sm font-semibold ${t.text} flex items-center gap-2 mb-3`}>
+                                    <History size={16} className="text-primary-500" />
+                                    История изменений курса
+                                </h4>
+                                <div className={`${t.bgCard} border ${t.border} rounded-xl overflow-hidden`}>
+                                    <div className={`grid grid-cols-[1fr_120px_1fr] gap-3 px-4 py-2 text-[11px] font-semibold uppercase ${t.textMuted} ${theme === 'light' ? 'bg-slate-50 border-b border-slate-200' : 'bg-slate-800/60 border-b border-slate-700'}`}>
+                                        <span>Дата</span>
+                                        <span className="text-right">Курс</span>
+                                        <span className="text-right">Кто изменил</span>
+                                    </div>
+                                    <div className="max-h-48 overflow-y-auto custom-scrollbar">
+                                        {[...(formData.exchangeRateHistory || [])].reverse().map((entry, i) => (
+                                            <div key={i} className={`grid grid-cols-[1fr_120px_1fr] gap-3 px-4 py-2 text-sm ${i % 2 === 0 ? '' : (theme === 'light' ? 'bg-slate-50/50' : 'bg-slate-800/30')}`}>
+                                                <span className={t.textMuted}>
+                                                    {new Date(entry.date).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                                </span>
+                                                <span className={`text-right font-mono font-medium ${t.text}`}>
+                                                    {entry.rate.toLocaleString()} UZS
+                                                </span>
+                                                <span className={`text-right text-xs ${t.textMuted} truncate`}>
+                                                    {entry.changedBy || '—'}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     <div className={`border-t ${t.border} my-6`}></div>
@@ -481,69 +456,6 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
                         </div>
                     </div>
 
-                    {/* Telegram Settings */}
-                    <div className="space-y-6">
-                        <h3 className={`text-xl font-bold ${t.text} border-l-4 border-blue-400 pl-4 flex items-center gap-2`}>
-                            <Send size={24} className="text-blue-400" />
-                            Интеграция с Telegram
-                        </h3>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                            <div className="space-y-2">
-                                <label className={`block text-sm font-medium ${t.textMuted}`}>
-                                    Bot Token
-                                </label>
-                                <p className={`text-xs ${t.textMuted} mb-2`}>
-                                    Токен от @BotFather
-                                </p>
-                                <input
-                                    type="password"
-                                    className={`w-full ${t.input} border ${t.border} rounded-lg px-4 py-3 ${t.text} focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm disabled:opacity-60`}
-                                    value={isBotFromEnv ? '••••••••••••••••' : (formData.telegramBotToken || '')}
-                                    readOnly={isBotFromEnv}
-                                    onChange={(e) => setFormData({ ...formData, telegramBotToken: e.target.value })}
-                                    placeholder="123456789:ABCdef..."
-                                />
-                                {isBotFromEnv && (
-                                    <p className={`text-xs ${t.textMuted}`}>
-                                        Bot Token задан через env и скрыт.
-                                    </p>
-                                )}
-                            </div>
-
-                            <div className="space-y-2">
-                                <label className={`block text-sm font-medium ${t.textMuted}`}>
-                                    Chat ID
-                                </label>
-                                <p className={`text-xs ${t.textMuted} mb-2`}>
-                                    ID вашего чата (можно узнать через @userinfobot)
-                                </p>
-                                <div className="flex gap-2">
-                                    <input
-                                        type={isChatFromEnv ? 'password' : 'text'}
-                                        className={`w-full ${t.input} border ${t.border} rounded-lg px-4 py-3 ${t.text} focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm disabled:opacity-60`}
-                                        value={isChatFromEnv ? '••••••••••' : (formData.telegramChatId || '')}
-                                        readOnly={isChatFromEnv}
-                                        onChange={(e) => setFormData({ ...formData, telegramChatId: e.target.value })}
-                                        placeholder="123456789"
-                                    />
-                                    <button
-                                        onClick={handleTestTelegram}
-                                        className={`bg-slate-700 hover:bg-slate-600 text-white px-4 rounded-lg transition-colors`}
-                                        title="Отправить тестовое сообщение"
-                                    >
-                                        <Send size={18} />
-                                    </button>
-                                </div>
-                                {isChatFromEnv && (
-                                    <p className={`text-xs ${t.textMuted}`}>
-                                        Chat ID задан через env и скрыт.
-                                    </p>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-
                     <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 flex items-start gap-3">
                         <AlertCircle className="text-amber-500 shrink-0 mt-1" size={20} />
                         <div className={`text-sm ${t.textMuted}`}>
@@ -639,8 +551,8 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
                                             setResetProgress(prev => [...prev, `\n❌ Ошибка: ${result.error}`]);
                                             setMessage('Ошибка при сбросе данных');
                                         }
-                                    } catch (err: any) {
-                                        setResetProgress(prev => [...prev, `\n❌ Критическая ошибка: ${err.message}`]);
+                                    } catch (err: unknown) {
+                                        setResetProgress(prev => [...prev, `\n❌ Критическая ошибка: ${(err instanceof Error ? err.message : String(err))}`]);
                                     } finally {
                                         setIsResetting(false);
                                         setTimeout(() => setMessage(null), 5000);
@@ -666,227 +578,23 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave }) => {
 
             {/* Tab: Expense Categories */}
             {activeTab === 'expenses' && (
-                <div className={`${t.bgCard} rounded-2xl border ${t.border} shadow-lg overflow-hidden h-[calc(100vh-280px)] max-h-[600px] flex flex-col`}>
-                    <div className={`p-6 border-b ${t.border} ${t.bgCard} bg-opacity-50`}>
-                        <h3 className={`text-xl font-bold ${t.text} flex items-center gap-2`}>
-                            <Receipt size={24} className="text-purple-400" />
-                            Категории расходов (для PnL)
-                        </h3>
-                        <p className={`text-sm ${t.textMuted} mt-1`}>Настройте категории расходов и их классификацию для отчёта о прибылях и убытках</p>
-                    </div>
-
-                    {/* Add new category */}
-                    <div className={`p-4 border-b ${t.border} ${t.bgCard} bg-opacity-50`}>
-                        <div className="flex gap-3 items-end">
-                            <div className="flex-1">
-                                <label className={`block text-xs ${t.textMuted} mb-1`}>Название расхода</label>
-                                <input
-                                    type="text"
-                                    className={`w-full ${t.input} border ${t.border} rounded-lg px-3 py-2 ${t.text} text-sm`}
-                                    value={newCategoryName}
-                                    onChange={(e) => setNewCategoryName(e.target.value)}
-                                    placeholder="Например: Аренда офиса"
-                                    onKeyDown={(e) => e.key === 'Enter' && addExpenseCategory()}
-                                />
-                            </div>
-                            <div className="w-48">
-                                <label className={`block text-xs ${t.textMuted} mb-1`}>Классификация PnL</label>
-                                <select
-                                    className={`w-full ${t.input} border ${t.border} rounded-lg px-3 py-2 ${t.text} text-sm`}
-                                    value={newCategoryPnL}
-                                    onChange={(e) => setNewCategoryPnL(e.target.value as ExpensePnLCategory)}
-                                >
-                                    <option value="administrative">Административные</option>
-                                    <option value="operational">Операционные</option>
-                                    <option value="commercial">Коммерческие</option>
-                                </select>
-                            </div>
-                            <button
-                                onClick={addExpenseCategory}
-                                className="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium"
-                            >
-                                <Plus size={16} /> Добавить
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Categories list - scrollable */}
-                    <div className="flex-1 overflow-y-auto">
-                        <table className="w-full text-sm">
-                            <thead className={`${t.bgCard} text-xs ${t.textMuted} uppercase sticky top-0`}>
-                                <tr>
-                                    <th className="px-4 py-3 text-left">Расход</th>
-                                    <th className="px-4 py-3 text-left w-48">Классификация для PnL</th>
-                                    <th className="px-4 py-3 w-16"></th>
-                                </tr>
-                            </thead>
-                            <tbody className={`divide-y ${t.border} divide-opacity-50`}>
-                                {(formData.expenseCategories || []).map((cat) => (
-                                    <tr key={cat.id} className={`hover:${t.hover}`}>
-                                        <td className={`px-4 py-2 ${t.text}`}>{cat.name}</td>
-                                        <td className="px-4 py-2">
-                                            <select
-                                                className={`px-2 py-1 rounded-lg text-xs font-medium border ${pnlCategoryColor(cat.pnlCategory)} bg-transparent cursor-pointer`}
-                                                value={cat.pnlCategory}
-                                                onChange={(e) => updateCategoryPnL(cat.id, e.target.value as ExpensePnLCategory)}
-                                            >
-                                                <option value="administrative" className={t.bgCard}>Административные</option>
-                                                <option value="operational" className={t.bgCard}>Операционные</option>
-                                                <option value="commercial" className={t.bgCard}>Коммерческие</option>
-                                            </select>
-                                        </td>
-                                        <td className="px-4 py-2 text-center">
-                                            <button
-                                                onClick={() => removeExpenseCategory(cat.id)}
-                                                className={`text-slate-500 hover:text-red-400 transition-colors p-1`}
-                                                title="Удалить"
-                                            >
-                                                <Trash2 size={16} />
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))}
-                                {(!formData.expenseCategories || formData.expenseCategories.length === 0) && (
-                                    <tr>
-                                        <td colSpan={3} className={`px-4 py-8 text-center ${t.textMuted}`}>
-                                            Нет категорий. Добавьте первую категорию расходов.
-                                        </td>
-                                    </tr>
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
-
-                    {/* Footer with stats and save button */}
-                    <div className={`p-4 border-t ${t.border} ${t.bgCard} bg-opacity-50 flex items-center justify-between`}>
-                        <div className={`text-xs ${t.textMuted}`}>
-                            Всего: <span className={`${t.text} font-medium`}>{(formData.expenseCategories || []).length}</span>
-                            <span className="mx-2">•</span>
-                            <span className="text-blue-400">Адм.: {(formData.expenseCategories || []).filter(c => c.pnlCategory === 'administrative').length}</span>
-                            <span className="mx-2">•</span>
-                            <span className="text-amber-400">Опер.: {(formData.expenseCategories || []).filter(c => c.pnlCategory === 'operational').length}</span>
-                            <span className="mx-2">•</span>
-                            <span className="text-emerald-400">Комм.: {(formData.expenseCategories || []).filter(c => c.pnlCategory === 'commercial').length}</span>
-                        </div>
-                        <button
-                            onClick={handleSave}
-                            className="bg-purple-600 hover:bg-purple-500 text-white px-6 py-2 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-purple-600/20 transition-all active:scale-95"
-                        >
-                            <Save size={18} />
-                            Сохранить категории
-                        </button>
-                    </div>
-                </div>
+                <ExpenseCategoriesTab
+                    formData={formData}
+                    setFormData={setFormData}
+                    handleSave={handleSave}
+                    t={t}
+                />
             )}
 
             {/* Tab: Manufacturers */}
             {activeTab === 'manufacturers' && (
-                <div className={`${t.bgCard} rounded-2xl border ${t.border} shadow-lg overflow-hidden h-[calc(100vh-280px)] max-h-[600px] flex flex-col`}>
-                    <div className={`p-6 border-b ${t.border} ${t.bgCard} bg-opacity-50`}>
-                        <h3 className={`text-xl font-bold ${t.text} flex items-center gap-2`}>
-                            <Factory size={24} className="text-emerald-400" />
-                            Производители
-                        </h3>
-                        <p className={`text-sm ${t.textMuted} mt-1`}>Управление списком производителей для товаров</p>
-                    </div>
-
-                    {/* Add new manufacturer */}
-                    <div className={`p-4 border-b ${t.border} ${t.bgCard} bg-opacity-50`}>
-                        <div className="flex gap-3 items-end">
-                            <div className="flex-1">
-                                <label className={`block text-xs ${t.textMuted} mb-1`}>Название производителя</label>
-                                <input
-                                    type="text"
-                                    className={`w-full ${t.input} border ${t.border} rounded-lg px-3 py-2 ${t.text} text-sm`}
-                                    value={newManufacturer}
-                                    onChange={(e) => setNewManufacturer(e.target.value)}
-                                    placeholder="Например: STEEL CORP"
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Enter' && newManufacturer.trim()) {
-                                            const name = newManufacturer.trim();
-                                            if ((formData.manufacturers || []).includes(name)) return;
-                                            setFormData(prev => ({
-                                                ...prev,
-                                                manufacturers: [...(prev.manufacturers || []), name]
-                                            }));
-                                            setNewManufacturer('');
-                                        }
-                                    }}
-                                />
-                            </div>
-                            <button
-                                onClick={() => {
-                                    if (!newManufacturer.trim()) return;
-                                    const name = newManufacturer.trim();
-                                    if ((formData.manufacturers || []).includes(name)) return;
-                                    setFormData(prev => ({
-                                        ...prev,
-                                        manufacturers: [...(prev.manufacturers || []), name]
-                                    }));
-                                    setNewManufacturer('');
-                                }}
-                                className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium"
-                            >
-                                <Plus size={16} /> Добавить
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Manufacturers list - scrollable */}
-                    <div className="flex-1 overflow-y-auto">
-                        <table className="w-full text-sm">
-                            <thead className={`${t.bgCard} text-xs ${t.textMuted} uppercase sticky top-0`}>
-                                <tr>
-                                    <th className="px-4 py-3 text-left w-12">#</th>
-                                    <th className="px-4 py-3 text-left">Производитель</th>
-                                    <th className="px-4 py-3 w-16"></th>
-                                </tr>
-                            </thead>
-                            <tbody className={`divide-y ${t.border} divide-opacity-50`}>
-                                {(formData.manufacturers || []).map((m, idx) => (
-                                    <tr key={m} className={`hover:${t.hover}`}>
-                                        <td className={`px-4 py-2 ${t.textMuted} text-xs`}>{idx + 1}</td>
-                                        <td className={`px-4 py-2 ${t.text} font-medium`}>{m}</td>
-                                        <td className="px-4 py-2 text-center">
-                                            <button
-                                                onClick={() => setFormData(prev => ({
-                                                    ...prev,
-                                                    manufacturers: (prev.manufacturers || []).filter(x => x !== m)
-                                                }))}
-                                                className="text-slate-500 hover:text-red-400 transition-colors p-1"
-                                                title="Удалить"
-                                            >
-                                                <Trash2 size={16} />
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))}
-                                {(!formData.manufacturers || formData.manufacturers.length === 0) && (
-                                    <tr>
-                                        <td colSpan={3} className={`px-4 py-8 text-center ${t.textMuted}`}>
-                                            Нет производителей. Добавьте первого.
-                                        </td>
-                                    </tr>
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
-
-                    {/* Footer */}
-                    <div className={`p-4 border-t ${t.border} ${t.bgCard} bg-opacity-50 flex items-center justify-between`}>
-                        <div className={`text-xs ${t.textMuted}`}>
-                            Всего: <span className={`${t.text} font-medium`}>{(formData.manufacturers || []).length}</span> производителей
-                        </div>
-                        <button
-                            onClick={handleSave}
-                            className="bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-2 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-emerald-600/20 transition-all active:scale-95"
-                        >
-                            <Save size={18} />
-                            Сохранить
-                        </button>
-                    </div>
-                </div>
+                <ManufacturersTab
+                    formData={formData}
+                    setFormData={setFormData}
+                    handleSave={handleSave}
+                    t={t}
+                />
             )}
         </div>
     );
-};
+});

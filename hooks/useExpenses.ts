@@ -1,16 +1,22 @@
-import { useState, useCallback, useMemo, useRef } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { Expense, Transaction } from '../types';
-import { useTransactions } from './useTransactions';
 import { useToast } from '../contexts/ToastContext';
+import { logger } from '../utils/logger';
 
-export const useExpenses = () => {
+interface UseExpensesDeps {
+    transactions: Transaction[];
+    addTransaction: (t: Omit<Transaction, 'id'>) => Promise<Transaction | null>;
+    updateTransaction: (id: string, updates: Partial<Transaction>) => Promise<boolean>;
+    deleteTransaction: (id: string) => Promise<boolean>;
+}
+
+export const useExpenses = (deps: UseExpensesDeps) => {
     const {
         transactions,
         addTransaction,
         updateTransaction: updateTx,
-        deleteTransaction: deleteTx,
-        migrateTransactions
-    } = useTransactions({ realtime: true });
+        deleteTransaction: deleteTx
+    } = deps;
 
     const toast = useToast();
 
@@ -43,7 +49,7 @@ export const useExpenses = () => {
             const expenseKey = `${expense.amount}|${expense.currency}|${expense.description}|${expense.category}`;
             const now = Date.now();
             if (lastExpenseRef.current && lastExpenseRef.current.key === expenseKey && (now - lastExpenseRef.current.timestamp) < 5000) {
-                console.warn('Duplicate expense blocked (same content within 5s)');
+                logger.warn('useExpenses', 'Duplicate expense blocked (same content within 5s)');
                 return null;
             }
             lastExpenseRef.current = { key: expenseKey, timestamp: now };
@@ -66,7 +72,7 @@ export const useExpenses = () => {
             }
             return null;
         } catch (error) {
-            console.error('Error adding expense:', error);
+            logger.error('useExpenses', 'Error adding expense:', error);
             return null;
         }
     }, [addTransaction]);
@@ -84,7 +90,7 @@ export const useExpenses = () => {
 
             return await updateTx(id, txUpdates);
         } catch (error) {
-            console.error('Error updating expense:', error);
+            logger.error('useExpenses', 'Error updating expense:', error);
             return false;
         }
     }, [updateTx]);
@@ -94,33 +100,10 @@ export const useExpenses = () => {
         return await deleteTx(id);
     }, [deleteTx]);
 
-    // Migrate Legacy Expenses
-    const migrateLegacyExpenses = useCallback(async (legacyExpenses: Expense[]) => {
-        // Filter out expenses that are already in transactions (by ID is safest, but IDs might change during migration if we generate new ones)
-        // Ideally legacy expenses have IDs. If we use those IDs as Transaction IDs, we can check existence.
-        // For now, let's assume we want to import if the transaction list is empty or we check ID collision.
-
-        const txsToMigrate = legacyExpenses.map(e => ({
-            id: e.id, // Keep ID if possible
-            type: 'expense' as const,
-            amount: e.amount,
-            currency: e.currency,
-            method: e.paymentMethod,
-            description: e.description,
-            date: e.date,
-            relatedId: e.category,
-            exchangeRate: e.exchangeRate,
-            details: 'Migrated from Sheets'
-        } as Transaction));
-
-        return await migrateTransactions(txsToMigrate);
-    }, [migrateTransactions]);
-
     return {
         expenses,
         addExpense,
         updateExpense,
-        deleteExpense,
-        migrateLegacyExpenses
+        deleteExpense
     };
 };

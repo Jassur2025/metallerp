@@ -11,7 +11,7 @@ interface JournalEventsViewProps {
     events: JournalEvent[];
 }
 
-export const JournalEventsView: React.FC<JournalEventsViewProps> = ({ events }) => {
+export const JournalEventsView: React.FC<JournalEventsViewProps> = React.memo(({ events }) => {
     const { theme } = useTheme();
     const t = getThemeClasses(theme);
     const [searchTerm, setSearchTerm] = useState('');
@@ -186,4 +186,4 @@ export const JournalEventsView: React.FC<JournalEventsViewProps> = ({ events }) 
             </div>
         </div>
     );
-};
+});

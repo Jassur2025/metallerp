@@ -1,5 +1,6 @@
 import { WriteBatch, doc, collection, writeBatch, DocumentReference } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { logger } from './logger';
 
 /**
  * Configuration for safe batch operations
@@ -13,7 +14,7 @@ interface BatchConfig {
 interface BatchStats {
     totalProcessed: number;
     batchesCommitted: number;
-    errors: any[];
+    errors: unknown[];
 }
 
 /**
@@ -43,8 +44,8 @@ export async function executeSafeBatch<T>(
         errors: []
     };
 
-    console.log(`🚀 Starting Safe Batch Operation on [${config.collectionName}]`);
-    console.log(`📦 Total Items: ${items.length} | Chunk Size: ${BATCH_SIZE}`);
+    logger.debug('BatchWriter', `Starting Safe Batch Operation on [${config.collectionName}]`);
+    logger.debug('BatchWriter', `Total Items: ${items.length} | Chunk Size: ${BATCH_SIZE}`);
 
     // Helper for sleep
     const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -62,7 +63,7 @@ export async function executeSafeBatch<T>(
                 operationCount++;
                 stats.totalProcessed++;
             } catch (err) {
-                console.error(`❌ Error processing item index ${i}:`, err);
+                logger.error('BatchWriter', `Error processing item index ${i}:`, err);
                 stats.errors.push({ index: i, error: err });
                 continue; // Skip this item but keep going
             }
@@ -71,7 +72,7 @@ export async function executeSafeBatch<T>(
             if (operationCount >= BATCH_SIZE) {
                 await currentBatch.commit();
                 stats.batchesCommitted++;
-                console.log(`✅ Committed batch ${stats.batchesCommitted} (${operationCount} ops)`);
+                logger.debug('BatchWriter', `Committed batch ${stats.batchesCommitted} (${operationCount} ops)`);
 
                 // Reset
                 currentBatch = writeBatch(db);
@@ -88,13 +89,13 @@ export async function executeSafeBatch<T>(
         if (operationCount > 0) {
             await currentBatch.commit();
             stats.batchesCommitted++;
-            console.log(`✅ Committed final batch ${stats.batchesCommitted} (${operationCount} ops)`);
+            logger.debug('BatchWriter', `Committed final batch ${stats.batchesCommitted} (${operationCount} ops)`);
         }
 
-        console.log(`🎉 Batch Operation Complete! Processed: ${stats.totalProcessed}`);
+        logger.debug('BatchWriter', `Batch Operation Complete! Processed: ${stats.totalProcessed}`);
 
     } catch (globalError) {
-        console.error('💥 Critical Batch Error:', globalError);
+        logger.error('BatchWriter', 'Critical Batch Error:', globalError);
         throw globalError;
     }
 

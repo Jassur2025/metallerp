@@ -9,7 +9,7 @@ interface ProductGridProps {
   setSearchTerm: (term: string) => void;
   sortOption: string;
   setSortOption: (option: string) => void;
-  onAddToCart: (e: React.MouseEvent<HTMLButtonElement>, product: Product) => void;
+  onAddToCart: (e: React.MouseEvent<HTMLElement>, product: Product) => void;
   toUZS: (usd: number) => number;
 }
 
@@ -110,7 +110,7 @@ export const ProductGrid: React.FC<ProductGridProps> = ({
               return (
                 <button
                   key={product.id}
-                  onClick={(e) => onAddToCart(e as any, product)}
+                  onClick={(e) => onAddToCart(e, product)}
                   className={`${t.bgCard} border ${t.border} rounded-xl px-3 py-2 text-left transition-all duration-150 
                     hover:scale-[1.02] hover:shadow-lg active:scale-[0.98]
                     ${theme === 'light' ? 'hover:border-blue-400 hover:shadow-blue-100' : 'hover:border-primary-500/50 hover:shadow-primary-500/10'}
@@ -180,7 +180,7 @@ export const ProductGrid: React.FC<ProductGridProps> = ({
                   className={`grid grid-cols-[1fr_100px_70px_120px_90px_80px_36px] gap-2 items-center px-3 py-2 transition-colors cursor-pointer group
                     ${i % 2 === 0 ? '' : (theme === 'light' ? 'bg-slate-50/50' : 'bg-slate-800/30')}
                     ${theme === 'light' ? 'hover:bg-blue-50' : 'hover:bg-slate-700/40'}`}
-                  onClick={(e) => onAddToCart(e as any, product)}
+                  onClick={(e) => onAddToCart(e, product)}
                 >
                   {/* Name + import badge */}
                   <div className="flex items-center gap-1.5 min-w-0">
@@ -209,7 +209,7 @@ export const ProductGrid: React.FC<ProductGridProps> = ({
                   </span>
                   {/* Add button */}
                   <button
-                    onClick={(e) => { e.stopPropagation(); onAddToCart(e as any, product); }}
+                    onClick={(e) => { e.stopPropagation(); onAddToCart(e, product); }}
                     className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all opacity-0 group-hover:opacity-100
                       ${theme === 'light' ? 'bg-blue-50 text-blue-500 hover:bg-blue-100' : 'bg-primary-500/20 text-primary-400 hover:bg-primary-500/30'}`}
                     title="Добавить в корзину"

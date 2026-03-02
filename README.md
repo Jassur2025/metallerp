@@ -65,9 +65,6 @@
    VITE_FIREBASE_STORAGE_BUCKET=your_project.firebasestorage.app
    VITE_FIREBASE_MESSAGING_SENDER_ID=your_messaging_sender_id
    VITE_FIREBASE_APP_ID=your_app_id
-
-   # Gemini API Key (опционально, для AI функций)
-   GEMINI_API_KEY=your_gemini_api_key
    ```
 
 4. **Настройте Google Cloud Console (OAuth для Sheets API):**

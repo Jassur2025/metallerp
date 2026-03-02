@@ -10,17 +10,20 @@ import {
     getDocs, 
     getDoc, 
     setDoc, 
-    updateDoc, 
     deleteDoc, 
     query, 
     where, 
     orderBy,
     onSnapshot,
-    writeBatch,
-    Timestamp 
+    Timestamp,
+    runTransaction 
   } from '../lib/firebase';
   import { Client } from '../types';
   import { IdGenerator } from '../utils/idGenerator';
+  import { genericFromFirestore, genericToFirestore } from '../utils/firestoreHelpers';
+  import { validateClient } from '../utils/validation';
+  import { executeSafeBatch } from '../utils/batchWriter';
+  import { logger } from '../utils/logger';
   
   // Collection name
   const CLIENTS_COLLECTION = 'clients';
@@ -32,39 +35,40 @@ import {
     createdAt?: Timestamp;
   }
   
-  // Convert Firestore document to Client
-  const fromFirestore = (doc: any): Client => {
-    const data = doc.data();
-    return {
-      ...data,
-      id: doc.id,
-      _version: data._version || 1,
-      // Convert Timestamp to ISO string
-      updatedAt: data.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString()
-    };
-  };
-  
-  // Convert Client to Firestore document
-  const toFirestore = (client: Client): Partial<ClientDocument> => {
-    const { id, ...data } = client;
-    const now = Timestamp.now();
-    
-    // Clean undefined values
-    const docData: any = {
-      ...data,
-      updatedAt: now
-    };
-    
-    // Clean fields
-    Object.keys(docData).forEach(key => {
-        if (docData[key] === undefined) {
-            delete docData[key];
-        }
-    });
+  // Use shared converters
+  const fromFirestore = (doc: import('firebase/firestore').DocumentSnapshot): Client => genericFromFirestore<Client>(doc);
+  const toFirestore = (client: Client) => genericToFirestore(client);
 
-    return docData;
-  };
-  
+  /**
+   * Find a client in array by name (case-insensitive), or create a new one.
+   * Returns the client, its index in the (possibly expanded) array, and whether it was newly created.
+   */
+  export function findOrCreateClient(
+    clients: Client[],
+    name: string,
+    phone: string = '',
+    notes: string = 'Автоматически создан'
+  ): { client: Client; index: number; isNew: boolean; clients: Client[] } {
+    const searchName = String(name || '').toLowerCase();
+    const index = clients.findIndex(c => c.name.toLowerCase() === searchName);
+
+    if (index >= 0) {
+      return { client: clients[index], index, isNew: false, clients };
+    }
+
+    const newClient: Client = {
+      id: IdGenerator.client(),
+      name,
+      phone,
+      creditLimit: 0,
+      totalPurchases: 0,
+      totalDebt: 0,
+      notes
+    };
+    const updatedClients = [...clients, newClient];
+    return { client: newClient, index: updatedClients.length - 1, isNew: true, clients: updatedClients };
+  }
+
   export const clientService = {
     /**
      * Get all clients
@@ -76,7 +80,7 @@ import {
         // Sort client-side
         return clients.sort((a, b) => a.name.localeCompare(b.name));
       } catch (error) {
-        console.error('Error fetching clients:', error);
+        logger.error('ClientService', 'Error fetching clients:', error);
         throw error;
       }
     },
@@ -94,7 +98,7 @@ import {
         }
         return null;
       } catch (error) {
-        console.error('Error fetching client:', error);
+        logger.error('ClientService', 'Error fetching client:', error);
         throw error;
       }
     },
@@ -104,6 +108,11 @@ import {
      */
     async create(client: Omit<Client, 'id'>): Promise<Client> {
       try {
+        const validation = validateClient(client);
+        if (!validation.isValid) {
+          throw new Error(`Ошибка валидации: ${validation.errors.join(', ')}`);
+        }
+
         const id = IdGenerator.client();
         const now = Timestamp.now();
         
@@ -126,7 +135,7 @@ import {
           updatedAt: new Date().toISOString()
         };
       } catch (error) {
-        console.error('Error creating client:', error);
+        logger.error('ClientService', 'Error creating client:', error);
         throw error;
       }
     },
@@ -136,31 +145,39 @@ import {
      */
     async update(id: string, updates: Partial<Client>): Promise<void> {
       try {
-        const docRef = doc(db, CLIENTS_COLLECTION, id);
-        const docSnap = await getDoc(docRef);
-  
-        if (!docSnap.exists()) {
-           throw new Error(`Client with id ${id} not found`);
+        const validation = validateClient(updates);
+        if (!validation.isValid) {
+          throw new Error(`Ошибка валидации: ${validation.errors.join(', ')}`);
         }
 
-        const currentData = fromFirestore(docSnap);
-        const newVersion = (currentData._version || 0) + 1;
+        const docRef = doc(db, CLIENTS_COLLECTION, id);
 
-        const updateData: any = {
+        await runTransaction(db, async (transaction) => {
+          const docSnap = await transaction.get(docRef);
+
+          if (!docSnap.exists()) {
+            throw new Error(`Client with id ${id} not found`);
+          }
+
+          const currentData = fromFirestore(docSnap);
+          const newVersion = (currentData._version || 0) + 1;
+
+          const updateData: Record<string, unknown> = {
             ...toFirestore({ ...currentData, ...updates, id } as Client),
             _version: newVersion
-        };
-        
-        // Remove undefined values
-        Object.keys(updateData).forEach(key => {
-            if (updateData[key] === undefined) {
-               delete updateData[key];
-            }
-        });
+          };
 
-        await updateDoc(docRef, updateData);
+          // Remove undefined values
+          Object.keys(updateData).forEach(key => {
+            if (updateData[key] === undefined) {
+              delete updateData[key];
+            }
+          });
+
+          transaction.update(docRef, updateData as Record<string, import('firebase/firestore').FieldValue | Partial<unknown> | undefined>);
+        });
       } catch (error) {
-        console.error('Error updating client:', error);
+        logger.error('ClientService', 'Error updating client:', error);
         throw error;
       }
     },
@@ -172,7 +189,7 @@ import {
       try {
         await deleteDoc(doc(db, CLIENTS_COLLECTION, id));
       } catch (error) {
-        console.error('Error deleting client:', error);
+        logger.error('ClientService', 'Error deleting client:', error);
         throw error;
       }
     },
@@ -182,23 +199,19 @@ import {
      */
     async batchCreate(clients: Client[]): Promise<void> {
       try {
-        const batch = writeBatch(db);
         const now = Timestamp.now();
-  
-        for (const client of clients) {
+
+        await executeSafeBatch(clients, { collectionName: CLIENTS_COLLECTION }, (client, batch) => {
           const id = client.id || IdGenerator.client();
           const docRef = doc(db, CLIENTS_COLLECTION, id);
-          
           batch.set(docRef, {
             ...toFirestore({ ...client, id }),
             createdAt: now,
             _version: client._version || 1
           });
-        }
-  
-        await batch.commit();
+        });
       } catch (error) {
-        console.error('Error batch creating clients:', error);
+        logger.error('ClientService', 'Error batch creating clients:', error);
         throw error;
       }
     },
@@ -215,7 +228,7 @@ import {
             clients.sort((a, b) => a.name.localeCompare(b.name));
             callback(clients);
         }, (error) => {
-            console.error('Error subscribing to clients:', error);
+            logger.error('ClientService', 'Error subscribing to clients:', error);
             callback([]);
         });
 

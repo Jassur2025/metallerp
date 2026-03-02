@@ -1,5 +1,5 @@
 
-import { Product, ProductType, Unit, Order, Expense, Purchase } from './types';
+import { Product, ProductType, Unit, Order, Expense, Purchase, AppSettings } from './types';
 
 export const DEFAULT_EXCHANGE_RATE = 12800; // 1 USD = 12800 UZS (fallback rate)
 
@@ -113,3 +113,62 @@ export const INITIAL_EXPENSES: Expense[] = [
 export const IS_DEV_MODE = import.meta.env.DEV;
 
 export const INITIAL_PURCHASES: Purchase[] = [];
+// Default Expense Categories for PnL
+export const DEFAULT_EXPENSE_CATEGORIES = [
+  { id: 'rent', name: 'Аренда земельных участков, зданий и сооружений', pnlCategory: 'administrative' as const },
+  { id: 'special_equipment', name: 'Аренда специальной техники', pnlCategory: 'operational' as const },
+  { id: 'bank_fees', name: 'Банковские комиссии', pnlCategory: 'administrative' as const },
+  { id: 'sales_bonus', name: 'Бонусы от продаж', pnlCategory: 'commercial' as const },
+  { id: 'customs', name: 'Государственные пошлины', pnlCategory: 'administrative' as const },
+  { id: 'salary', name: 'Зарплата', pnlCategory: 'administrative' as const },
+  { id: 'advance', name: 'Аванс сотрудникам', pnlCategory: 'administrative' as const },
+  { id: 'crane_costs', name: 'Затраты крана', pnlCategory: 'operational' as const },
+  { id: 'food', name: 'Затраты питания', pnlCategory: 'operational' as const },
+  { id: 'corporate_events', name: 'Затраты по корпоративно-культурным мероприятиям', pnlCategory: 'operational' as const },
+  { id: 'office_supplies', name: 'Канцелярские затраты', pnlCategory: 'administrative' as const },
+  { id: 'business_trips', name: 'Командировки и встречи', pnlCategory: 'administrative' as const },
+  { id: 'utilities', name: 'Коммунальные затраты', pnlCategory: 'administrative' as const },
+  { id: 'training', name: 'Корпоративное обучение', pnlCategory: 'administrative' as const },
+  { id: 'corporate_gifts', name: 'Корпоративные подарки', pnlCategory: 'administrative' as const },
+  { id: 'courier_fuel', name: 'Курьерские\\ГСМ затраты', pnlCategory: 'administrative' as const },
+  { id: 'marketing', name: 'Маркетинг и реклама', pnlCategory: 'commercial' as const },
+  { id: 'loading', name: 'Погрузочные затраты', pnlCategory: 'commercial' as const },
+  { id: 'postal', name: 'Почтовые затраты', pnlCategory: 'administrative' as const },
+  { id: 'bonus', name: 'Премии', pnlCategory: 'commercial' as const },
+  { id: 'professional_services', name: 'Профессиональные услуги', pnlCategory: 'administrative' as const },
+  { id: 'other_services', name: 'Прочие услуги', pnlCategory: 'administrative' as const },
+  { id: 'metal_services', name: 'Прочие услуги по металл сервису', pnlCategory: 'operational' as const },
+  { id: 'materials', name: 'Расходные материалы для обработки металла', pnlCategory: 'operational' as const },
+  { id: 'overtime', name: 'Сверхурочная работа', pnlCategory: 'operational' as const },
+  { id: 'internet', name: 'Связь и интернет', pnlCategory: 'administrative' as const },
+  { id: 'social', name: 'Социальная политика', pnlCategory: 'administrative' as const },
+  { id: 'construction', name: 'Строительные затраты', pnlCategory: 'operational' as const },
+  { id: 'telecom_it', name: 'Телекоммуникации и ИТ', pnlCategory: 'administrative' as const },
+  { id: 'os_maintenance', name: 'Техническое обслуживание ОС', pnlCategory: 'administrative' as const },
+  { id: 'transport_purchases', name: 'Транспортные услуги при закупках', pnlCategory: 'operational' as const },
+  { id: 'crane_services', name: 'Услуги крана при закупках', pnlCategory: 'operational' as const },
+  { id: 'insurance', name: 'Услуги страхования', pnlCategory: 'commercial' as const },
+  { id: 'household', name: 'Хозяйственные затраты', pnlCategory: 'administrative' as const },
+];
+
+// Default Settings
+export const defaultSettings: AppSettings = {
+  vatRate: 12,
+  defaultExchangeRate: DEFAULT_EXCHANGE_RATE,
+  expenseCategories: DEFAULT_EXPENSE_CATEGORIES,
+  nextReportNo: 1,
+  modules: {
+    dashboard: true,
+    inventory: true,
+    import: true,
+    sales: true,
+    workflow: true,
+    reports: true,
+    balance: true,
+    fixedAssets: true,
+    crm: true,
+    staff: true,
+    journal: true,
+    priceList: true
+  }
+};

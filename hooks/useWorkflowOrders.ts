@@ -44,23 +44,12 @@ export function useWorkflowOrders() {
         }
     }, []);
 
-    const migrateWorkflowOrders = useCallback(async (legacyOrders: WorkflowOrder[]) => {
-        // Find orders that are NOT in Firebase yet (by ID)
-        const currentIds = new Set(workflowOrders.map(o => o.id));
-        const toMigrate = legacyOrders.filter(o => !currentIds.has(o.id));
-
-        if (toMigrate.length === 0) return 0;
-
-        return await workflowOrderService.batchCreate(toMigrate);
-    }, [workflowOrders]);
-
     return {
         workflowOrders,
         loading,
         error,
         addWorkflowOrder,
         updateWorkflowOrder,
-        deleteWorkflowOrder,
-        migrateWorkflowOrders
+        deleteWorkflowOrder
     };
 }

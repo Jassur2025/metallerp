@@ -12,6 +12,7 @@ import {
   Timestamp
 } from '../lib/firebase';
 import { AppSettings } from '../types';
+import { logger } from '../utils/logger';
 
 const SETTINGS_DOC = 'app_settings';
 const SETTINGS_COLLECTION = 'settings';
@@ -33,7 +34,7 @@ export const settingsService = {
       }
       return null;
     } catch (error) {
-      console.error('Error fetching settings:', error);
+      logger.error('SettingsService', 'Error fetching settings:', error);
       return null;
     }
   },
@@ -51,7 +52,7 @@ export const settingsService = {
         updatedAt: Timestamp.now()
       }, { merge: true });
     } catch (error) {
-      console.error('Error saving settings:', error);
+      logger.error('SettingsService', 'Error saving settings:', error);
       throw error;
     }
   },
@@ -70,7 +71,7 @@ export const settingsService = {
         callback(null);
       }
     }, (error) => {
-      console.error('Error subscribing to settings:', error);
+      logger.error('SettingsService', 'Error subscribing to settings:', error);
       callback(null);
     });
   }

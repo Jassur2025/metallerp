@@ -1,6 +1,7 @@
 import React from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { LogIn } from 'lucide-react';
+import { logger } from '../utils/logger';
 
 export const Login: React.FC = () => {
     const { signInWithGoogle } = useAuth();
@@ -13,7 +14,7 @@ export const Login: React.FC = () => {
         try {
             await signInWithGoogle();
         } catch (error) {
-            console.error('Login error:', error);
+            logger.error('Login', 'Login error:', error);
             setIsLoggingIn(false);
         }
         // Не сбрасываем isLoggingIn при успехе, чтобы предотвратить повторные клики
@@ -56,7 +57,7 @@ export const Login: React.FC = () => {
                 </div>
 
                 <div className="mt-8 text-center text-xs text-slate-500">
-                    <p>© 2024 MetalMaster. Все права защищены.</p>
+                    <p>© 2024–2025 MetalMaster. Все права защищены.</p>
                 </div>
             </div>
         </div>

@@ -3,7 +3,9 @@
  * Used when deploying a clean instance for a new client/demo
  */
 
-import { db, collection, getDocs, writeBatch, doc } from '../lib/firebase';
+import { db, collection, getDocs, doc } from '../lib/firebase';
+import { auth } from '../lib/firebase';
+import { executeSafeBatch } from '../utils/batchWriter';
 
 // Collections to clear (operational data only)
 // KEPT: products (nomenclature), fixedAssets, suppliers, settings
@@ -14,7 +16,7 @@ const BUSINESS_COLLECTIONS = [
   'employees',
   'purchases',
   'workflowOrders',
-  'journal',
+  'journalEvents',
 ];
 
 interface ResetProgress {
@@ -39,23 +41,11 @@ async function clearCollection(collectionName: string): Promise<number> {
   
   if (snapshot.empty) return 0;
 
-  const BATCH_SIZE = 450;
-  let deleted = 0;
-  const docs = snapshot.docs;
+  const stats = await executeSafeBatch(snapshot.docs, { collectionName }, (d, batch) => {
+    batch.delete(doc(db, collectionName, d.id));
+  });
 
-  for (let i = 0; i < docs.length; i += BATCH_SIZE) {
-    const batch = writeBatch(db);
-    const chunk = docs.slice(i, i + BATCH_SIZE);
-    
-    chunk.forEach(d => {
-      batch.delete(doc(db, collectionName, d.id));
-    });
-
-    await batch.commit();
-    deleted += chunk.length;
-  }
-
-  return deleted;
+  return stats.totalProcessed;
 }
 
 /**
@@ -69,6 +59,38 @@ export async function resetAllData(
   includeSettings = false,
   onProgress?: (progress: ResetProgress) => void
 ): Promise<ResetResult> {
+  // Auth guard — only authenticated users can reset data
+  if (!auth.currentUser) {
+    return {
+      success: false,
+      totalDeleted: 0,
+      details: [],
+      error: 'Необходима авторизация для сброса данных'
+    };
+  }
+
+  // Admin role guard — check Firestore user document for admin role
+  try {
+    const userDoc = await getDocs(collection(db, 'users'));
+    const currentUid = auth.currentUser.uid;
+    const userData = userDoc.docs.find(d => d.id === currentUid)?.data();
+    if (!userData || userData.role !== 'admin') {
+      return {
+        success: false,
+        totalDeleted: 0,
+        details: [],
+        error: 'Только администратор может сбросить данные'
+      };
+    }
+  } catch {
+    return {
+      success: false,
+      totalDeleted: 0,
+      details: [],
+      error: 'Ошибка проверки прав доступа'
+    };
+  }
+
   const details: ResetProgress[] = [];
   let totalDeleted = 0;
 
@@ -100,12 +122,12 @@ export async function resetAllData(
     }
 
     return { success: true, totalDeleted, details };
-  } catch (error: any) {
+  } catch (error: unknown) {
     return { 
       success: false, 
       totalDeleted, 
       details, 
-      error: error.message || 'Ошибка при сбросе данных' 
+      error: (error instanceof Error ? error.message : String(error)) || 'Ошибка при сбросе данных' 
     };
   }
 }

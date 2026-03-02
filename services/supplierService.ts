@@ -4,15 +4,16 @@ import {
     doc, 
     getDocs, 
     setDoc, 
-    updateDoc, 
     deleteDoc, 
-    writeBatch,
     query, 
     orderBy,
     Timestamp,
-    onSnapshot
+    onSnapshot,
+    runTransaction
 } from '../lib/firebase';
 import { Supplier } from '../types';
+import { IdGenerator } from '../utils/idGenerator';
+import { executeSafeBatch } from '../utils/batchWriter';
 
 const COLLECTION_NAME = 'suppliers';
 
@@ -59,7 +60,7 @@ export const supplierService = {
             await setDoc(doc(db, COLLECTION_NAME, supplier.id), supplierData);
             return supplier;
         } else {
-            const newId = `SUP-${Date.now()}`;
+            const newId = IdGenerator.supplier();
             await setDoc(doc(db, COLLECTION_NAME, newId), { ...supplierData, id: newId });
             return { ...supplier, id: newId };
         }
@@ -69,11 +70,24 @@ export const supplierService = {
      * Update a supplier
      */
     async update(id: string, updates: Partial<Supplier>): Promise<void> {
-        const updateData = JSON.parse(JSON.stringify({
-            ...updates,
-            updatedAt: Timestamp.now()
-        }));
-        await updateDoc(doc(db, COLLECTION_NAME, id), updateData);
+        const docRef = doc(db, COLLECTION_NAME, id);
+
+        await runTransaction(db, async (transaction) => {
+            const docSnap = await transaction.get(docRef);
+
+            if (!docSnap.exists()) {
+                throw new Error(`Supplier with id ${id} not found`);
+            }
+
+            const currentVersion = docSnap.data()?._version || 0;
+            const updateData = JSON.parse(JSON.stringify({
+                ...updates,
+                updatedAt: Timestamp.now(),
+                _version: currentVersion + 1
+            }));
+
+            transaction.update(docRef, updateData);
+        });
     },
 
     /**
@@ -88,11 +102,8 @@ export const supplierService = {
      */
     async batchCreate(suppliers: Supplier[]): Promise<number> {
         if (suppliers.length === 0) return 0;
-        
-        const batch = writeBatch(db);
-        let count = 0;
 
-        for (const supplier of suppliers) {
+        const stats = await executeSafeBatch(suppliers, { collectionName: COLLECTION_NAME }, (supplier, batch) => {
             const supplierData = JSON.parse(JSON.stringify({
                 ...supplier,
                 createdAt: Timestamp.now(),
@@ -101,13 +112,11 @@ export const supplierService = {
                 isActive: supplier.isActive ?? true
             }));
 
-            const id = supplier.id || `SUP-${Date.now()}-${count}`;
+            const id = supplier.id || IdGenerator.supplier();
             batch.set(doc(db, COLLECTION_NAME, id), { ...supplierData, id });
-            count++;
-        }
+        });
 
-        await batch.commit();
-        return count;
+        return stats.totalProcessed;
     },
 
     /**
@@ -130,7 +139,7 @@ export const supplierService = {
         if (existing) return existing;
 
         const newSupplier: Supplier = {
-            id: `SUP-${Date.now()}`,
+            id: IdGenerator.supplier(),
             name: name.trim(),
             isActive: true,
             totalPurchases: 0,
@@ -144,14 +153,24 @@ export const supplierService = {
      * Update supplier stats (totalPurchases, totalDebt)
      */
     async updateStats(id: string, purchaseAmount: number, debtChange: number): Promise<void> {
-        const suppliers = await this.getAll();
-        const supplier = suppliers.find(s => s.id === id);
-        
-        if (supplier) {
-            await this.update(id, {
-                totalPurchases: (supplier.totalPurchases || 0) + purchaseAmount,
-                totalDebt: (supplier.totalDebt || 0) + debtChange
+        const docRef = doc(db, COLLECTION_NAME, id);
+
+        await runTransaction(db, async (transaction) => {
+            const docSnap = await transaction.get(docRef);
+
+            if (!docSnap.exists()) {
+                throw new Error(`Supplier with id ${id} not found`);
+            }
+
+            const data = docSnap.data();
+            const currentVersion = data?._version || 0;
+
+            transaction.update(docRef, {
+                totalPurchases: (data?.totalPurchases || 0) + purchaseAmount,
+                totalDebt: (data?.totalDebt || 0) + debtChange,
+                updatedAt: Timestamp.now(),
+                _version: currentVersion + 1
             });
-        }
+        });
     }
 };

@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { Transaction } from '../types';
 import { transactionService } from '../services/transactionService';
 import { useToast } from '../contexts/ToastContext';
+import { DEFAULT_EXCHANGE_RATE } from '../constants';
+import { logger } from '../utils/logger';
 
 interface UseTransactionsOptions {
     realtime?: boolean;
@@ -16,7 +18,6 @@ interface UseTransactionsReturn {
     updateTransaction: (id: string, updates: Partial<Transaction>) => Promise<boolean>;
     deleteTransaction: (id: string) => Promise<boolean>;
     refreshTransactions: () => Promise<void>;
-    migrateTransactions: (sheetsTransactions: Transaction[]) => Promise<number>;
     stats: {
         totalIncome: number;
         totalExpenses: number;
@@ -35,11 +36,11 @@ export const useTransactions = (options: UseTransactionsOptions = {}): UseTransa
     // Derived stats (simple calc)
     const stats = {
         totalIncome: transactions
-            .filter(t => t.type === 'client_payment' || (t.type as any) === 'income')
-            .reduce((sum, t) => sum + (t.currency === 'USD' ? t.amount : (t.amount / (t.exchangeRate || 12800))), 0),
+            .filter(t => t.type === 'client_payment' || (t.type as string) === 'income')
+            .reduce((sum, t) => sum + (t.currency === 'USD' ? t.amount : (t.amount / (t.exchangeRate || DEFAULT_EXCHANGE_RATE))), 0),
         totalExpenses: transactions
             .filter(t => t.type === 'expense' || t.type === 'supplier_payment')
-            .reduce((sum, t) => sum + (t.currency === 'USD' ? t.amount : (t.amount / (t.exchangeRate || 12800))), 0),
+            .reduce((sum, t) => sum + (t.currency === 'USD' ? t.amount : (t.amount / (t.exchangeRate || DEFAULT_EXCHANGE_RATE))), 0),
         get balance() { return this.totalIncome - this.totalExpenses }
     };
 
@@ -52,9 +53,9 @@ export const useTransactions = (options: UseTransactionsOptions = {}): UseTransa
                 ? await transactionService.getByClientId(filterClientId)
                 : await transactionService.getAll();
             setTransactions(data);
-        } catch (err: any) {
-            setError(err.message || 'Ошибка загрузки транзакций');
-            console.error('Error loading transactions:', err);
+        } catch (err: unknown) {
+            setError((err instanceof Error ? err.message : String(err)) || 'Ошибка загрузки транзакций');
+            logger.error('useTransactions', 'Error loading transactions:', err);
         } finally {
             setLoading(false);
         }
@@ -85,8 +86,8 @@ export const useTransactions = (options: UseTransactionsOptions = {}): UseTransa
                 setTransactions(prev => [newTx, ...prev]);
             }
             return newTx;
-        } catch (err: any) {
-            toast.error(`Ошибка добавления транзакции: ${err.message}`);
+        } catch (err: unknown) {
+            toast.error(`Ошибка добавления транзакции: ${(err instanceof Error ? err.message : String(err))}`);
             return null;
         }
     }, [realtime, toast]);
@@ -100,8 +101,8 @@ export const useTransactions = (options: UseTransactionsOptions = {}): UseTransa
                 setTransactions(prev => prev.map(t => t.id === id ? { ...t, ...updates } as Transaction : t));
             }
             return true;
-        } catch (err: any) {
-            toast.error(`Ошибка обновления: ${err.message}`);
+        } catch (err: unknown) {
+            toast.error(`Ошибка обновления: ${(err instanceof Error ? err.message : String(err))}`);
             return false;
         }
     }, [realtime, toast]);
@@ -116,33 +117,11 @@ export const useTransactions = (options: UseTransactionsOptions = {}): UseTransa
                 setTransactions(prev => prev.filter(t => t.id !== id));
             }
             return true;
-        } catch (err: any) {
-            toast.error(`Ошибка удаления: ${err.message}`);
+        } catch (err: unknown) {
+            toast.error(`Ошибка удаления: ${(err instanceof Error ? err.message : String(err))}`);
             return false;
         }
     }, [realtime, toast]);
-
-    // Migrate
-    const migrateTransactions = useCallback(async (sheetsTransactions: Transaction[]): Promise<number> => {
-        try {
-            if (sheetsTransactions.length === 0) return 0;
-
-            // Simple check to prevent migration if we already have data
-            if (transactions.length >= sheetsTransactions.length) {
-                return 0; // Already migrated likely
-            }
-
-            const count = await transactionService.batchCreate(sheetsTransactions);
-
-            if (!realtime) {
-                await loadTransactions();
-            }
-            return count;
-        } catch (err: any) {
-            toast.error(`Ошибка миграции транзакций: ${err.message}`);
-            return 0;
-        }
-    }, [transactions.length, realtime, loadTransactions, toast]);
 
     return {
         transactions,
@@ -152,7 +131,6 @@ export const useTransactions = (options: UseTransactionsOptions = {}): UseTransa
         updateTransaction,
         deleteTransaction,
         refreshTransactions: loadTransactions,
-        migrateTransactions,
         stats
     };
 };
