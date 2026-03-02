@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Product, Order, OrderItem, Expense, Client, Transaction, JournalEvent, WorkflowOrder } from '../../types';
+import { Product, Order, OrderItem, Expense, Client, Transaction, JournalEvent, WorkflowOrder, Employee } from '../../types';
 import { ShoppingCart, ArrowDownRight, ArrowUpRight, RefreshCw, FileText, ClipboardList, List } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import { useTheme, getThemeClasses } from '../../contexts/ThemeContext';
@@ -447,6 +447,15 @@ export const Sales: React.FC<SalesProps> = ({
       return item;
     }));
   }, [products]);
+
+  const updatePrice = useCallback((productId: string, price: number) => {
+    setCart(prev => prev.map(item => {
+      if (item.productId === productId) {
+        return { ...item, priceAtSale: price, total: item.quantity * price };
+      }
+      return item;
+    }));
+  }, []);
 
   const removeFromCart = useCallback((id: string) => setCart(prev => prev.filter(item => item.productId !== id)), []);
 

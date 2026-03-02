@@ -6,7 +6,8 @@ import { findOrCreateClient } from '../services/clientService';
 import { getMissingItems } from '../utils/inventoryHelpers';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
-import { Plus, Trash2, Search, ClipboardList, Send, RotateCcw, XCircle, Edit3, LayoutGrid, List } from 'lucide-react';
+import { Plus, Trash2, Search, ClipboardList, Send, RotateCcw, XCircle, Edit3, LayoutGrid, List, UserPlus } from 'lucide-react';
+import { ClientDropdown } from './ClientDropdown';
 import { WorkflowQueueTab } from './Workflow/WorkflowQueueTab';
 import { WorkflowCancelledTab } from './Workflow/WorkflowCancelledTab';
 
