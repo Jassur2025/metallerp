@@ -10,6 +10,7 @@ export interface SalesProps {
   expenses: Expense[];
   setExpenses: (e: Expense[]) => void;
   employees: Employee[];
+  onSaveEmployees?: (employees: Employee[]) => Promise<boolean | void>;
   onNavigateToStaff: () => void;
   clients: Client[];
   onSaveClients: (clients: Client[]) => void;

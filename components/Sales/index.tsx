@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Product, Order, OrderItem, Expense, Client, Transaction, JournalEvent, WorkflowOrder } from '../../types';
+import { Product, Order, OrderItem, Expense, Client, Transaction, JournalEvent, WorkflowOrder, Employee, AppSettings } from '../../types';
 import { ShoppingCart, ArrowDownRight, ArrowUpRight, RefreshCw, FileText, ClipboardList, BadgeCheck, AlertTriangle, List, ChevronDown, ChevronUp } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import { useTheme, getThemeClasses } from '../../contexts/ThemeContext';
@@ -19,6 +19,7 @@ import { ExpenseForm } from './ExpenseForm';
 import { ReturnModal } from './ReturnModal';
 import { ReceiptModal } from './ReceiptModal';
 import { ClientModal } from './ClientModal';
+import { StaffModal } from './StaffModal';
 import { generateInvoicePDF, generateWaybillPDF } from '../../utils/DocumentTemplates';
 import { PaymentSplitModal, PaymentDistribution } from './PaymentSplitModal';
 import { TransactionsManager } from './TransactionsManager';
@@ -32,7 +33,7 @@ export const Sales: React.FC<SalesProps> = ({
   employees, onNavigateToStaff, clients, onSaveClients, transactions, setTransactions,
   workflowOrders, onSaveWorkflowOrders, currentUserEmail, onNavigateToProcurement,
   onSaveOrders, onSaveTransactions, onSaveProducts, onSaveExpenses, onAddExpense, onAddJournalEvent,
-  onDeleteTransaction, onDeleteExpense
+  onDeleteTransaction, onDeleteExpense, onSaveEmployees
 }) => {
   const { user } = useAuth();
   const toast = useToast();
@@ -77,10 +78,17 @@ export const Sales: React.FC<SalesProps> = ({
     name: '', phone: '', email: '', address: '', creditLimit: 0, notes: ''
   });
 
+  // Staff Modal State
+  const [isStaffModalOpen, setIsStaffModalOpen] = useState(false);
+  const [newStaffData, setNewStaffData] = useState<Partial<Employee>>({
+    name: '', email: '', position: '', phone: ''
+  });
+
   // Sale State
   const [cart, setCart] = useState<OrderItem[]>([]);
   const [customerName, setCustomerName] = useState('');
-  const [sellerName, setSellerName] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
+  const [sellerName, setSellerName] = useState(currentUserEmail || '');
   const [searchTerm, setSearchTerm] = useState('');
   const [sortOption, setSortOption] = useState<string>('default');
   const [exchangeRate, setExchangeRate] = useState<number>(settings.defaultExchangeRate);
@@ -161,20 +169,20 @@ export const Sales: React.FC<SalesProps> = ({
   // Расчёт скидки для заказа относительно прайс-листа
   const getOrderDiscount = (items: OrderItem[]) => {
     if (!Array.isArray(items) || items.length === 0) return { hasDiscount: false, totalDiscount: 0, discountPercent: 0 };
-    
+
     let priceListTotal = 0;
     let actualTotal = 0;
-    
+
     items.forEach(it => {
       const product = products.find(p => p.id === it.productId);
       const priceListPrice = product?.pricePerUnit || it.priceAtSale;
       priceListTotal += priceListPrice * it.quantity;
       actualTotal += it.priceAtSale * it.quantity;
     });
-    
+
     const totalDiscount = priceListTotal - actualTotal;
     const discountPercent = priceListTotal > 0 ? (totalDiscount / priceListTotal) * 100 : 0;
-    
+
     return {
       hasDiscount: totalDiscount > 0.01,
       totalDiscount,
@@ -406,12 +414,12 @@ export const Sales: React.FC<SalesProps> = ({
     const updatedWorkflow = workflowOrders.map(o =>
       o.id === orderToCancel.id
         ? {
-            ...o,
-            status: 'cancelled' as const,
-            cancellationReason: cancelReason.trim(),
-            cancelledBy: currentEmployee?.name || currentUserEmail || 'Кассир',
-            cancelledAt: new Date().toISOString()
-          }
+          ...o,
+          status: 'cancelled' as const,
+          cancellationReason: cancelReason.trim(),
+          cancelledBy: currentEmployee?.name || currentUserEmail || 'Кассир',
+          cancelledAt: new Date().toISOString()
+        }
         : o
     );
 
@@ -544,16 +552,25 @@ export const Sales: React.FC<SalesProps> = ({
     }));
   };
 
+  const updatePrice = (productId: string, price: number) => {
+    setCart(cart.map(item => {
+      if (item.productId === productId) {
+        return { ...item, priceAtSale: price, total: item.quantity * price };
+      }
+      return item;
+    }));
+  };
+
   const removeFromCart = (id: string) => setCart(cart.filter(item => item.productId !== id));
 
   // Totals — IFRS 15: discount applies to net amount (before VAT)
   const subtotalUSD = cart.reduce((sum, item) => sum + item.total, 0);
-  
+
   // Apply discount to subtotal BEFORE calculating VAT (IFRS 15 - Transaction Price)
   const discountedSubtotal = manualTotal !== null
     ? manualTotal / (1 + settings.vatRate / 100) // Reverse-calculate net from manual total
     : subtotalUSD * (1 - (discountPercent || 0) / 100);
-  
+
   const vatAmountUSD = discountedSubtotal * (settings.vatRate / 100);
   const originalTotalUSD = subtotalUSD + (subtotalUSD * (settings.vatRate / 100));
 
@@ -583,9 +600,9 @@ export const Sales: React.FC<SalesProps> = ({
     const paymentDueDate = hasDebt && debtDueDate ? debtDueDate : undefined;
 
     const newOrder: Order = {
-      id: IdGenerator.order(), 
+      id: IdGenerator.order(),
       reportNo, // Add sequential report number
-      date: new Date().toISOString(), 
+      date: new Date().toISOString(),
       customerName,
       sellerId: sellerEmployee?.id || currentEmployee?.id, // Employee ID for KPI
       sellerName: sellerName || currentEmployee?.name || 'Администратор',
@@ -831,13 +848,13 @@ export const Sales: React.FC<SalesProps> = ({
     if (returnMethod === 'debt' && !client) { toast.error('Клиент не найден!'); return; }
 
     // Find the last order for this product to get the actual sale price
-    const lastOrder = orders.find(o => 
-      o.status === 'completed' && 
+    const lastOrder = orders.find(o =>
+      o.status === 'completed' &&
       o.items.some(item => item.productId === product.id) &&
       (client ? (o.clientId === client.id || o.customerName.toLowerCase() === client.name.toLowerCase()) : true)
     );
     const orderItem = lastOrder?.items.find(item => item.productId === product.id);
-    
+
     // Use the actual sale price from the order, fallback to current price
     const returnPricePerUnit = orderItem?.priceAtSale ?? product.pricePerUnit;
     const returnCostPerUnit = orderItem?.costAtSale ?? product.costPrice;
@@ -929,6 +946,36 @@ export const Sales: React.FC<SalesProps> = ({
     setNewClientData({ name: '', phone: '', email: '', address: '', creditLimit: 0, notes: '' });
   };
 
+  // 4. Add handleSaveStaff
+  const handleSaveStaff = async () => {
+    if (!newStaffData.name?.trim() || !newStaffData.email?.trim()) {
+      toast.error('Заполните обязательные поля: Имя и Email');
+      return;
+    }
+    const newStaff: Employee = {
+      id: IdGenerator.employee(),
+      name: newStaffData.name,
+      email: newStaffData.email,
+      position: newStaffData.position || 'Продавец',
+      phone: newStaffData.phone || '',
+      role: 'sales',
+      hireDate: new Date().toISOString(),
+      status: 'active'
+    };
+    try {
+      if (onSaveEmployees) {
+        await onSaveEmployees([...employees, newStaff]);
+      }
+      toast.success('Сотрудник добавлен');
+      setSellerName(newStaff.name);
+      setIsStaffModalOpen(false);
+      setNewStaffData({ name: '', email: '', position: '', phone: '' });
+    } catch (error) {
+      errorDev('Ошибка при сохранении сотрудника:', error);
+      toast.error('Ошибка при сохранении сотрудника');
+    }
+  };
+
   // --- Render ---
   return (
     <div className="flex flex-col h-full">
@@ -958,7 +1005,7 @@ export const Sales: React.FC<SalesProps> = ({
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 p-6 relative overflow-hidden">
         {flyingItems.map(item => <FlyingIcon key={item.id} {...item} onComplete={() => removeFlyingItem(item.id)} />)}
 
-        <div className="lg:col-span-2 flex flex-col h-full overflow-hidden">
+        <div className={`${mode === 'sale' ? 'lg:col-span-2' : 'lg:col-span-3'} flex flex-col h-full overflow-hidden transition-all duration-300`}>
           {/* Mode Switcher */}
           <div className="flex gap-2 mb-4">
             <button onClick={() => setMode('sale')} className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${mode === 'sale' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/20' : `${t.bgCard} ${t.textMuted} ${t.bgCardHover}`}`}>
@@ -1043,68 +1090,68 @@ export const Sales: React.FC<SalesProps> = ({
                   {workflowCashQueue.map((wf: any) => {
                     const discount = getOrderDiscount(wf.items);
                     return (
-                    <div key={wf.id} className={`${t.bgPanelAlt} border ${t.border} rounded-2xl p-5`}>
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <div className={`${t.text} font-bold`}>{wf.customerName}</div>
-                          <div className={`text-xs ${t.textMuted} mt-1`}>{new Date(wf.date).toLocaleString('ru-RU')}</div>
-                          <div className={`text-xs ${t.textMuted} mt-1`}>ID: {wf.id} • Создал: {wf.createdBy}</div>
+                      <div key={wf.id} className={`${t.bgPanelAlt} border ${t.border} rounded-2xl p-5`}>
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <div className={`${t.text} font-bold`}>{wf.customerName}</div>
+                            <div className={`text-xs ${t.textMuted} mt-1`}>{new Date(wf.date).toLocaleString('ru-RU')}</div>
+                            <div className={`text-xs ${t.textMuted} mt-1`}>ID: {wf.id} • Создал: {wf.createdBy}</div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-emerald-500 font-mono font-bold">{Number(wf.totalAmountUZS || 0).toLocaleString()} сум</div>
+                            <div className={`text-xs ${t.textMuted}`}>${Number(wf.totalAmount || 0).toFixed(2)}</div>
+                            {discount.hasDiscount && (
+                              <div className="text-xs text-orange-400 font-semibold mt-1">
+                                🏷️ Скидка: {discount.discountPercent.toFixed(1)}%
+                              </div>
+                            )}
+                          </div>
                         </div>
-                        <div className="text-right">
-                          <div className="text-emerald-500 font-mono font-bold">{Number(wf.totalAmountUZS || 0).toLocaleString()} сум</div>
-                          <div className={`text-xs ${t.textMuted}`}>${Number(wf.totalAmount || 0).toFixed(2)}</div>
-                          {discount.hasDiscount && (
-                            <div className="text-xs text-orange-400 font-semibold mt-1">
-                              🏷️ Скидка: {discount.discountPercent.toFixed(1)}%
-                            </div>
-                          )}
-                        </div>
-                      </div>
 
-                      <div className="mt-3 space-y-1 text-sm">
-                        {(wf.items || []).slice(0, 5).map((it: OrderItem, idx: number) => {
-                          const prod = products.find(p => p.id === it.productId);
-                          const dims = prod?.dimensions || it.dimensions || '';
-                          return (
-                            <div key={idx} className={`flex justify-between ${t.textSecondary}`}>
-                              <span className="truncate max-w-[260px]">
-                                {it.productName}
-                                {dims && dims !== '-' && <span className={`${t.textMuted} ml-1`}>({dims})</span>}
-                                <span className={`${t.textMuted} ml-1`}>× {it.quantity}</span>
-                              </span>
-                              <span className={`font-mono ${t.textMuted}`}>{Math.round(Number(it.total || 0) * Number(wf.exchangeRate || exchangeRate)).toLocaleString()} сум</span>
-                            </div>
-                          );
-                        })}
-                        {(wf.items || []).length > 5 && <div className={`text-xs ${t.textMuted}`}>+ ещё {(wf.items || []).length - 5} поз.</div>}
-                      </div>
-
-                      <div className="mt-4 flex items-center justify-between gap-2">
-                        <div className={`text-xs ${t.textMuted}`}>
-                          Оплата: <span className={`${t.text} font-semibold`}>{wf.paymentMethod}</span>
-                          {wf.paymentMethod === 'debt' && <span className="ml-2 text-amber-500 font-bold">ДОЛГ</span>}
+                        <div className="mt-3 space-y-1 text-sm">
+                          {(wf.items || []).slice(0, 5).map((it: OrderItem, idx: number) => {
+                            const prod = products.find(p => p.id === it.productId);
+                            const dims = prod?.dimensions || it.dimensions || '';
+                            return (
+                              <div key={idx} className={`flex justify-between ${t.textSecondary}`}>
+                                <span className="truncate max-w-[260px]">
+                                  {it.productName}
+                                  {dims && dims !== '-' && <span className={`${t.textMuted} ml-1`}>({dims})</span>}
+                                  <span className={`${t.textMuted} ml-1`}>× {it.quantity}</span>
+                                </span>
+                                <span className={`font-mono ${t.textMuted}`}>{Math.round(Number(it.total || 0) * Number(wf.exchangeRate || exchangeRate)).toLocaleString()} сум</span>
+                              </div>
+                            );
+                          })}
+                          {(wf.items || []).length > 5 && <div className={`text-xs ${t.textMuted}`}>+ ещё {(wf.items || []).length - 5} поз.</div>}
                         </div>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => openCancelModal(wf)}
-                            className={`bg-red-500/10 hover:bg-red-500/20 text-red-500 px-3 py-2 rounded-xl font-medium flex items-center gap-1 border border-red-500/20`}
-                          >
-                            ✕ Аннулировать
-                          </button>
-                          <button
-                            onClick={() => openWorkflowPaymentModal(wf)}
-                            className={`${theme === 'light' ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-emerald-600 hover:bg-emerald-500'} text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2`}
-                          >
-                            <BadgeCheck size={18} /> Подтвердить
-                          </button>
+
+                        <div className="mt-4 flex items-center justify-between gap-2">
+                          <div className={`text-xs ${t.textMuted}`}>
+                            Оплата: <span className={`${t.text} font-semibold`}>{wf.paymentMethod}</span>
+                            {wf.paymentMethod === 'debt' && <span className="ml-2 text-amber-500 font-bold">ДОЛГ</span>}
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => openCancelModal(wf)}
+                              className={`bg-red-500/10 hover:bg-red-500/20 text-red-500 px-3 py-2 rounded-xl font-medium flex items-center gap-1 border border-red-500/20`}
+                            >
+                              ✕ Аннулировать
+                            </button>
+                            <button
+                              onClick={() => openWorkflowPaymentModal(wf)}
+                              className={`${theme === 'light' ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-emerald-600 hover:bg-emerald-500'} text-white px-4 py-2 rounded-xl font-bold flex items-center gap-2`}
+                            >
+                              <BadgeCheck size={18} /> Подтвердить
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className={`mt-3 text-xs ${t.textMuted} flex items-center gap-2`}>
+                          <AlertTriangle size={14} className="text-amber-500" />
+                          Если остатков не хватит — заявка уйдет обратно в закуп.
                         </div>
                       </div>
-
-                      <div className={`mt-3 text-xs ${t.textMuted} flex items-center gap-2`}>
-                        <AlertTriangle size={14} className="text-amber-500" />
-                        Если остатков не хватит — заявка уйдет обратно в закуп.
-                      </div>
-                    </div>
                     );
                   })}
                 </div>
@@ -1134,7 +1181,7 @@ export const Sales: React.FC<SalesProps> = ({
                 <h3 className={`${t.text} font-bold mb-4 flex items-center gap-2`}>
                   📊 Детализация баланса кассы USD
                 </h3>
-                
+
                 <div className="space-y-3 max-h-[400px] overflow-y-auto custom-scrollbar">
                   <div className={`text-xs ${t.textMuted} font-bold border-b ${t.border} pb-2 grid grid-cols-6 gap-2`}>
                     <span>ID Заказа</span>
@@ -1144,7 +1191,7 @@ export const Sales: React.FC<SalesProps> = ({
                     <span className="text-right">Сумма (к балансу USD)</span>
                     <span className="text-right">Действия</span>
                   </div>
-                  
+
                   {(orders || [])
                     .filter(o => o.paymentMethod !== 'mixed' && o.paymentMethod !== 'debt')
                     .map(o => {
@@ -1154,10 +1201,10 @@ export const Sales: React.FC<SalesProps> = ({
                       let totalUSD = num(o.totalAmount);
                       if (totalUSD > 100000) totalUSD = totalUSD / rate;
                       const finalAmount = paidUSD > 0 ? paidUSD : totalUSD;
-                      
+
                       const isCashUSD = o.paymentMethod === 'cash' && o.paymentCurrency !== 'UZS';
                       const isLargeAmount = finalAmount > 10000;
-                      
+
                       return (
                         <div key={o.id} className={`text-xs grid grid-cols-6 gap-2 py-2 border-b ${theme === 'light' ? 'border-slate-200' : 'border-slate-700/50'} ${isLargeAmount ? 'bg-red-500/20 border-red-500/30' : isCashUSD ? 'bg-emerald-500/10' : t.bgPanelAlt}`}>
                           <span className={`${t.textSecondary} font-mono`}>{o.id}</span>
@@ -1165,7 +1212,7 @@ export const Sales: React.FC<SalesProps> = ({
                           <span className={`${t.textMuted}`}>{o.paymentMethod}</span>
                           <span className={`${t.textMuted}`}>{o.paymentCurrency || 'USD'}</span>
                           <span className={`text-right font-mono font-bold ${isLargeAmount ? 'text-red-500' : isCashUSD ? 'text-emerald-500' : t.textMuted}`}>
-                            {isCashUSD ? `+$${finalAmount.toLocaleString(undefined, {maximumFractionDigits: 2})}` : '-'}
+                            {isCashUSD ? `+$${finalAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })}` : '-'}
                           </span>
                           <div className="flex justify-end gap-1">
                             <button
@@ -1193,7 +1240,7 @@ export const Sales: React.FC<SalesProps> = ({
                       );
                     })}
                 </div>
-                
+
                 <div className={`mt-4 pt-4 border-t ${t.border} flex justify-between items-center`}>
                   <span className={`${t.textMuted}`}>Итого в кассе USD (из заказов):</span>
                   <span className="text-emerald-500 font-mono font-bold text-xl">
@@ -1206,16 +1253,16 @@ export const Sales: React.FC<SalesProps> = ({
                         let totalUSD = num(o.totalAmount);
                         if (totalUSD > 100000) totalUSD = totalUSD / rate;
                         return sum + (paidUSD > 0 ? paidUSD : totalUSD);
-                      }, 0).toLocaleString(undefined, {maximumFractionDigits: 2})}
+                      }, 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                   </span>
                 </div>
-                
+
                 <div className={`mt-2 text-xs ${theme === 'light' ? 'text-slate-600' : 'text-amber-500'} bg-amber-500/10 p-2 rounded-lg`}>
                   💡 Зелёные строки добавляются к балансу USD. Если видите огромные суммы - это ошибки в данных.
                 </div>
               </div>
 
-              <TransactionsManager 
+              <TransactionsManager
                 transactions={transactions}
                 onUpdateTransactions={setTransactions}
                 onSaveTransactions={onSaveTransactions}
@@ -1252,15 +1299,16 @@ export const Sales: React.FC<SalesProps> = ({
 
         {/* Cart Panel (Desktop) */}
         {mode === 'sale' && (
-          <CartPanel cart={cart} removeFromCart={removeFromCart} updateQuantity={updateQuantity}
+          <CartPanel cart={cart} removeFromCart={removeFromCart} updateQuantity={updateQuantity} updatePrice={updatePrice}
             customerName={customerName} setCustomerName={setCustomerName}
-            sellerName={sellerName} setSellerName={setSellerName}
+            customerPhone={customerPhone} setCustomerPhone={setCustomerPhone} onSaveClient={onSaveClients}
+            sellerName={sellerName} setSellerName={setSellerName} exchangeRate={exchangeRate}
             paymentMethod={paymentMethod} setPaymentMethod={setPaymentMethod}
             paymentCurrency={paymentCurrency} setPaymentCurrency={setPaymentCurrency}
             clients={clients} employees={employees} settings={settings}
             subtotalUSD={subtotalUSD} vatAmountUSD={vatAmountUSD} totalAmountUSD={totalAmountUSD} totalAmountUZS={totalAmountUZS}
             toUZS={toUZS} onCompleteOrder={completeOrder} onOpenClientModal={() => setIsClientModalOpen(true)}
-            onNavigateToStaff={onNavigateToStaff} lastOrder={lastOrder}
+            onNavigateToStaff={() => setIsStaffModalOpen(true)} lastOrder={lastOrder}
             onShowReceipt={() => {
               setLastOrder(null); // Just close/reset if needed
               // Logic for receipt moved to modal usage usually
@@ -1316,6 +1364,10 @@ export const Sales: React.FC<SalesProps> = ({
       <ClientModal isOpen={isClientModalOpen} onClose={() => setIsClientModalOpen(false)}
         clientData={newClientData} setClientData={setNewClientData} onSave={handleSaveClient} />
 
+      {/* Staff Modal */}
+      <StaffModal isOpen={isStaffModalOpen} onClose={() => setIsStaffModalOpen(false)}
+        staffData={newStaffData} setStaffData={setNewStaffData} onSave={handleSaveStaff} />
+
       {/* Workflow Payment Confirmation Modal (New Split) */}
       <PaymentSplitModal
         isOpen={workflowPaymentModalOpen}
@@ -1351,15 +1403,16 @@ export const Sales: React.FC<SalesProps> = ({
 
       {/* Mobile Cart Modal */}
       <MobileCartModal isOpen={isCartModalOpen} onClose={() => setIsCartModalOpen(false)}
-        cart={cart} removeFromCart={removeFromCart} updateQuantity={updateQuantity}
+        cart={cart} removeFromCart={removeFromCart} updateQuantity={updateQuantity} updatePrice={updatePrice}
         customerName={customerName} setCustomerName={setCustomerName}
-        sellerName={sellerName} setSellerName={setSellerName}
+        customerPhone={customerPhone} setCustomerPhone={setCustomerPhone} onSaveClient={onSaveClients}
+        sellerName={sellerName} setSellerName={setSellerName} exchangeRate={exchangeRate}
         paymentMethod={paymentMethod} setPaymentMethod={setPaymentMethod}
         paymentCurrency={paymentCurrency} setPaymentCurrency={setPaymentCurrency}
         clients={clients} employees={employees} settings={settings}
         subtotalUSD={subtotalUSD} vatAmountUSD={vatAmountUSD} totalAmountUSD={totalAmountUSD} totalAmountUZS={totalAmountUZS}
         toUZS={toUZS} onCompleteOrder={completeOrder} onOpenClientModal={() => setIsClientModalOpen(true)}
-        onNavigateToStaff={onNavigateToStaff} flyingItems={flyingItems}
+        onNavigateToStaff={() => setIsStaffModalOpen(true)} flyingItems={flyingItems}
         discountPercent={discountPercent}
         onDiscountChange={(val) => {
           setDiscountPercent(val);
@@ -1384,7 +1437,7 @@ export const Sales: React.FC<SalesProps> = ({
               <AlertTriangle className="text-red-400" size={24} />
               Аннулирование заказа
             </h3>
-            
+
             <div className="bg-slate-900/50 rounded-xl p-4 mb-4">
               <div className="text-sm text-slate-400">Заказ: <span className="text-white font-mono">{orderToCancel.id}</span></div>
               <div className="text-sm text-slate-400 mt-1">Клиент: <span className="text-white">{orderToCancel.customerName}</span></div>
@@ -1426,7 +1479,7 @@ export const Sales: React.FC<SalesProps> = ({
             <h3 className="text-xl font-bold text-white mb-4">
               ✎ Редактирование заказа
             </h3>
-            
+
             <div className="text-sm text-slate-400 mb-4">ID: <span className="text-white font-mono">{editingOrderId}</span></div>
 
             <div className="space-y-4">
@@ -1439,7 +1492,7 @@ export const Sales: React.FC<SalesProps> = ({
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white outline-none"
                 />
               </div>
-              
+
               <div>
                 <label className="text-sm text-slate-400 mb-1 block">Оплачено (amountPaid) в USD</label>
                 <input
@@ -1449,7 +1502,7 @@ export const Sales: React.FC<SalesProps> = ({
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white outline-none"
                 />
               </div>
-              
+
               <div>
                 <label className="text-sm text-slate-400 mb-1 block">Метод оплаты</label>
                 <select
@@ -1464,7 +1517,7 @@ export const Sales: React.FC<SalesProps> = ({
                   <option value="mixed">Mixed</option>
                 </select>
               </div>
-              
+
               <div>
                 <label className="text-sm text-slate-400 mb-1 block">Валюта оплаты</label>
                 <select
@@ -1487,15 +1540,15 @@ export const Sales: React.FC<SalesProps> = ({
               </button>
               <button
                 onClick={async () => {
-                  const updated = orders.map(o => 
-                    o.id === editingOrderId 
-                      ? { 
-                          ...o, 
-                          totalAmount: parseFloat(editOrderData.totalAmount) || 0,
-                          amountPaid: parseFloat(editOrderData.amountPaid) || 0,
-                          paymentMethod: editOrderData.paymentMethod as any,
-                          paymentCurrency: editOrderData.paymentCurrency as any
-                        } 
+                  const updated = orders.map(o =>
+                    o.id === editingOrderId
+                      ? {
+                        ...o,
+                        totalAmount: parseFloat(editOrderData.totalAmount) || 0,
+                        amountPaid: parseFloat(editOrderData.amountPaid) || 0,
+                        paymentMethod: editOrderData.paymentMethod as any,
+                        paymentCurrency: editOrderData.paymentCurrency as any
+                      }
                       : o
                   );
                   // CRITICAL: Save to Sheets FIRST, then update state

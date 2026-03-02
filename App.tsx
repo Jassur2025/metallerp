@@ -291,12 +291,12 @@ const AppContent: React.FC = () => {
   };
 
   // Legacy Save Handlers (Removed)
-  const saveExpensesHandler = async (...args: any[]): Promise<void> => {};
-  const saveFixedAssetsHandler = async (...args: any[]): Promise<void> => {};
-  const saveClientsHandler = async (...args: any[]): Promise<void> => {};
-  const saveEmployeesHandler = async (...args: any[]): Promise<void> => {};
-  const saveWorkflowOrdersHandler = async (...args: any[]): Promise<void> => {};
-  const saveJournalEventsHandler = async (...args: any[]): Promise<void> => {};
+  const saveExpensesHandler = async (...args: any[]): Promise<void> => { };
+  const saveFixedAssetsHandler = async (...args: any[]): Promise<void> => { };
+  const saveClientsHandler = async (...args: any[]): Promise<void> => { };
+  const saveEmployeesHandler = async (...args: any[]): Promise<void> => { };
+  const saveWorkflowOrdersHandler = async (...args: any[]): Promise<void> => { };
+  const saveJournalEventsHandler = async (...args: any[]): Promise<void> => { };
   const { settings, saveSettings: saveSettingsToFirestore } = useSettings(defaultSettings);
 
   type MoneyEvent = {
@@ -786,6 +786,7 @@ const AppContent: React.FC = () => {
           expenses={expenses}
           setExpenses={(val) => console.warn('setExpenses ignored (Firebase)', val)}
           employees={employees}
+          onSaveEmployees={handleSaveEmployees}
           onNavigateToStaff={() => setActiveTab('staff')}
           clients={clients}
           onSaveClients={handleSaveClients}

@@ -2,6 +2,9 @@ import React, { useState } from 'react';
 import { ShoppingCart, Trash2, User, Plus, CheckCircle, X, Tag, Percent } from 'lucide-react';
 import { OrderItem, Client, Employee, AppSettings } from '../../types';
 import { PaymentMethod, Currency, FlyingItem } from './types';
+import { ClientDropdown } from '../ClientDropdown';
+import { IdGenerator } from '../../utils/idGenerator';
+import { useTheme, getThemeClasses } from '../../contexts/ThemeContext';
 
 interface MobileCartModalProps {
   isOpen: boolean;
@@ -9,6 +12,7 @@ interface MobileCartModalProps {
   cart: OrderItem[];
   removeFromCart: (id: string) => void;
   updateQuantity: (productId: string, qty: number) => void;
+  updatePrice: (productId: string, price: number) => void;
   customerName: string;
   setCustomerName: (val: string) => void;
   sellerName: string;
@@ -35,6 +39,10 @@ interface MobileCartModalProps {
   manualTotal?: number | null;
   onTotalChange?: (val: number) => void;
   originalTotalUSD?: number;
+  onSaveClient?: (clients: Client[]) => void;
+  customerPhone?: string;
+  setCustomerPhone?: (val: string) => void;
+  exchangeRate: number;
 }
 
 export const MobileCartModal: React.FC<MobileCartModalProps> = ({
@@ -43,6 +51,7 @@ export const MobileCartModal: React.FC<MobileCartModalProps> = ({
   cart,
   removeFromCart,
   updateQuantity,
+  updatePrice,
   customerName,
   setCustomerName,
   sellerName,
@@ -67,10 +76,21 @@ export const MobileCartModal: React.FC<MobileCartModalProps> = ({
   onDiscountChange,
   manualTotal,
   onTotalChange,
-  originalTotalUSD = 0
+  originalTotalUSD = 0,
+  onSaveClient,
+  customerPhone = '',
+  setCustomerPhone = () => { },
+  exchangeRate
 }) => {
+  const { theme } = useTheme();
+  const t = getThemeClasses(theme);
   const [showDiscountPanel, setShowDiscountPanel] = useState(false);
-  
+  const [inputCurrencies, setInputCurrencies] = useState<Record<string, 'USD' | 'UZS'>>({});
+
+  const toggleCurrency = (productId: string) => {
+    setInputCurrencies(prev => ({ ...prev, [productId]: prev[productId] === 'UZS' ? 'USD' : 'UZS' }));
+  };
+
   const discountAmountUSD = originalTotalUSD > 0 ? originalTotalUSD - totalAmountUSD : 0;
   const discountAmountUZS = toUZS(discountAmountUSD);
   const quickDiscounts = [1, 2, 3, 5, 10];
@@ -129,26 +149,61 @@ export const MobileCartModal: React.FC<MobileCartModalProps> = ({
             cart.map(item => (
               <div key={item.productId} className="bg-slate-700/30 border border-slate-700 rounded-xl p-3 flex flex-col gap-2 animate-fade-in">
                 <div className="flex justify-between">
-                  <span className="font-medium text-slate-200 text-sm">{item.productName}</span>
-                  <button onClick={() => removeFromCart(item.productId)} className="text-slate-500 hover:text-red-400">
+                  <span className="font-medium text-slate-200 text-sm">
+                    {item.productName}
+                    {item.dimensions && item.dimensions !== '-' && <span className="text-xs text-slate-500 ml-1">({item.dimensions})</span>}
+                  </span>
+                  <button onClick={() => removeFromCart(item.productId)} className="text-slate-500 hover:text-red-400 flex-shrink-0">
                     <Trash2 size={16} />
                   </button>
                 </div>
-                <div className="flex justify-between items-end">
-                  <div className="flex items-center gap-2 bg-slate-900 rounded-lg p-1">
-                    <input
-                      type="number"
-                      className="w-16 bg-transparent text-center text-sm text-white outline-none"
-                      value={item.quantity}
-                      onChange={e => updateQuantity(item.productId, Number(e.target.value))}
-                    />
-                    <span className="text-xs text-slate-500 pr-2">{item.unit}</span>
+                <div className="flex justify-between items-end mt-1">
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => updateQuantity(item.productId, item.quantity - 1)}
+                      className={`w-8 h-8 flex items-center justify-center rounded-lg text-lg font-bold transition-colors
+                        ${theme === 'light' ? 'bg-slate-200 hover:bg-slate-300 text-slate-700' : 'bg-slate-700 hover:bg-slate-600 text-slate-300'}`}
+                    >−</button>
+                    <div className="flex items-center gap-1 bg-slate-900 rounded-lg p-1">
+                      <input
+                        type="number"
+                        className="w-12 bg-transparent text-center font-mono text-sm text-white outline-none focus:ring-0"
+                        value={item.quantity}
+                        onChange={e => updateQuantity(item.productId, Number(e.target.value))}
+                      />
+                      <span className="text-xs text-slate-500 pr-1">{item.unit}</span>
+                    </div>
+                    <button
+                      onClick={() => updateQuantity(item.productId, item.quantity + 1)}
+                      className={`w-8 h-8 flex items-center justify-center rounded-lg text-lg font-bold transition-colors
+                        ${theme === 'light' ? 'bg-blue-100 hover:bg-blue-200 text-blue-700' : 'bg-primary-500/20 hover:bg-primary-500/40 text-primary-400'}`}
+                    >+</button>
                   </div>
-                  <div className="text-right">
-                    <span className="font-mono font-bold text-slate-300 block">
+                  <div className="text-right flex flex-col items-end">
+                    <div className="flex items-center gap-1 bg-slate-900 rounded-lg pl-1 pr-1 py-1 mb-1 border border-slate-700 w-[110px]">
+                      <button
+                        onClick={() => toggleCurrency(item.productId)}
+                        className={`text-[10px] font-bold px-1 rounded transition-colors ${inputCurrencies[item.productId] === 'UZS'
+                            ? 'text-emerald-500 hover:bg-emerald-500/20'
+                            : 'text-blue-400 hover:bg-blue-500/20'
+                          }`}
+                        title="Сменить валюту ввода"
+                      >
+                        {inputCurrencies[item.productId] === 'UZS' ? 'UZS' : '$'}
+                      </button>
+                      <input
+                        type="number"
+                        className="w-full bg-transparent text-right font-mono text-xs text-white outline-none focus:ring-0"
+                        value={inputCurrencies[item.productId] === 'UZS' ? Math.round(item.priceAtSale * exchangeRate) : item.priceAtSale}
+                        onChange={e => {
+                          const val = Number(e.target.value);
+                          updatePrice(item.productId, inputCurrencies[item.productId] === 'UZS' ? (exchangeRate > 0 ? val / exchangeRate : 0) : val);
+                        }}
+                      />
+                    </div>
+                    <span className="font-mono font-bold text-slate-300 block text-sm">
                       {toUZS(item.total).toLocaleString()} сўм
                     </span>
-                    <span className="text-xs text-slate-500">${item.total.toFixed(2)}</span>
                   </div>
                 </div>
               </div>
@@ -162,24 +217,36 @@ export const MobileCartModal: React.FC<MobileCartModalProps> = ({
             <div className="space-y-2">
               <label className="text-xs font-medium text-slate-400 uppercase flex items-center gap-1"><User size={12} /> Клиент</label>
               <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <input
-                    type="text"
-                    placeholder="Поиск или выбор клиента..."
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:border-primary-500 outline-none"
+                <div className="flex-1 w-full min-w-0">
+                  <ClientDropdown
+                    clients={clients}
                     value={customerName}
-                    onChange={e => setCustomerName(e.target.value)}
-                    list="clients-list-mobile"
+                    onChange={setCustomerName}
+                    onPhone={setCustomerPhone}
+                    onAddClient={onSaveClient || (() => { })}
+                    theme={theme}
+                    t={t}
                   />
-                  <datalist id="clients-list-mobile">
-                    {clients.map(c => (
-                      <option key={c.id} value={c.name} />
-                    ))}
-                  </datalist>
                 </div>
                 <button
-                  onClick={onOpenClientModal}
-                  className="bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg px-3 text-slate-400 hover:text-white transition-colors"
+                  type="button"
+                  onClick={() => {
+                    const name = customerName.trim();
+                    if (!name || !onSaveClient) { return; }
+                    const exists = clients.find(c => c.name.toLowerCase() === name.toLowerCase());
+                    if (exists) return; // Allaqachon bor
+                    const newClient: Client = {
+                      id: IdGenerator.client(),
+                      name,
+                      phone: customerPhone.trim() || '',
+                      creditLimit: 0,
+                      totalPurchases: 0,
+                      totalDebt: 0,
+                      notes: 'Добавлен с мобильного'
+                    };
+                    onSaveClient([...clients, newClient]);
+                  }}
+                  className="bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg px-3 text-slate-400 hover:text-white transition-colors flex-shrink-0"
                   title="Новый клиент"
                 >
                   <Plus size={16} />
@@ -273,15 +340,14 @@ export const MobileCartModal: React.FC<MobileCartModalProps> = ({
             <div className="space-y-2">
               <button
                 onClick={() => setShowDiscountPanel(!showDiscountPanel)}
-                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg border transition-all ${
-                  discountPercent > 0 
-                    ? 'bg-orange-500/20 border-orange-500 text-orange-400' 
-                    : 'bg-slate-800 border-slate-600 text-slate-400'
-                }`}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg border transition-all ${discountPercent > 0
+                  ? 'bg-orange-500/20 border-orange-500 text-orange-400'
+                  : 'bg-slate-800 border-slate-600 text-slate-400'
+                  }`}
               >
                 <span className="flex items-center gap-2 text-sm font-medium">
                   <Tag size={16} />
-                  {discountPercent > 0 
+                  {discountPercent > 0
                     ? `Скидка: ${discountPercent.toFixed(1)}%`
                     : 'Скидка'
                   }
@@ -296,11 +362,10 @@ export const MobileCartModal: React.FC<MobileCartModalProps> = ({
                       <button
                         key={d}
                         onClick={() => onDiscountChange?.(discountPercent === d ? 0 : d)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                          Math.abs(discountPercent - d) < 0.1
-                            ? 'bg-orange-500 text-white' 
-                            : 'bg-slate-700 text-slate-300'
-                        }`}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${Math.abs(discountPercent - d) < 0.1
+                          ? 'bg-orange-500 text-white'
+                          : 'bg-slate-700 text-slate-300'
+                          }`}
                       >
                         {d}%
                       </button>
