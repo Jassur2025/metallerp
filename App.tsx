@@ -239,8 +239,6 @@ const AppContent: React.FC = () => {
         return renderLazyComponent(<FixedAssets
           assets={fixedAssets}
           onSaveAssets={handleSaveFixedAssets}
-          transactions={transactions}
-          onSaveTransactions={handleSaveTransactions}
           defaultExchangeRate={settings.defaultExchangeRate}
         />);
       case 'crm':

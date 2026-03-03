@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Product, Order, OrderItem, Expense, Client, Transaction, JournalEvent, WorkflowOrder } from '../../types';
+import { Product, Order, OrderItem, Expense, Client, Transaction, JournalEvent, WorkflowOrder, Employee } from '../../types';
 import { ShoppingCart, ArrowDownRight, ArrowUpRight, RefreshCw, FileText, ClipboardList, List } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import { useTheme, getThemeClasses } from '../../contexts/ThemeContext';
@@ -20,6 +20,7 @@ import { ExpenseForm } from './ExpenseForm';
 import { ReturnModal } from './ReturnModal';
 import { ReceiptModal } from './ReceiptModal';
 import { ClientModal } from './ClientModal';
+import { StaffModal } from './StaffModal';
 import { generateInvoicePDF, generateWaybillPDF } from '../../utils/DocumentTemplates';
 import { PaymentSplitModal, PaymentDistribution } from './PaymentSplitModal';
 import { WorkflowQueue } from './WorkflowQueue';
@@ -30,6 +31,7 @@ import { calculateBaseTotals, num, getSafeRate } from '../../utils/finance';
 import { escapeHtml } from '../../utils/escapeHtml';
 import { findOrCreateClient } from '../../services/clientService';
 import { salesAtomicService } from '../../services/salesAtomicService';
+import { employeeService } from '../../services/employeeService';
 import { CancelWorkflowModal } from '../CancelWorkflowModal';
 
 import { logger } from '../../utils/logger';
@@ -88,10 +90,17 @@ export const Sales: React.FC = () => {
     name: '', phone: '', email: '', address: '', creditLimit: 0, notes: ''
   });
 
+  // Staff Modal State
+  const [isStaffModalOpen, setIsStaffModalOpen] = useState(false);
+  const [newStaffData, setNewStaffData] = useState<Partial<Employee>>({
+    name: '', email: '', position: '', phone: ''
+  });
+
   // Sale State
   const [cart, setCart] = useState<OrderItem[]>([]);
   const [customerName, setCustomerName] = useState('');
-  const [sellerName, setSellerName] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
+  const [sellerName, setSellerName] = useState(currentUserEmail || '');
   const [searchTerm, setSearchTerm] = useState('');
   const [sortOption, setSortOption] = useState<string>('default');
   const [exchangeRate, setExchangeRate] = useState<number>(settings.defaultExchangeRate);
@@ -172,20 +181,20 @@ export const Sales: React.FC = () => {
   // Расчёт скидки для заказа относительно прайс-листа
   const getOrderDiscount = useCallback((items: OrderItem[]) => {
     if (!Array.isArray(items) || items.length === 0) return { hasDiscount: false, totalDiscount: 0, discountPercent: 0 };
-    
+
     let priceListTotal = 0;
     let actualTotal = 0;
-    
+
     items.forEach(it => {
       const product = products.find(p => p.id === it.productId);
       const priceListPrice = product?.pricePerUnit || it.priceAtSale;
       priceListTotal += priceListPrice * it.quantity;
       actualTotal += it.priceAtSale * it.quantity;
     });
-    
+
     const totalDiscount = priceListTotal - actualTotal;
     const discountPercent = priceListTotal > 0 ? (totalDiscount / priceListTotal) * 100 : 0;
-    
+
     return {
       hasDiscount: totalDiscount > 0.01,
       totalDiscount,
@@ -429,16 +438,25 @@ export const Sales: React.FC = () => {
     }));
   }, [products]);
 
+  const updatePrice = useCallback((productId: string, price: number) => {
+    setCart(prev => prev.map(item => {
+      if (item.productId === productId) {
+        return { ...item, priceAtSale: price, total: item.quantity * price };
+      }
+      return item;
+    }));
+  }, []);
+
   const removeFromCart = useCallback((id: string) => setCart(prev => prev.filter(item => item.productId !== id)), []);
 
   // Totals — IFRS 15: discount applies to net amount (before VAT)
   const subtotalUSD = cart.reduce((sum, item) => sum + item.total, 0);
-  
+
   // Apply discount to subtotal BEFORE calculating VAT (IFRS 15 - Transaction Price)
   const discountedSubtotal = manualTotal !== null
     ? manualTotal / (1 + settings.vatRate / 100) // Reverse-calculate net from manual total
     : subtotalUSD * (1 - (discountPercent || 0) / 100);
-  
+
   const vatAmountUSD = discountedSubtotal * (settings.vatRate / 100);
   const originalTotalUSD = subtotalUSD + (subtotalUSD * (settings.vatRate / 100));
 
@@ -468,9 +486,9 @@ export const Sales: React.FC = () => {
     const paymentDueDate = hasDebt && debtDueDate ? debtDueDate : undefined;
 
     const newOrder: Order = {
-      id: IdGenerator.order(), 
+      id: IdGenerator.order(),
       reportNo, // Add sequential report number
-      date: new Date().toISOString(), 
+      date: new Date().toISOString(),
       customerName,
       sellerId: sellerEmployee?.id || currentEmployee?.id, // Employee ID for KPI
       sellerName: sellerName || currentEmployee?.name || 'Администратор',
@@ -689,13 +707,13 @@ export const Sales: React.FC = () => {
     if (returnMethod === 'debt' && !client) { toast.error('Клиент не найден!'); return; }
 
     // Find the last order for this product to get the actual sale price
-    const lastOrder = orders.find(o => 
-      o.status === 'completed' && 
+    const lastOrder = orders.find(o =>
+      o.status === 'completed' &&
       o.items.some(item => item.productId === product.id) &&
       (client ? (o.clientId === client.id || o.customerName.toLowerCase() === client.name.toLowerCase()) : true)
     );
     const orderItem = lastOrder?.items.find(item => item.productId === product.id);
-    
+
     // Use the actual sale price from the order, fallback to current price
     const returnPricePerUnit = orderItem?.priceAtSale ?? product.pricePerUnit;
     const returnCostPerUnit = orderItem?.costAtSale ?? product.costPrice;
@@ -784,6 +802,35 @@ export const Sales: React.FC = () => {
     setNewClientData({ name: '', phone: '', email: '', address: '', creditLimit: 0, notes: '' });
   };
 
+  // 4. Add handleSaveStaff
+  const handleSaveStaff = async () => {
+    if (!newStaffData.name?.trim() || !newStaffData.email?.trim()) {
+      toast.error('Заполните обязательные поля: Имя и Email');
+      return;
+    }
+    const newStaff: Employee = {
+      id: IdGenerator.employee(),
+      name: newStaffData.name,
+      email: newStaffData.email,
+      position: newStaffData.position || 'Продавец',
+      phone: newStaffData.phone || '',
+      role: 'sales',
+      hireDate: new Date().toISOString(),
+      status: 'active'
+    };
+    try {
+      const { id: _ignoreId, ...employeeData } = newStaff;
+      await employeeService.create(employeeData);
+      toast.success('Сотрудник добавлен');
+      setSellerName(newStaff.name);
+      setIsStaffModalOpen(false);
+      setNewStaffData({ name: '', email: '', position: '', phone: '' });
+    } catch (error) {
+      errorDev('Ошибка при сохранении сотрудника:', error);
+      toast.error('Ошибка при сохранении сотрудника');
+    }
+  };
+
   // --- Render ---
   return (
     <div className="flex flex-col h-full">
@@ -813,7 +860,7 @@ export const Sales: React.FC = () => {
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 p-6 relative overflow-hidden">
         {flyingItems.map(item => <FlyingIcon key={item.id} {...item} onComplete={() => removeFlyingItem(item.id)} />)}
 
-        <div className="lg:col-span-2 flex flex-col h-full overflow-hidden">
+        <div className={`${mode === 'sale' ? 'lg:col-span-2' : 'lg:col-span-3'} flex flex-col h-full overflow-hidden transition-all duration-300`}>
           {/* Mode Switcher */}
           <div className="flex gap-2 mb-4">
             <button onClick={() => setMode('sale')} className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${mode === 'sale' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/20' : `${t.bgCard} ${t.textMuted} ${t.bgCardHover}`}`}>
@@ -904,15 +951,16 @@ export const Sales: React.FC = () => {
 
         {/* Cart Panel (Desktop) */}
         {mode === 'sale' && (
-          <CartPanel cart={cart} removeFromCart={removeFromCart} updateQuantity={updateQuantity}
+          <CartPanel cart={cart} removeFromCart={removeFromCart} updateQuantity={updateQuantity} updatePrice={updatePrice}
             customerName={customerName} setCustomerName={setCustomerName}
-            sellerName={sellerName} setSellerName={setSellerName}
+            customerPhone={customerPhone} setCustomerPhone={setCustomerPhone} onSaveClient={onSaveClients}
+            sellerName={sellerName} setSellerName={setSellerName} exchangeRate={exchangeRate}
             paymentMethod={paymentMethod} setPaymentMethod={setPaymentMethod}
             paymentCurrency={paymentCurrency} setPaymentCurrency={setPaymentCurrency}
             clients={clients} employees={employees} settings={settings}
             subtotalUSD={subtotalUSD} vatAmountUSD={vatAmountUSD} totalAmountUSD={totalAmountUSD} totalAmountUZS={totalAmountUZS}
             toUZS={toUZS} onCompleteOrder={completeOrder} onOpenClientModal={() => setIsClientModalOpen(true)}
-            onNavigateToStaff={onNavigateToStaff} lastOrder={lastOrder}
+            onNavigateToStaff={() => setIsStaffModalOpen(true)} lastOrder={lastOrder}
             onShowReceipt={() => {
               setLastOrder(null); // Just close/reset if needed
               // Logic for receipt moved to modal usage usually
@@ -968,6 +1016,10 @@ export const Sales: React.FC = () => {
       <ClientModal isOpen={isClientModalOpen} onClose={() => setIsClientModalOpen(false)}
         clientData={newClientData} setClientData={setNewClientData} onSave={handleSaveClient} />
 
+      {/* Staff Modal */}
+      <StaffModal isOpen={isStaffModalOpen} onClose={() => setIsStaffModalOpen(false)}
+        staffData={newStaffData} setStaffData={setNewStaffData} onSave={handleSaveStaff} />
+
       {/* Workflow Payment Confirmation Modal (New Split) */}
       <PaymentSplitModal
         isOpen={workflowPaymentModalOpen}
@@ -1003,15 +1055,16 @@ export const Sales: React.FC = () => {
 
       {/* Mobile Cart Modal */}
       <MobileCartModal isOpen={isCartModalOpen} onClose={() => setIsCartModalOpen(false)}
-        cart={cart} removeFromCart={removeFromCart} updateQuantity={updateQuantity}
+        cart={cart} removeFromCart={removeFromCart} updateQuantity={updateQuantity} updatePrice={updatePrice}
         customerName={customerName} setCustomerName={setCustomerName}
-        sellerName={sellerName} setSellerName={setSellerName}
+        customerPhone={customerPhone} setCustomerPhone={setCustomerPhone} onSaveClient={onSaveClients}
+        sellerName={sellerName} setSellerName={setSellerName} exchangeRate={exchangeRate}
         paymentMethod={paymentMethod} setPaymentMethod={setPaymentMethod}
         paymentCurrency={paymentCurrency} setPaymentCurrency={setPaymentCurrency}
         clients={clients} employees={employees} settings={settings}
         subtotalUSD={subtotalUSD} vatAmountUSD={vatAmountUSD} totalAmountUSD={totalAmountUSD} totalAmountUZS={totalAmountUZS}
         toUZS={toUZS} onCompleteOrder={completeOrder} onOpenClientModal={() => setIsClientModalOpen(true)}
-        onNavigateToStaff={onNavigateToStaff} flyingItems={flyingItems}
+        onNavigateToStaff={() => setIsStaffModalOpen(true)} flyingItems={flyingItems}
         discountPercent={discountPercent}
         onDiscountChange={(val) => {
           setDiscountPercent(val);

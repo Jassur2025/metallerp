@@ -8,6 +8,7 @@ export interface SalesProps {
   setSettings?: (s: AppSettings) => void;
   expenses: Expense[];
   employees: Employee[];
+  onSaveEmployees?: (employees: Employee[]) => Promise<boolean | void>;
   onNavigateToStaff: () => void;
   clients: Client[];
   onSaveClients: (clients: Client[]) => void;
