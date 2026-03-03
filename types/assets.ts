@@ -24,9 +24,12 @@ export interface FixedAsset extends Versionable {
   accumulatedDepreciation: number; // USD
   depreciationRate: number; // Annual %
   lastDepreciationDate?: string;
+  lastDepreciationMonth?: string; // YYYY-MM — idempotency guard for monthly depreciation
   paymentMethod?: 'cash' | 'bank' | 'card'; // Способ оплаты
   paymentCurrency?: 'USD' | 'UZS'; // Валюта оплаты (для наличных)
   amountPaid?: number; // USD - сумма оплачено (для частичной оплаты)
+  deletedAt?: string; // Soft-delete timestamp (IAS 16.67 derecognition)
+  deletedBy?: string; // Who deleted the asset
   // _version and updatedAt inherited from Versionable
 }
 

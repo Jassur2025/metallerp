@@ -1,9 +1,10 @@
 # 📋 МАСТЕР-ПЛАН ЗАДАЧ — MetalMaster ERP Hardening
 
 > Дата: 28.02.2026 (обновлено: 03.03.2026)  
-> Общее количество задач: **57**  
-> Выполнено: **45** ✅  
-> Осталось: **12** ⬜  
+> Общее количество задач: **57 (оригинальных) + 6 (аудит Pre-IPO)**  
+> Оригинальных выполнено: **55/57** ✅  
+> Pre-IPO аудит выполнено: **5/6** ✅  
+> Плановые (Backup + Budget): **2** ⬜ (ручная работа в Firebase Console)  
 > Расчётный срок: **20 недель (5 месяцев)**  
 > Принцип: каждая задача — конкретное изменение в конкретном файле
 
@@ -928,3 +929,174 @@ export interface AccountingPeriod {
 ```
 
 **Готов начинать. Скажи "поехали" — и я начну с Задачи 1.1.**
+
+---
+
+# ═══════════════════════════════════════════
+# Pre-IPO АУДИТ — Выполненные задачи (03.03.2026)
+# ═══════════════════════════════════════════
+
+### Задача A.1 ✅ 🔴 — Ключи идемпотентности на всех CF
+Добавлен `requestId` + `idempotencyKeys/{requestId}` коллекция. Все 3 CF (commitSale, commitPurchase, processPayment) проверяют и записывают ключ внутри `runTransaction`.
+
+### Задача A.2 ✅ 🔴 — Удалить Reset Service
+`resetService.ts` заменён на stub с throw. UI "Опасная зона" удалён из Settings.
+
+### Задача A.3 ✅ 🔴 — Леджер внутри транзакции
+Все 3 CF: проводки теперь пишутся через `tx.set()` ВНУТРИ `runTransaction`, а не fire-and-forget после.
+
+### Задача A.4 ✅ 🔴 — Удалить клиентский fallback продаж
+`salesAtomicService.ts`: 310 → 87 строк. `_commitSaleLocal()` удалён. Только CF-путь.
+
+### Задача A.5 ✅ 🔴 — Сторно-проводки при удалении
+3 точки удаления (deleteTransaction CF, orderService.delete, purchaseService.delete) теперь создают contra-entries (СТОРНО) с swap debit↔credit.
+
+### Задача A.6 ⬜ 🔴 — Backup Firestore (ПЛАНОВАЯ — ручная)
+Firebase Console → Firestore → Backups → Scheduled Exports.
+
+---
+
+# ═══════════════════════════════════════════
+# ЭТАП 5: НОВЫЙ АУДИТ — Оставшиеся задачи
+# ═══════════════════════════════════════════
+#
+# Дата аудита: 03.03.2026
+# Найдено: 4 Критических, 6 Высоких, 5 Средних, 2 Низких
+#
+
+## 🔴 КРИТИЧЕСКИЕ (C1-C4)
+
+### Задача B.1 ✅ 🔴 — Подключить commitPurchase CF к клиенту
+**Решение (03.03.2026):**
+- Создан `services/purchaseAtomicService.ts` — `commitPurchase()` вызывает `httpsCallable('commitPurchase')` с `requestId`
+- Рефакторинг `components/Procurement.tsx` — `finalizeProcurement` заменён с 3-шагового клиентского процесса на единый CF-вызов
+- CF атомарно создаёт закупку, обновляет остатки, записывает транзакцию и ledger
+
+---
+
+### Задача B.2 ✅ 🔴 — Подключить processPayment CF к клиенту
+**Решение (03.03.2026):**
+- Создан `services/paymentAtomicService.ts` — `processPayment()` вызывает `httpsCallable('processPayment')` с `requestId`
+- Модифицирован `hooks/useTransactions.ts` — `addTransaction` теперь маршрутизируется через CF
+- Заменены 5 прямых вызовов `transactionService.createPayment()` в `components/CRM.tsx` на `paymentAtomicService.processPayment()`
+- `transactionService.add()`, `createPayment()`, `addDebt()` теперь мёртвый код (можно удалить)
+
+---
+
+### Задача B.3 ✅ 🔴 — Подключить deleteTransaction CF к клиенту
+**Решение (03.03.2026):**
+- `paymentAtomicService.deleteTransaction()` вызывает `httpsCallable('deleteTransaction')` с atomic debt reversal + ledger СТОРНО
+- Модифицирован `hooks/useTransactions.ts` — `deleteTransaction` теперь маршрутизируется через CF
+- `transactionService.delete()` теперь мёртвый код (можно удалить)
+
+---
+
+### Задача B.4 ✅ 🔴 — Перенести удаление заказов/закупок в CF
+**Решение (03.03.2026):**
+- Создан CF `deleteOrder` (`functions/src/orders/deleteOrder.ts`) — atomic: restore inventory + reverse client debt/totalPurchases + ledger СТОРНО + journal event
+- Создан CF `deletePurchase` (`functions/src/purchases/deletePurchase.ts`) — atomic: reverse product quantities + ledger СТОРНО + journal event
+- Создан `services/orderAtomicService.ts` — клиентский враппер `deleteOrder()` через `httpsCallable`
+- Расширен `services/purchaseAtomicService.ts` — добавлен `deletePurchase()` через `httpsCallable`
+- Модифицирован `hooks/useOrders.ts` — `deleteOrder` маршрутизируется через CF
+- Модифицирован `hooks/usePurchases.ts` — `deletePurchase` маршрутизируется через CF
+- `orderService.delete()` и `purchaseService.delete()` теперь мёртвый код (можно удалить)
+- Зарегистрированы оба CF в `functions/src/index.ts` (итого 10 CF)
+
+---
+
+## 🟠 ВЫСОКИЕ (H1-H6)
+
+### Задача B.5 ✅ 🟠 — Учёт долга поставщиков в CF
+**Решение (03.03.2026):**
+- **commitPurchase CF**: добавлен optional `supplierId`, авто-поиск по `supplierName` если не передан. При нахождении — обновляет `suppliers/{id}.totalDebt` (+=неоплаченная часть) и `totalPurchases` (+=totalLandedAmountUSD). Хранит `supplierId` в документе закупки.
+- **processPayment CF**: добавлен `supplierId` в input. Для `supplier_payment` — `debtDelta = -amountUSD` (уменьшает долг). Чтение поставщика по `supplierId` приоритетнее fallback по `relatedId`.
+- **deleteTransaction CF**: добавлен `supplier_payment` в DEBT_TYPES. При удалении — читает `supplierId` из транзакции и увеличивает долг поставщика обратно.
+- **deletePurchase CF**: при удалении закупки — реверсит долг и totalPurchases поставщика если `supplierId` есть в документе.
+- **Типы**: `Transaction.supplierId` и `Purchase.supplierId` добавлены в types.ts и types/commerce.ts
+- **Клиент**: `paymentAtomicService` и `purchaseAtomicService` пробрасывают `supplierId`. Procurement.tsx передаёт `supplierId` из документа закупки при погашении долга.
+
+---
+
+### Задача B.6 ✅ 🟠 — Проводки для амортизации ОС
+**Решение:** Создан CF `runDepreciation` (`functions/src/assets/runDepreciation.ts`). Атомарно обновляет все активы + создаёт проводки Дт 9430 / Кт 0200 + journal. Идемпотентность через `lastDepreciationMonth`. Клиент вызывает через `fixedAssetsAtomicService.runDepreciation()`.
+
+---
+
+### Задача B.7 ✅ 🟠 — Soft-delete для основных средств (вместо hard delete)
+**Решение:** Создан CF `deleteFixedAsset` (`functions/src/assets/deleteFixedAsset.ts`). Soft-delete (`deletedAt/deletedBy`) + проводка списания остаточной стоимости (IAS 16.67). Клиент вызывает через `fixedAssetsAtomicService.deleteFixedAsset()`.
+
+---
+
+### Задача B.8 ✅ 🟠 — Закрыть клиентскую запись в ledgerEntries
+**Решение:** `firestore.rules` — `ledgerEntries` теперь `allow create, update, delete: if false`. Все записи идут ТОЛЬКО через Admin SDK (CF). Включено после завершения B.1-B.4.
+
+---
+
+### Задача B.9 ✅ 🟠 — Зарплатные проводки
+**Решение:** Создан CF `processPayroll` (`functions/src/payroll/processPayroll.ts`). Кнопка «Начислить ЗП» в Payroll.tsx. Читает сотрудников/заказы/расходы, рассчитывает salary+KPI, создаёт проводки Дт 9420 / Кт 6710. Идемпотентность через journalEvents query по `metadata.monthKey`.
+
+---
+
+### Задача B.10 ✅ 🟠 — Покупка ОС через CF (не fake transaction)
+**Решение:** Создан CF `purchaseFixedAsset` (`functions/src/assets/purchaseFixedAsset.ts`). Атомарно создаёт asset + payment transaction + проводки (Дт 0100 / Кт 6010 капитализация + Дт 6010 / Кт cash оплата) + journal. Клиент вызывает через `fixedAssetsAtomicService.purchaseFixedAsset()`.
+
+---
+
+## 🟡 СРЕДНИЕ (M1-M5)
+
+### Задача B.11 ✅ 🟡 — Создать firestore.indexes.json
+**Решение:** Создан `firestore.indexes.json` с 9 composite indexes: orders/purchases/transactions/workflowOrders (`_deleted` + `date` desc), transactions (`relatedId` + `date` desc), ledgerEntries (`periodId`/`relatedId`/`relatedType` combos), journalEvents (`action` + `metadata.monthKey`).
+
+---
+
+### Задача B.12 ✅ 🟡 — Soft-delete для клиентов/поставщиков/товаров
+**Решение:** Заменён `deleteDoc()` на `updateDoc()` + `_deleted: true, _deletedAt` во всех 3 сервисах. Добавлен `.filter(x => !x._deleted)` в `getAll()` и `subscribe()`. Удалены неиспользуемые импорты `deleteDoc`.
+
+---
+
+### Задача B.13 ⬜ 🟡 — Бюджетные алерты Firebase (ПЛАНОВАЯ — ручная)
+Firebase Console → Billing → Budget alerts. $50/$100/$200 пороги.
+
+---
+
+## ⚪ НИЗКИЕ (L1-L2)
+
+### Задача B.14 ✅ ⚪ — Soft-delete для workflow orders через транзакцию
+**Решение:** `workflowOrderService.delete()` уже корректно реализован через soft-delete `updateDoc()` + `_deleted/_deletedAt/_deletedBy`. Не требует `runTransaction` т.к. это единичный updateDoc.
+
+### Задача B.15 ✅ ⚪ — Пометить мёртвый код как @deprecated
+**Решение:** 6 методов помечены `@deprecated` с указанием CF-замены: `transactionService.add/createPayment/addDebt/delete`, `orderService.delete`, `purchaseService.delete`. Все они пишут в `ledgerEntries` который заблокирован firestore.rules.
+
+---
+
+## РЕКОМЕНДУЕМЫЙ ПОРЯДОК
+
+```
+Фаза 1 (Самый большой ROI — подключить готовые CF):
+  B.1 → commitPurchase CF к клиенту
+  B.2 → processPayment CF к клиенту
+  B.3 → deleteTransaction CF к клиенту
+
+Фаза 2 (Перенести оставшиеся delete в CF):
+  B.4 → deleteOrder + deletePurchase CF
+
+Фаза 3 (Закрыть записи с клиента):
+  B.8 → ledgerEntries: allow create: if false
+
+Фаза 4 (Финансовая полнота):
+  B.5 → Supplier debt tracking
+  B.6 → Depreciation ledger entries
+  B.9 → Payroll ledger entries
+  B.10 → Fixed asset purchase via CF
+
+Фаза 5 (Cleanup):
+  B.7  → Soft-delete для ОС
+  B.11 → firestore.indexes.json
+  B.12 → Soft-delete для clients/suppliers/products
+  B.14 → Workflow order transaction
+  B.15 → Dead import cleanup
+
+Плановые (ручная работа в Firebase Console):
+  A.6  → Backup Firestore
+  B.13 → Budget alerts
+```

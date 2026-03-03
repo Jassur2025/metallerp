@@ -4,7 +4,7 @@ import {
     doc, 
     getDocs, 
     setDoc, 
-    deleteDoc, 
+    updateDoc,
     query, 
     orderBy,
     Timestamp,
@@ -27,7 +27,7 @@ export const supplierService = {
         return snapshot.docs.map(doc => ({
             ...doc.data(),
             id: doc.id
-        } as Supplier));
+        } as Supplier)).filter(s => !s._deleted);
     },
 
     /**
@@ -39,7 +39,7 @@ export const supplierService = {
             const suppliers = snapshot.docs.map(doc => ({
                 ...doc.data(),
                 id: doc.id
-            } as Supplier));
+            } as Supplier)).filter(s => !s._deleted);
             callback(suppliers);
         });
     },
@@ -91,10 +91,13 @@ export const supplierService = {
     },
 
     /**
-     * Delete a supplier
+     * Soft-delete a supplier (sets _deleted flag, preserves data for audit)
      */
     async delete(id: string): Promise<void> {
-        await deleteDoc(doc(db, COLLECTION_NAME, id));
+        await updateDoc(doc(db, COLLECTION_NAME, id), {
+          _deleted: true,
+          _deletedAt: new Date().toISOString(),
+        });
     },
 
     /**

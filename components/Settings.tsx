@@ -2,10 +2,8 @@
 import React, { useState } from 'react';
 import { AppSettings, CompanyDetails, ExpenseCategory, ExchangeRateEntry } from '../types';
 import { IdGenerator } from '../utils/idGenerator';
-import { Save, Settings as SettingsIcon, AlertCircle, Loader2, ShieldAlert, RotateCcw, History, TrendingUp, Receipt, Factory, RefreshCw } from 'lucide-react';
-import { resetAllData, COLLECTION_LABELS } from '../services/resetService';
+import { Save, Settings as SettingsIcon, AlertCircle, History, TrendingUp, Receipt, Factory, RefreshCw } from 'lucide-react';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
-import { useConfirm } from './ConfirmDialog';
 import { ExpenseCategoriesTab } from './Settings/ExpenseCategoriesTab';
 import { ManufacturersTab } from './Settings/ManufacturersTab';
 import { AccountingPeriodsTab } from './Settings/AccountingPeriodsTab';
@@ -80,11 +78,6 @@ export const Settings: React.FC<SettingsProps> = React.memo(({ settings, onSave,
 
     const [activeTab, setActiveTab] = useState<'general' | 'expenses' | 'manufacturers' | 'periods'>('general');
 
-    // Reset state
-    const [isResetting, setIsResetting] = useState(false);
-    const [resetProgress, setResetProgress] = useState<string[]>([]);
-    const [resetIncludeSettings, setResetIncludeSettings] = useState(false);
-    const { confirm: showConfirm } = useConfirm();
 
     // Sync state with props when they change (e.g. loaded from localStorage)
     React.useEffect(() => {
@@ -487,103 +480,7 @@ export const Settings: React.FC<SettingsProps> = React.memo(({ settings, onSave,
                         </button>
                     </div>
 
-                    {/* ═══ DANGER ZONE: Reset All Data ═══ */}
-                    <div className={`border-t ${t.border} my-6`}></div>
-                    <div className="space-y-6">
-                        <h3 className={`text-xl font-bold text-red-500 border-l-4 border-red-500 pl-4 flex items-center gap-2`}>
-                            <ShieldAlert size={22} className="text-red-500" />
-                            Опасная зона
-                        </h3>
-                        <p className={`text-sm ${t.textMuted}`}>
-                            Полный сброс всех бизнес-данных. Используйте при передаче системы новому клиенту или для чистого запуска.
-                        </p>
-
-                        <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-6 space-y-4">
-                            <div className="flex items-start gap-3">
-                                <AlertCircle className="text-red-400 shrink-0 mt-1" size={20} />
-                                <div className={`text-sm ${t.textMuted}`}>
-                                    <span className="font-bold text-red-400">Будут удалены:</span> клиенты, сотрудники, заказы (продажи), закупки, транзакции, расходы, workflow заявки и журнал событий.<br/><span className="font-bold text-emerald-400">Останутся:</span> номенклатура (товары), основные средства, поставщики и настройки.
-                                </div>
-                            </div>
-
-                            <label className="flex items-center gap-3 cursor-pointer">
-                                <input
-                                    type="checkbox"
-                                    checked={resetIncludeSettings}
-                                    onChange={(e) => setResetIncludeSettings(e.target.checked)}
-                                    className="w-4 h-4 rounded border-red-500/50 text-red-500 focus:ring-red-500"
-                                />
-                                <span className={`text-sm ${t.textMuted}`}>Также сбросить настройки (НДС, курс, реквизиты, Telegram)</span>
-                            </label>
-
-                            {/* Progress indicator */}
-                            {resetProgress.length > 0 && (
-                                <div className={`${t.bgPanelAlt} rounded-lg p-4 space-y-1 max-h-40 overflow-y-auto custom-scrollbar`}>
-                                    {resetProgress.map((msg, idx) => (
-                                        <div key={idx} className={`text-xs font-mono ${t.textMuted}`}>{msg}</div>
-                                    ))}
-                                </div>
-                            )}
-
-                            <button
-                                onClick={async () => {
-                                    const confirmed = await showConfirm({
-                                        title: 'Сброс всех данных',
-                                        message: `Вы уверены? Все бизнес-данные будут БЕЗВОЗВРАТНО удалены из Firebase.${resetIncludeSettings ? ' Включая настройки системы.' : ''} Это действие нельзя отменить.`,
-                                        variant: 'danger',
-                                        confirmText: 'Да, удалить все данные',
-                                        cancelText: 'Отмена',
-                                    });
-                                    if (!confirmed) return;
-
-                                    // Double confirm
-                                    const doubleConfirmed = await showConfirm({
-                                        title: '⚠️ Последнее предупреждение',
-                                        message: 'ЭТО ДЕЙСТВИЕ НЕОБРАТИМО. Вы точно хотите удалить ВСЕ данные?',
-                                        variant: 'danger',
-                                        confirmText: 'УДАЛИТЬ ВСЁ',
-                                        cancelText: 'Нет, отменить',
-                                    });
-                                    if (!doubleConfirmed) return;
-
-                                    setIsResetting(true);
-                                    setResetProgress(['🔄 Начинаем сброс данных...']);
-
-                                    try {
-                                        const result = await resetAllData(resetIncludeSettings, (progress) => {
-                                            const label = COLLECTION_LABELS[progress.collection] || progress.collection;
-                                            setResetProgress(prev => [...prev, `✅ ${label}: удалено ${progress.deletedCount} записей`]);
-                                        });
-
-                                        if (result.success) {
-                                            setResetProgress(prev => [...prev, `\n🎉 Готово! Удалено ${result.totalDeleted} записей. Перезагрузите страницу.`]);
-                                            setMessage('Все данные успешно удалены');
-                                        } else {
-                                            setResetProgress(prev => [...prev, `\n❌ Ошибка: ${result.error}`]);
-                                            setMessage('Ошибка при сбросе данных');
-                                        }
-                                    } catch (err: unknown) {
-                                        setResetProgress(prev => [...prev, `\n❌ Критическая ошибка: ${(err instanceof Error ? err.message : String(err))}`]);
-                                    } finally {
-                                        setIsResetting(false);
-                                        setTimeout(() => setMessage(null), 5000);
-                                    }
-                                }}
-                                disabled={isResetting}
-                                className={`w-full flex items-center justify-center gap-3 px-6 py-4 rounded-xl font-bold transition-all ${
-                                    isResetting
-                                        ? 'bg-red-500/20 text-red-300 cursor-not-allowed'
-                                        : 'bg-red-600 hover:bg-red-500 text-white shadow-lg shadow-red-600/20 active:scale-[0.98]'
-                                }`}
-                            >
-                                {isResetting ? (
-                                    <><Loader2 size={20} className="animate-spin" /> Удаление данных...</>
-                                ) : (
-                                    <><RotateCcw size={20} /> Сбросить все данные</>
-                                )}
-                            </button>
-                        </div>
-                    </div>
+                    {/* ═══ DANGER ZONE: Removed (P0 security fix) ═══ */}
                 </div>
             )}
 

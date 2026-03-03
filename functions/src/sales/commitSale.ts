@@ -456,6 +456,26 @@ export const commitSale = onCall(
         createdAt: nowIso,
       });
 
+      // 4h. Write ledger entries INSIDE transaction (atomic with business data)
+      const ledgerEntries = generateSaleLedgerEntries({
+        orderId,
+        customerName: data.customerName,
+        date: nowIso,
+        revenueUSD: totalAmountUSD,
+        totalCOGS,
+        vatAmount,
+        exchangeRate,
+        totalAmountUZS,
+        paymentMethod,
+        cashPaidUSD: amountPaid,
+        debtUSD,
+        paymentCurrency,
+        createdBy: userEmail,
+      });
+      for (const entry of ledgerEntries) {
+        tx.set(db.collection("ledgerEntries").doc(), entry);
+      }
+
       const txResult = {
         orderId,
         totalAmountUSD,
@@ -474,47 +494,13 @@ export const commitSale = onCall(
         createdBy: userEmail,
       };
 
-      // 4h. Write idempotency key (inside transaction for atomicity)
+      // 4i. Write idempotency key (inside transaction for atomicity)
       if (requestId) {
         writeIdempotencyKey(tx, db, requestId, "commitSale", uid, txResult as unknown as Record<string, unknown>);
       }
 
       return txResult;
     });
-
-    // 5. Generate ledger entries AFTER transaction succeeds (fire-and-forget)
-    // Skip if this was a cached idempotent response (ledger already written)
-    if (!("_idempotent" in result)) {
-    try {
-      const entries = generateSaleLedgerEntries({
-        orderId: result.orderId,
-        customerName: result.customerName,
-        date: result.date,
-        revenueUSD: result.totalAmountUSD,
-        totalCOGS: result.totalCOGS,
-        vatAmount: result.vatAmount,
-        exchangeRate: result.exchangeRate,
-        totalAmountUZS: result.totalAmountUZS,
-        paymentMethod: result.paymentMethod,
-        cashPaidUSD: result.cashPaidUSD,
-        debtUSD: result.debtUSD,
-        paymentCurrency: result.paymentCurrency,
-        createdBy: result.createdBy,
-      });
-
-      if (entries.length > 0) {
-        const batch = db.batch();
-        for (const entry of entries) {
-          const ref = db.collection("ledgerEntries").doc();
-          batch.set(ref, entry);
-        }
-        await batch.commit();
-      }
-    } catch (err) {
-      console.error("Ledger entry creation failed (non-fatal):", err);
-      // Non-fatal: sale is committed, ledger is supplementary
-    }
-    } // end idempotency guard
 
     return {
       success: true,

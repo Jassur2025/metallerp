@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Purchase } from '../types';
 import { purchaseService } from '../services/purchaseService';
+import { purchaseAtomicService } from '../services/purchaseAtomicService';
 import { logger } from '../utils/logger';
 
 const PAGE_SIZE = 100;
@@ -135,7 +136,7 @@ export function usePurchases(options: UsePurchasesOptions = {}) {
         }
     }, [purchases]);
 
-    // Delete purchase
+    // Delete purchase (via Cloud Function — atomic inventory reversal + СТОРНО)
     const deletePurchase = useCallback(async (id: string): Promise<void> => {
         const deletedPurchase = purchases.find(p => p.id === id);
         
@@ -143,8 +144,8 @@ export function usePurchases(options: UsePurchasesOptions = {}) {
             // Optimistic update
             setPurchases(prev => prev.filter(p => p.id !== id));
 
-            // Delete from Firebase
-            await purchaseService.delete(id);
+            // Delete via CF (atomic reversal + СТОРНО)
+            await purchaseAtomicService.deletePurchase(id);
         } catch (err) {
             // Rollback on error
             if (deletedPurchase) {

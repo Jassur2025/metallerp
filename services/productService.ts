@@ -5,7 +5,6 @@ import {
     getDocs,
     addDoc,
     updateDoc,
-    deleteDoc,
     query,
     orderBy,
     onSnapshot,
@@ -26,7 +25,7 @@ import { validateProduct } from '../utils/validation';
 const COLLECTION_NAME = 'products';
 
 export const productService = {
-    // Get all products
+    // Get all products (excludes soft-deleted)
     getAll: async (): Promise<Product[]> => {
         try {
             const q = query(collection(db, COLLECTION_NAME), orderBy('name', 'asc'));
@@ -34,21 +33,21 @@ export const productService = {
             return querySnapshot.docs.map(doc => ({
                 id: doc.id,
                 ...doc.data()
-            } as Product));
+            } as Product)).filter(p => !p._deleted);
         } catch (error) {
             logger.error('ProductService', 'Error getting products:', error);
             throw error;
         }
     },
 
-    // Subscribe to real-time updates (limited for pagination)
+    // Subscribe to real-time updates (limited for pagination, excludes soft-deleted)
     subscribe: (callback: (products: Product[]) => void, maxItems: number = 500) => {
         const q = query(collection(db, COLLECTION_NAME), orderBy('name', 'asc'), limit(maxItems));
         return onSnapshot(q, (snapshot) => {
             const products = snapshot.docs.map(doc => ({
                 id: doc.id,
                 ...doc.data()
-            } as Product));
+            } as Product)).filter(p => !p._deleted);
             callback(products);
         }, (error) => {
             logger.error('ProductService', 'Error subscribing to products:', error);
@@ -155,10 +154,13 @@ export const productService = {
         }
     },
 
-    // Delete a product
+    // Soft-delete a product (sets _deleted flag, preserves data for audit)
     delete: async (id: string): Promise<void> => {
         try {
-            await deleteDoc(doc(db, COLLECTION_NAME, id));
+            await updateDoc(doc(db, COLLECTION_NAME, id), {
+              _deleted: true,
+              _deletedAt: new Date().toISOString(),
+            });
         } catch (error) {
             logger.error('ProductService', 'Error deleting product:', error);
             throw error;

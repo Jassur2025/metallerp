@@ -1,0 +1,77 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "orders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "_deleted", "order": "ASCENDING" },
+        { "fieldPath": "date", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "purchases",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "_deleted", "order": "ASCENDING" },
+        { "fieldPath": "date", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "transactions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "_deleted", "order": "ASCENDING" },
+        { "fieldPath": "date", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "transactions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "relatedId", "order": "ASCENDING" },
+        { "fieldPath": "date", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "workflowOrders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "_deleted", "order": "ASCENDING" },
+        { "fieldPath": "date", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "ledgerEntries",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "periodId", "order": "ASCENDING" },
+        { "fieldPath": "date", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "ledgerEntries",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "relatedId", "order": "ASCENDING" },
+        { "fieldPath": "date", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "ledgerEntries",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "relatedType", "order": "ASCENDING" },
+        { "fieldPath": "relatedId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "journalEvents",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "action", "order": "ASCENDING" },
+        { "fieldPath": "metadata.monthKey", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

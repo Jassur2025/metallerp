@@ -215,10 +215,10 @@ service cloud.firestore {
     }
 
     // Ledger Entries: double-entry bookkeeping records
+    // All writes go through Cloud Functions (Admin SDK) — client writes blocked
     match /ledgerEntries/{docId} {
       allow read: if isAuthenticated();
-      allow create: if isAdmin();
-      allow update, delete: if false;     // Ledger entries are immutable
+      allow create, update, delete: if false;  // Immutable + server-only
     }
 
     // Accounting Periods: period open/close management

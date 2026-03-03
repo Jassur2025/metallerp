@@ -1,10 +1,10 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import { FixedAsset, FixedAssetCategory, Transaction } from '../types';
-import { IdGenerator } from '../utils/idGenerator';
 import { DEFAULT_EXCHANGE_RATE } from '../constants';
 import { Plus, Trash2, RefreshCw, Landmark, Calendar, DollarSign, TrendingDown, Edit2 } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
+import { fixedAssetsAtomicService } from '../services/fixedAssetsAtomicService';
 
 interface FixedAssetsProps {
     assets: FixedAsset[];
@@ -33,7 +33,6 @@ const getDepreciationRate = (cat: FixedAssetCategory): number => {
 
 export const FixedAssets: React.FC<FixedAssetsProps> = ({
     assets, onSaveAssets,
-    transactions = [], onSaveTransactions,
     defaultExchangeRate = DEFAULT_EXCHANGE_RATE
 }) => {
     const { theme } = useTheme();
@@ -61,7 +60,6 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
         const paid = amountPaid ? parseFloat(amountPaid) : cost;
         const rate = parseFloat(customExchangeRate) || defaultExchangeRate;
         const depreciationRate = getDepreciationRate(category);
-        const assetId = IdGenerator.fixedAsset();
         const currency = paymentMethod === 'cash' ? paymentCurrency : 'UZS';
 
         if (paid > cost) {
@@ -69,63 +67,39 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
             return;
         }
 
-        const newAsset: FixedAsset = {
-            id: assetId,
-            name,
-            category,
-            purchaseDate,
-            purchaseCost: cost,
-            currentValue: cost,
-            accumulatedDepreciation: 0,
-            depreciationRate: depreciationRate,
-            paymentMethod,
-            paymentCurrency: currency,
-            amountPaid: paid
-        };
+        try {
+            const result = await fixedAssetsAtomicService.purchaseFixedAsset({
+                name,
+                category,
+                purchaseDate,
+                purchaseCost: cost,
+                amountPaid: paid,
+                paymentMethod,
+                paymentCurrency: currency,
+                exchangeRate: rate,
+                depreciationRate,
+            });
 
-        const updatedAssets = [...assets, newAsset];
-        if (onSaveAssets) {
-            await onSaveAssets(updatedAssets);
+            setIsModalOpen(false);
+            resetForm();
+            const message = paid < cost
+                ? `ОС добавлено! Оплачено: $${paid.toLocaleString()}, осталось: $${(cost - paid).toLocaleString()}`
+                : 'Основное средство добавлено и оплачено полностью!';
+            toast.success(message);
+        } catch (error: unknown) {
+            const msg = error instanceof Error ? error.message : 'Ошибка добавления ОС';
+            toast.error(msg);
         }
-
-        // Создаём транзакцию расхода только на оплаченную сумму
-        // IAS 16: Покупка ОС — это капитализация (актив), а не расход периода.
-        // Тип 'supplier_payment' корректно отражает отток денежных средств без искажения P&L.
-        if (onSaveTransactions && paid > 0) {
-            // Рассчитываем сумму в валюте оплаты
-            const transactionAmount = currency === 'UZS' ? paid * rate : paid;
-
-            const newTransaction: Transaction = {
-                id: IdGenerator.transaction(),
-                date: purchaseDate,
-                type: 'supplier_payment',
-                amount: transactionAmount,
-                currency: currency,
-                exchangeRate: currency === 'UZS' ? rate : undefined,
-                method: paymentMethod,
-                description: `Покупка ОС: ${name} (${category})${paid < cost ? ' (частичная оплата)' : ''}`,
-                relatedId: assetId
-            };
-
-            const updatedTransactions = [...transactions, newTransaction];
-            // CRITICAL: Save to Sheets FIRST, then update state
-            await onSaveTransactions(updatedTransactions);
-        }
-
-        setIsModalOpen(false);
-        resetForm();
-        const message = paid < cost
-            ? `ОС добавлено! Оплачено: $${paid.toLocaleString()}, осталось: $${(cost - paid).toLocaleString()}`
-            : 'Основное средство добавлено и оплачено полностью!';
-        toast.success(message);
     };
 
-    const handleDelete = (id: string) => {
-        if (confirm('Вы уверены, что хотите удалить это основное средство?')) {
-            const updatedAssets = assets.filter(a => a.id !== id);
-            if (onSaveAssets) {
-                onSaveAssets(updatedAssets);
-            }
+    const handleDelete = async (id: string) => {
+        if (!confirm('Вы уверены, что хотите списать это основное средство?')) return;
+        try {
+            await fixedAssetsAtomicService.deleteFixedAsset(id);
+            toast.success('Основное средство списано (IAS 16.67)');
+        } catch (error: unknown) {
+            const msg = error instanceof Error ? error.message : 'Ошибка списания ОС';
+            toast.error(msg);
         }
     };
 
@@ -140,48 +114,22 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
         setCustomExchangeRate(defaultExchangeRate.toString());
     };
 
-    const runMonthlyDepreciation = () => {
+    const runMonthlyDepreciation = async () => {
         if (!confirm('Рассчитать амортизацию за 1 месяц для всех активов?')) return;
 
-        const now = new Date();
-        const currentMonth = now.getFullYear() * 12 + now.getMonth(); // Unique month index
-
-        const updatedAssets = assets.map(asset => {
-            if (asset.depreciationRate === 0 || asset.currentValue <= 0) return asset;
-
-            // IAS 16.55: Depreciation begins when asset is available for use.
-            // We use purchaseDate as proxy. Skip if purchased after current month.
-            const purchaseDate = new Date(asset.purchaseDate);
-            const purchaseMonth = purchaseDate.getFullYear() * 12 + purchaseDate.getMonth();
-            if (purchaseMonth > currentMonth) return asset; // Not yet in service
-
-            // IAS 16.6: Depreciable amount = cost - residual value
-            // Residual value assumed 0 for simplicity (can add field later)
-            const residualValue = 0;
-            const depreciableAmount = Math.max(0, asset.purchaseCost - residualValue);
-
-            // Monthly Rate = Annual Rate / 12 (straight-line)
-            const monthlyRate = asset.depreciationRate / 100 / 12;
-            const depreciationAmount = depreciableAmount * monthlyRate;
-
-            // Don't depreciate below residual value
-            const maxDepreciation = Math.max(0, asset.currentValue - residualValue);
-            const actualDepreciation = Math.min(depreciationAmount, maxDepreciation);
-
-            if (actualDepreciation <= 0) return asset; // Fully depreciated
-
-            return {
-                ...asset,
-                currentValue: asset.currentValue - actualDepreciation,
-                accumulatedDepreciation: asset.accumulatedDepreciation + actualDepreciation,
-                lastDepreciationDate: new Date().toISOString().split('T')[0]
-            };
-        });
-
-        if (onSaveAssets) {
-            onSaveAssets(updatedAssets);
+        try {
+            const result = await fixedAssetsAtomicService.runDepreciation();
+            if (result.depreciated === 0) {
+                toast.warning(result.message || 'Нет активов для начисления амортизации');
+            } else {
+                toast.success(
+                    `Амортизация начислена: ${result.depreciated} активов, $${result.totalDepreciation} (${result.monthKey})`
+                );
+            }
+        } catch (error: unknown) {
+            const msg = error instanceof Error ? error.message : 'Ошибка начисления амортизации';
+            toast.error(msg);
         }
-        toast.success('Амортизация успешно начислена! (IAS 16 — прямолинейный метод)');
     };
 
     const openRevaluation = (asset: FixedAsset) => {
@@ -228,10 +176,13 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
         setRevalValue('');
     };
 
+    // Filter out soft-deleted assets
+    const activeAssets = useMemo(() => assets.filter(a => !a.deletedAt), [assets]);
+
     const { totalValue, totalDepreciation } = useMemo(() => ({
-        totalValue: assets.reduce((sum, a) => sum + a.currentValue, 0),
-        totalDepreciation: assets.reduce((sum, a) => sum + a.accumulatedDepreciation, 0)
-    }), [assets]);
+        totalValue: activeAssets.reduce((sum, a) => sum + a.currentValue, 0),
+        totalDepreciation: activeAssets.reduce((sum, a) => sum + a.accumulatedDepreciation, 0)
+    }), [activeAssets]);
 
     return (
         <div className="p-6 h-full flex flex-col space-y-6">
@@ -270,7 +221,7 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
                 </div>
                 <div className={`${t.bgCard} p-4 rounded-xl border ${t.border}`}>
                     <p className={`${t.textMuted} text-sm`}>Всего объектов</p>
-                    <p className="text-2xl font-mono font-bold text-indigo-400">{assets.length}</p>
+                    <p className="text-2xl font-mono font-bold text-indigo-400">{activeAssets.length}</p>
                 </div>
             </div>
 
@@ -291,7 +242,7 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
                             </tr>
                         </thead>
                         <tbody className={`${t.text} text-sm divide-y ${t.divide}`}>
-                            {assets.map(asset => {
+                            {activeAssets.map(asset => {
                                 const paid = asset.amountPaid ?? asset.purchaseCost;
                                 const isPartial = paid < asset.purchaseCost;
                                 return (
@@ -331,7 +282,7 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
                                     </tr>
                                 );
                             })}
-                            {assets.length === 0 && (
+                            {activeAssets.length === 0 && (
                                 <tr>
                                     <td colSpan={8} className={`p-8 text-center ${t.textMuted}`}>
                                         Нет основных средств. Добавьте первое!

@@ -285,6 +285,7 @@ export interface Purchase extends Versionable {
   id: string;
   date: string;
   supplierName: string;
+  supplierId?: string; // Link to Supplier for debt tracking (auto-resolved by CF)
   status: 'completed';
   items: PurchaseItem[];
   overheads: PurchaseOverheads;
@@ -324,6 +325,7 @@ export interface Transaction extends Versionable {
   description: string;
   orderId?: string; // Link to order for sale-linked payments
   relatedId?: string; // Client ID or Purchase ID
+  supplierId?: string; // Supplier ID for supplier_payment (for debt tracking)
   // _version and updatedAt inherited from Versionable
 }
 

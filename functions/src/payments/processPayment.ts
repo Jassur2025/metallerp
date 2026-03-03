@@ -51,6 +51,7 @@ interface ProcessPaymentInput {
   method: "cash" | "bank" | "card" | "debt";
   relatedId?: string;
   orderId?: string;
+  supplierId?: string; // Required for supplier_payment (resolves supplier for debt update)
   description?: string;
   exchangeRate?: number;
   requestId?: string; // Idempotency key (UUID v4) — prevents duplicate payments
@@ -157,7 +158,15 @@ export const processPayment = onCall(
       let entityRef: FirebaseFirestore.DocumentReference | null = null;
       let entityData: FirebaseFirestore.DocumentData | null = null;
 
-      if (data.relatedId) {
+      if (data.type === "supplier_payment" && data.supplierId) {
+        // Supplier payment: use explicit supplierId
+        const supplierRef = db.doc(`suppliers/${data.supplierId}`);
+        const supplierSnap = await tx.get(supplierRef);
+        if (supplierSnap.exists) {
+          entityRef = supplierRef;
+          entityData = supplierSnap.data()!;
+        }
+      } else if (data.relatedId) {
         // Try clients first, then suppliers
         const clientRef = db.doc(`clients/${data.relatedId}`);
         const clientSnap = await tx.get(clientRef);
@@ -188,6 +197,9 @@ export const processPayment = onCall(
         case "client_refund":
           debtDelta = -amountUSD; // Reducing debt (refund = undo debt)
           break;
+        case "supplier_payment":
+          debtDelta = -amountUSD; // Reduces supplier debt
+          break;
         default:
           debtDelta = 0;
       }
@@ -205,6 +217,7 @@ export const processPayment = onCall(
         method: data.method,
         relatedId: data.relatedId || null,
         orderId: data.orderId || null,
+        supplierId: data.supplierId || null,
         description: data.description || "",
         date: nowIso,
         createdBy: userEmail,
@@ -234,6 +247,80 @@ export const processPayment = onCall(
         createdAt: nowIso,
       });
 
+      // 5. Write ledger entries INSIDE transaction (atomic with business data)
+      const ledgerEntries: LedgerEntryData[] = [];
+
+      if (data.type === "client_payment" && amountUSD > 0) {
+        ledgerEntries.push({
+          date: nowIso,
+          debitAccount: cashAccount(data.method, data.currency),
+          creditAccount: AccountCode.ACCOUNTS_RECEIVABLE,
+          amount: amountUSD,
+          exchangeRate,
+          description: `Оплата от клиента: ${txId}`,
+          relatedType: "transaction",
+          relatedId: txId,
+          createdBy: userEmail,
+          createdAt: nowIso,
+        });
+      } else if (data.type === "supplier_payment" && amountUSD > 0) {
+        ledgerEntries.push({
+          date: nowIso,
+          debitAccount: AccountCode.ACCOUNTS_PAYABLE,
+          creditAccount: cashAccount(data.method, data.currency),
+          amount: amountUSD,
+          exchangeRate,
+          description: `Оплата поставщику: ${txId}`,
+          relatedType: "transaction",
+          relatedId: txId,
+          createdBy: userEmail,
+          createdAt: nowIso,
+        });
+      } else if (data.type === "expense" && amountUSD > 0) {
+        ledgerEntries.push({
+          date: nowIso,
+          debitAccount: AccountCode.ADMIN_EXPENSES,
+          creditAccount: cashAccount(data.method, data.currency),
+          amount: amountUSD,
+          exchangeRate,
+          description: `Расход: ${txId}`,
+          relatedType: "transaction",
+          relatedId: txId,
+          createdBy: userEmail,
+          createdAt: nowIso,
+        });
+      } else if (data.type === "client_return" && amountUSD > 0) {
+        ledgerEntries.push({
+          date: nowIso,
+          debitAccount: AccountCode.ACCOUNTS_RECEIVABLE,
+          creditAccount: cashAccount(data.method, data.currency),
+          amount: amountUSD,
+          exchangeRate,
+          description: `Возврат клиенту: ${txId}`,
+          relatedType: "transaction",
+          relatedId: txId,
+          createdBy: userEmail,
+          createdAt: nowIso,
+        });
+      } else if (data.type === "client_refund" && amountUSD > 0) {
+        ledgerEntries.push({
+          date: nowIso,
+          debitAccount: AccountCode.REVENUE,
+          creditAccount: AccountCode.ACCOUNTS_RECEIVABLE,
+          amount: amountUSD,
+          exchangeRate,
+          description: `Возврат средств клиенту: ${txId}`,
+          relatedType: "transaction",
+          relatedId: txId,
+          createdBy: userEmail,
+          createdAt: nowIso,
+        });
+      }
+
+      for (const entry of ledgerEntries) {
+        tx.set(db.collection("ledgerEntries").doc(), entry);
+      }
+
       const txResult = {
         txId,
         type: data.type,
@@ -255,97 +342,6 @@ export const processPayment = onCall(
 
       return txResult;
     });
-
-    // 5. Ledger entries (fire-and-forget)
-    // Skip if this was a cached idempotent response (ledger already written)
-    if (!("_idempotent" in result)) {
-    try {
-      const entries: LedgerEntryData[] = [];
-      const now = new Date().toISOString();
-
-      if (result.type === "client_payment" && result.amountUSD > 0) {
-        // Дт 5010/5020/5110 Кт 4010 — Cash received from client
-        entries.push({
-          date: result.date,
-          debitAccount: cashAccount(result.method, result.currency),
-          creditAccount: AccountCode.ACCOUNTS_RECEIVABLE,
-          amount: result.amountUSD,
-          exchangeRate: result.exchangeRate,
-          description: `Оплата от клиента: ${result.txId}`,
-          relatedType: "transaction",
-          relatedId: result.txId,
-          createdBy: result.createdBy,
-          createdAt: now,
-        });
-      } else if (result.type === "supplier_payment" && result.amountUSD > 0) {
-        // Дт 6010 Кт 5010/5020/5110 — Cash paid to supplier
-        entries.push({
-          date: result.date,
-          debitAccount: AccountCode.ACCOUNTS_PAYABLE,
-          creditAccount: cashAccount(result.method, result.currency),
-          amount: result.amountUSD,
-          exchangeRate: result.exchangeRate,
-          description: `Оплата поставщику: ${result.txId}`,
-          relatedType: "transaction",
-          relatedId: result.txId,
-          createdBy: result.createdBy,
-          createdAt: now,
-        });
-      } else if (result.type === "expense" && result.amountUSD > 0) {
-        // Дт 9420 Кт 5010/5020/5110 — Administrative expense
-        entries.push({
-          date: result.date,
-          debitAccount: AccountCode.ADMIN_EXPENSES,
-          creditAccount: cashAccount(result.method, result.currency),
-          amount: result.amountUSD,
-          exchangeRate: result.exchangeRate,
-          description: `Расход: ${result.txId}`,
-          relatedType: "transaction",
-          relatedId: result.txId,
-          createdBy: result.createdBy,
-          createdAt: now,
-        });
-      } else if (result.type === "client_return" && result.amountUSD > 0) {
-        // Дт 4010 Кт 5010/5020/5110 — Cash returned to client
-        entries.push({
-          date: result.date,
-          debitAccount: AccountCode.ACCOUNTS_RECEIVABLE,
-          creditAccount: cashAccount(result.method, result.currency),
-          amount: result.amountUSD,
-          exchangeRate: result.exchangeRate,
-          description: `Возврат клиенту: ${result.txId}`,
-          relatedType: "transaction",
-          relatedId: result.txId,
-          createdBy: result.createdBy,
-          createdAt: now,
-        });
-      } else if (result.type === "client_refund" && result.amountUSD > 0) {
-        // Дт 9010 (contra-revenue) Кт 4010 — Refund against receivable
-        entries.push({
-          date: result.date,
-          debitAccount: AccountCode.REVENUE,
-          creditAccount: AccountCode.ACCOUNTS_RECEIVABLE,
-          amount: result.amountUSD,
-          exchangeRate: result.exchangeRate,
-          description: `Возврат средств клиенту: ${result.txId}`,
-          relatedType: "transaction",
-          relatedId: result.txId,
-          createdBy: result.createdBy,
-          createdAt: now,
-        });
-      }
-
-      if (entries.length > 0) {
-        const batch = db.batch();
-        for (const entry of entries) {
-          batch.set(db.collection("ledgerEntries").doc(), entry);
-        }
-        await batch.commit();
-      }
-    } catch (err) {
-      console.error("Payment ledger entries failed (non-fatal):", err);
-    }
-    } // end idempotency guard
 
     return {
       success: true,

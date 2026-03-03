@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Transaction } from '../types';
 import { transactionService } from '../services/transactionService';
+import { paymentAtomicService } from '../services/paymentAtomicService';
 import { useToast } from '../contexts/ToastContext';
 import { DEFAULT_EXCHANGE_RATE } from '../constants';
 import { logger } from '../utils/logger';
@@ -87,10 +88,11 @@ export const useTransactions = (options: UseTransactionsOptions = {}): UseTransa
         }
     }, [realtime, filterClientId, loadTransactions]);
 
-    // Add Transaction
+    // Add Transaction — routes through processPayment Cloud Function
     const addTransaction = useCallback(async (transaction: Omit<Transaction, 'id'>): Promise<Transaction | null> => {
         try {
-            const newTx = await transactionService.add(transaction);
+            const { txId, amountUSD } = await paymentAtomicService.processPayment(transaction);
+            const newTx = { id: txId, ...transaction, amount: amountUSD } as Transaction;
             toast.success('Транзакция добавлена');
 
             if (!realtime) {
@@ -118,10 +120,10 @@ export const useTransactions = (options: UseTransactionsOptions = {}): UseTransa
         }
     }, [realtime, toast]);
 
-    // Delete Transaction
+    // Delete Transaction — routes through deleteTransaction Cloud Function
     const deleteTransaction = useCallback(async (id: string): Promise<boolean> => {
         try {
-            await transactionService.delete(id);
+            await paymentAtomicService.deleteTransaction(id);
             toast.success('Транзакция удалена');
 
             if (!realtime) {

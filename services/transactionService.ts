@@ -135,6 +135,8 @@ export const transactionService = {
     },
 
     /**
+     * @deprecated DEAD CODE — replaced by paymentAtomicService.processPayment() CF.
+     * Client-side ledgerEntries writes are blocked by firestore.rules. Do NOT call.
      * Smart Add: Routes to specific logic based on type
      */
     async add(transaction: Omit<Transaction, 'id'>): Promise<Transaction> {
@@ -178,6 +180,8 @@ export const transactionService = {
     },
 
     /**
+     * @deprecated DEAD CODE — replaced by paymentAtomicService.processPayment() CF.
+     * Client-side ledgerEntries writes are blocked by firestore.rules. Do NOT call.
      * Create a new payment/transaction and update Client Balance atomically
      */
     async createPayment(transaction: Omit<Transaction, 'id'>, clientId: string): Promise<Transaction> {
@@ -224,6 +228,8 @@ export const transactionService = {
     },
 
     /**
+     * @deprecated DEAD CODE — replaced by paymentAtomicService.processPayment() CF.
+     * Client-side ledgerEntries writes are blocked by firestore.rules. Do NOT call.
      * Add debt manually (or via order)
      */
     async addDebt(amountUSD: number, clientId: string, description: string, orderId?: string): Promise<string> {
@@ -342,6 +348,8 @@ export const transactionService = {
     },
 
     /**
+     * @deprecated DEAD CODE — replaced by deleteTransaction CF.
+     * Client-side ledgerEntries writes are blocked by firestore.rules. Do NOT call.
      * Delete transaction — atomically reverses debt impact if applicable
      * All reads happen INSIDE the Firestore transaction to prevent TOCTOU race conditions.
      */

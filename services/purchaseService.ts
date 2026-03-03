@@ -175,11 +175,23 @@ export const purchaseService = {
     },
 
     /**
-     * Soft-delete a purchase with atomic inventory reversal.
-     * Restores product quantities that were added during the purchase.
+     * @deprecated DEAD CODE — replaced by deletePurchase CF (functions/src/purchases/deletePurchase.ts).
+     * Client-side ledgerEntries writes are blocked by firestore.rules. Do NOT call.
+     * Soft-delete a purchase with atomic inventory reversal + ledger reversal (СТОРНО).
+     * Restores product quantities and creates contra ledger entries (debit↔credit swap).
      */
     async delete(id: string): Promise<void> {
         const purchaseRef = doc(db, COLLECTION_NAME, id);
+
+        // Query ledger entries BEFORE the transaction (client SDK limitation).
+        // Safe because purchase ledger entries are immutable and created only
+        // once during commitPurchase — no new entries can appear.
+        const ledgerQuery = query(
+            collection(db, 'ledgerEntries'),
+            where('relatedType', '==', 'purchase'),
+            where('relatedId', '==', id)
+        );
+        const ledgerSnaps = await getDocs(ledgerQuery);
 
         await runTransaction(db, async (firebaseTx) => {
             const purchaseSnap = await firebaseTx.get(purchaseRef);
@@ -213,11 +225,35 @@ export const purchaseService = {
                 }
             }
 
+            // Create contra ledger entries — СТОРНО (debit↔credit swap)
+            const nowIso = new Date().toISOString();
+            const deletedBy = auth.currentUser?.email || auth.currentUser?.uid || 'unknown';
+            for (const ledgerDoc of ledgerSnaps.docs) {
+                const entry = ledgerDoc.data();
+                const contraRef = doc(collection(db, 'ledgerEntries'));
+                firebaseTx.set(contraRef, {
+                    date: entry.date,
+                    debitAccount: entry.creditAccount,   // SWAP
+                    creditAccount: entry.debitAccount,    // SWAP
+                    amount: entry.amount,
+                    ...(entry.amountUZS != null && { amountUZS: entry.amountUZS }),
+                    ...(entry.exchangeRate != null && { exchangeRate: entry.exchangeRate }),
+                    description: `СТОРНО: ${entry.description}`,
+                    relatedType: 'purchase',
+                    relatedId: id,
+                    ...(entry.periodId && { periodId: entry.periodId }),
+                    createdBy: deletedBy,
+                    createdAt: nowIso,
+                    _isContra: true,
+                    _contraOf: ledgerDoc.id,
+                });
+            }
+
             // Soft-delete
             firebaseTx.update(purchaseRef, {
                 _deleted: true,
-                _deletedAt: new Date().toISOString(),
-                _deletedBy: auth.currentUser?.uid || 'unknown',
+                _deletedAt: nowIso,
+                _deletedBy: deletedBy,
                 updatedAt: Timestamp.now()
             });
         });

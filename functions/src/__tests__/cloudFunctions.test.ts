@@ -236,3 +236,132 @@ describe("balance inventory by warehouse", () => {
     expect(inv.total).toBe(0);
   });
 });
+
+// ─── Depreciation calculation logic (from runDepreciation CF) ─
+
+describe("depreciation calculation logic", () => {
+  function calculateMonthlyDepreciation(
+    purchaseCost: number,
+    currentValue: number,
+    depreciationRate: number,
+    residualValue = 0,
+  ): number {
+    if (depreciationRate === 0 || currentValue <= residualValue) return 0;
+    const depreciableAmount = Math.max(0, purchaseCost - residualValue);
+    const monthlyRate = depreciationRate / 100 / 12;
+    const depreciationAmount = depreciableAmount * monthlyRate;
+    const maxDepreciation = Math.max(0, currentValue - residualValue);
+    return round2(Math.min(depreciationAmount, maxDepreciation));
+  }
+
+  it("calculates straight-line monthly depreciation", () => {
+    // Asset $12000, 20% annual → $200/month
+    const dep = calculateMonthlyDepreciation(12000, 12000, 20);
+    expect(dep).toBe(200);
+  });
+
+  it("caps depreciation at remaining book value", () => {
+    // Asset $12000, currentValue $50, 20% annual → max $50
+    const dep = calculateMonthlyDepreciation(12000, 50, 20);
+    expect(dep).toBe(50);
+  });
+
+  it("returns 0 for fully depreciated asset", () => {
+    const dep = calculateMonthlyDepreciation(12000, 0, 20);
+    expect(dep).toBe(0);
+  });
+
+  it("returns 0 for land (0% rate)", () => {
+    const dep = calculateMonthlyDepreciation(50000, 50000, 0);
+    expect(dep).toBe(0);
+  });
+
+  it("handles 5% annual rate correctly", () => {
+    // Asset $10000, 5% annual → ~$41.67/month
+    const dep = calculateMonthlyDepreciation(10000, 10000, 5);
+    expect(dep).toBe(41.67);
+  });
+
+  it("handles small remaining value", () => {
+    // Asset $10000, currentValue $10, 20% annual → normal would be $166.67 but max is $10
+    const dep = calculateMonthlyDepreciation(10000, 10, 20);
+    expect(dep).toBe(10);
+  });
+});
+
+// ─── Depreciation idempotency guard ─────────────────────────
+
+describe("depreciation month key idempotency", () => {
+  function shouldDepreciate(lastDepMonth: string | undefined, currentMonthKey: string): boolean {
+    return lastDepMonth !== currentMonthKey;
+  }
+
+  it("allows depreciation when no previous run", () => {
+    expect(shouldDepreciate(undefined, "2026-03")).toBe(true);
+  });
+
+  it("allows depreciation for new month", () => {
+    expect(shouldDepreciate("2026-02", "2026-03")).toBe(true);
+  });
+
+  it("blocks double depreciation in same month", () => {
+    expect(shouldDepreciate("2026-03", "2026-03")).toBe(false);
+  });
+});
+
+// ─── Payroll calculation logic (from processPayroll CF) ─────
+
+describe("payroll salary proration", () => {
+  function proratedSalary(
+    salary: number,
+    daysInMonth: number,
+    daysWorked: number,
+  ): number {
+    if (daysWorked >= daysInMonth) return round2(salary);
+    if (daysWorked <= 0) return 0;
+    return round2((salary / daysInMonth) * daysWorked);
+  }
+
+  it("returns full salary for full month", () => {
+    expect(proratedSalary(1000, 30, 30)).toBe(1000);
+  });
+
+  it("prorates correctly for half month", () => {
+    expect(proratedSalary(3000, 30, 15)).toBe(1500);
+  });
+
+  it("returns 0 for zero days worked", () => {
+    expect(proratedSalary(1000, 30, 0)).toBe(0);
+  });
+
+  it("handles 28-day month", () => {
+    expect(proratedSalary(2800, 28, 14)).toBe(1400);
+  });
+});
+
+describe("payroll KPI bonus calculation", () => {
+  function kpiBonus(
+    profitTotal: number,
+    commissionRate: number,
+    hasKPI: boolean,
+  ): number {
+    if (!hasKPI || commissionRate <= 0) return 0;
+    return round2(profitTotal * (commissionRate / 100));
+  }
+
+  it("calculates KPI bonus correctly", () => {
+    expect(kpiBonus(10000, 5, true)).toBe(500);
+  });
+
+  it("returns 0 when no KPI", () => {
+    expect(kpiBonus(10000, 5, false)).toBe(0);
+  });
+
+  it("returns 0 for zero commission rate", () => {
+    expect(kpiBonus(10000, 0, true)).toBe(0);
+  });
+
+  it("handles fractional commission", () => {
+    expect(kpiBonus(10000, 2.5, true)).toBe(250);
+  });
+});

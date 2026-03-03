@@ -136,11 +136,25 @@ export const orderService = {
     },
 
     /**
-     * Soft-delete an order with atomic inventory reversal.
-     * Restores product quantities and reverses client debt within a single transaction.
+     * @deprecated DEAD CODE — replaced by deleteOrder CF (functions/src/orders/deleteOrder.ts).
+     * Client-side ledgerEntries writes are blocked by firestore.rules. Do NOT call.
+     * Soft-delete an order with atomic inventory reversal + ledger reversal (СТОРНО).
+     * Restores product quantities, reverses client debt, and creates contra
+     * ledger entries (debit↔credit swap) within a single transaction.
      */
     async delete(id: string): Promise<void> {
         const orderRef = doc(db, COLLECTION_NAME, id);
+
+        // Query ledger entries BEFORE the transaction (client SDK limitation:
+        // transaction.get() only accepts DocumentReference, not Query).
+        // This is safe because ledger entries for an order are immutable and
+        // created only once during commitSale — no new entries can appear.
+        const ledgerQuery = query(
+            collection(db, 'ledgerEntries'),
+            where('relatedType', '==', 'order'),
+            where('relatedId', '==', id)
+        );
+        const ledgerSnaps = await getDocs(ledgerQuery);
 
         await runTransaction(db, async (firebaseTx) => {
             // 1. Read the order inside the transaction
@@ -202,11 +216,35 @@ export const orderService = {
                 }
             }
 
-            // 3. Soft-delete the order
+            // 3. Create contra ledger entries — СТОРНО (debit↔credit swap)
+            const nowIso = new Date().toISOString();
+            const deletedBy = auth.currentUser?.email || auth.currentUser?.uid || 'unknown';
+            for (const ledgerDoc of ledgerSnaps.docs) {
+                const entry = ledgerDoc.data();
+                const contraRef = doc(collection(db, 'ledgerEntries'));
+                firebaseTx.set(contraRef, {
+                    date: entry.date,
+                    debitAccount: entry.creditAccount,   // SWAP
+                    creditAccount: entry.debitAccount,    // SWAP
+                    amount: entry.amount,
+                    ...(entry.amountUZS != null && { amountUZS: entry.amountUZS }),
+                    ...(entry.exchangeRate != null && { exchangeRate: entry.exchangeRate }),
+                    description: `СТОРНО: ${entry.description}`,
+                    relatedType: 'order',
+                    relatedId: id,
+                    ...(entry.periodId && { periodId: entry.periodId }),
+                    createdBy: deletedBy,
+                    createdAt: nowIso,
+                    _isContra: true,
+                    _contraOf: ledgerDoc.id,
+                });
+            }
+
+            // 4. Soft-delete the order
             firebaseTx.update(orderRef, {
                 _deleted: true,
-                _deletedAt: new Date().toISOString(),
-                _deletedBy: auth.currentUser?.uid || 'unknown',
+                _deletedAt: nowIso,
+                _deletedBy: deletedBy,
                 updatedAt: Timestamp.now()
             });
         });

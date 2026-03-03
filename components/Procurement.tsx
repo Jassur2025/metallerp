@@ -16,6 +16,7 @@ import { RepaymentModal } from './Procurement/RepaymentModal';
 import { NewProductModal } from './Procurement/NewProductModal';
 import { logger } from '../utils/logger';
 import { getMissingItems } from '../utils/inventoryHelpers';
+import { purchaseAtomicService } from '../services/purchaseAtomicService';
 
 export const Procurement: React.FC<ProcurementProps> = ({ products, settings, purchases, onSavePurchases, transactions, workflowOrders, onSaveWorkflowOrders, onSaveProducts, onSaveTransactions, onUpdatePurchase, balances }) => {
     const toast = useToast();
@@ -407,168 +408,41 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, settings, pu
         const paidUZS = distribution
             ? (distribution.cashUZS + distribution.cardUZS + distribution.bankUZS + (distribution.cashUSD * rate))
             : (paymentMethod === 'debt' ? 0 : totalToPayUZS);
-        const paidUSD = paidUZS / rate;
 
-        const status = distribution
-            ? (distribution.isPaid ? 'paid' : (paidUZS > 0 ? 'partial' : 'unpaid'))
-            : (paymentMethod === 'debt' ? 'unpaid' : 'paid');
+        const vatRate = settings.vatRate || 12;
 
-        const purchase: Purchase = {
-            id: IdGenerator.purchase(),
-            date: new Date(date).toISOString(),
-            supplierName,
-            status: 'completed',
-            items: totals.itemsWithLandedCost.map(item => ({ ...item, warehouse: selectedWarehouse })),
-            overheads: procurementType === 'import' ? overheads : { logistics: 0, customsDuty: 0, importVat: 0, other: 0 },
-
-            // Суммы в UZS (с НДС) - для кредиторки
-            totalInvoiceAmountUZS: totals.totalInvoiceValueUZS,
-            totalVatAmountUZS: totals.totalVatAmountUZS,
-            totalWithoutVatUZS: totals.totalWithoutVatUZS,
-
-            // Суммы в USD (без НДС) - для ТМЦ
-            totalInvoiceAmount: totals.totalInvoiceValue, // legacy
-            totalLandedAmount: totals.totalLandedValue,
-
-            exchangeRate: rate,
-            paymentMethod: distribution ? 'mixed' : paymentMethod,
-            paymentCurrency: paymentMethod === 'cash' ? paymentCurrency : 'UZS',
-            paymentStatus: status as 'paid' | 'unpaid' | 'partial',
-            amountPaid: paidUZS, // Теперь в UZS
-            amountPaidUSD: paidUSD,
-            warehouse: selectedWarehouse
-        };
-
-        // 1. Save Purchase
-        onSavePurchases([...purchases, purchase]);
-
-        // 2. Record Transactions (все в UZS кроме наличных USD)
-        const newTransactions: Transaction[] = [];
-        const baseTrx = {
-            date: new Date().toISOString(),
-            type: 'supplier_payment' as const,
-            relatedId: purchase.id
-        };
-
-        if (distribution) {
-            if (distribution.cashUSD > 0) {
-                newTransactions.push({ ...baseTrx, id: IdGenerator.transaction(), amount: distribution.cashUSD, currency: 'USD', method: 'cash', description: `Оплата поставщику (USD Cash): ${supplierName} (Закупка #${purchase.id})` });
-            }
-            if (distribution.cashUZS > 0) {
-                newTransactions.push({ ...baseTrx, id: IdGenerator.transaction(), amount: distribution.cashUZS, currency: 'UZS', exchangeRate: rate, method: 'cash', description: `Оплата поставщику (UZS Cash): ${supplierName} (Закупка #${purchase.id})` });
-            }
-            if (distribution.cardUZS > 0) {
-                newTransactions.push({ ...baseTrx, id: IdGenerator.transaction(), amount: distribution.cardUZS, currency: 'UZS', exchangeRate: rate, method: 'card', description: `Оплата поставщику (UZS Card): ${supplierName} (Закупка #${purchase.id})` });
-            }
-            if (distribution.bankUZS > 0) {
-                newTransactions.push({ ...baseTrx, id: IdGenerator.transaction(), amount: distribution.bankUZS, currency: 'UZS', exchangeRate: rate, method: 'bank', description: `Оплата поставщику (UZS Bank): ${supplierName} (Закупка #${purchase.id})` });
-            }
-        } else if (paymentMethod !== 'debt') {
-            // Все оплаты теперь в UZS (кроме наличных USD)
-            const isCardOrBank = paymentMethod === 'card' || paymentMethod === 'bank';
-            const currency = isCardOrBank ? 'UZS' : paymentCurrency;
-            // Сумма оплаты в UZS (с НДС)
-            const transactionAmount = currency === 'UZS'
-                ? totalToPayUZS
-                : totalToPayUZS / rate; // Если USD - конвертируем
-
-            newTransactions.push({
-                ...baseTrx,
-                id: IdGenerator.transaction(),
-                amount: transactionAmount,
-                currency: currency,
-                exchangeRate: currency === 'UZS' ? rate : undefined,
-                method: paymentMethod as 'cash' | 'bank' | 'card',
-                description: `Оплата поставщику (${paymentMethod === 'cash' ? (paymentCurrency === 'USD' ? 'Нал USD' : 'Нал UZS') : paymentMethod === 'card' ? 'Карта' : 'Р/С'}): ${supplierName}`
+        try {
+            // ── Commit via Cloud Function (atomic: purchase + products + ledger) ──
+            const result = await purchaseAtomicService.commitPurchase({
+                items: cart.map(item => ({
+                    productId: item.productId,
+                    quantity: item.quantity,
+                    invoicePrice: item.invoicePrice,         // UZS per unit WITH VAT
+                    vatAmount: item.invoicePrice - (item.invoicePrice / (1 + vatRate / 100)),  // UZS VAT per unit
+                })),
+                supplierName,
+                overheads: procurementType === 'import'
+                    ? overheads
+                    : { logistics: 0, customsDuty: 0, importVat: 0, other: 0 },
+                paymentMethod: distribution ? 'mixed' : paymentMethod,
+                paymentCurrency: paymentMethod === 'cash' ? paymentCurrency : 'UZS',
+                amountPaid: paidUZS,
+                warehouse: selectedWarehouse as 'main' | 'cloud',
             });
+
+            logger.info('Procurement', `Purchase committed via CF: ${result.purchaseId}`);
+
+            // Reset form
+            setCart([]);
+            setSupplierName('');
+            setOverheads({ logistics: 0, customsDuty: 0, importVat: 0, other: 0 });
+            setPaymentMethod('cash');
+            setPaymentCurrency('USD');
+            toast.success(`Закупка проведена! (${result.purchaseId})`);
+        } catch (err) {
+            logger.error('Procurement', 'commitPurchase CF failed:', err);
+            toast.error(`Ошибка проведения закупки: ${err instanceof Error ? err.message : String(err)}`);
         }
-
-        if (newTransactions.length > 0) {
-            const updatedTransactions = [...transactions, ...newTransactions];
-            if (onSaveTransactions) await onSaveTransactions(updatedTransactions);
-        }
-
-        // 3. Update Product Stock & Cost (с учётом склада)
-        const nextProducts = [...products];
-        // Ключ: productId + warehouse для уникальной идентификации
-        const getProductKey = (productId: string, warehouse: WarehouseType) => `${productId}_${warehouse}`;
-        const existingByKey = new Map<string, { product: Product; index: number }>();
-        products.forEach((p, idx) => {
-            const key = getProductKey(p.id, p.warehouse || WarehouseType.MAIN);
-            existingByKey.set(key, { product: p, index: idx });
-        });
-
-        totals.itemsWithLandedCost.forEach(item => {
-            const itemWarehouse = selectedWarehouse;
-            const key = getProductKey(item.productId, itemWarehouse);
-            const existingEntry = existingByKey.get(key);
-
-            // Также ищем товар с тем же ID но без привязки к складу (для обратной совместимости)
-            const existingWithoutWarehouse = products.find(p => p.id === item.productId && !p.warehouse);
-
-            if (existingEntry) {
-                // Товар уже есть на этом складе - обновляем количество и средневзвешенную себестоимость
-                const existing = existingEntry.product;
-                const newQuantity = (existing.quantity || 0) + item.quantity;
-                const oldValue = (existing.quantity || 0) * (existing.costPrice || 0);
-                const newValue = item.quantity * (item.landedCost || 0);
-                const newCost = newQuantity > 0 ? (oldValue + newValue) / newQuantity : (existing.costPrice || 0);
-
-                const idx = existingEntry.index;
-                if (idx !== -1) nextProducts[idx] = { ...existing, quantity: newQuantity, costPrice: newCost, warehouse: itemWarehouse };
-            } else if (existingWithoutWarehouse) {
-                // Товар существует, но без склада - обновляем и добавляем склад
-                const idx = nextProducts.findIndex(p => p.id === item.productId && !p.warehouse);
-                if (idx !== -1) {
-                    const existing = nextProducts[idx];
-                    const newQuantity = (existing.quantity || 0) + item.quantity;
-                    const oldValue = (existing.quantity || 0) * (existing.costPrice || 0);
-                    const newValue = item.quantity * (item.landedCost || 0);
-                    const newCost = newQuantity > 0 ? (oldValue + newValue) / newQuantity : (existing.costPrice || 0);
-                    nextProducts[idx] = { ...existing, quantity: newQuantity, costPrice: newCost, warehouse: itemWarehouse };
-                }
-            } else {
-                // Товар не найден на этом складе - проверяем есть ли товар на другом складе
-                const existingOnOtherWarehouse = products.find(p => p.id === item.productId);
-                if (existingOnOtherWarehouse) {
-                    // Создаём новую запись для этого склада с теми же параметрами товара
-                    nextProducts.push({
-                        ...existingOnOtherWarehouse,
-                        id: IdGenerator.product(), // Новый ID для записи на новом складе
-                        quantity: item.quantity,
-                        costPrice: item.landedCost || item.invoicePrice || 0,
-                        warehouse: itemWarehouse
-                    });
-                } else {
-                    // Совсем новый товар
-                    nextProducts.push({
-                        id: item.productId || IdGenerator.product(),
-                        name: item.productName || 'Новый товар',
-                        type: ProductType.OTHER,
-                        dimensions: '-',
-                        steelGrade: 'Ст3',
-                        quantity: item.quantity,
-                        unit: item.unit,
-                        pricePerUnit: item.invoicePrice || 0,
-                        costPrice: item.landedCost || item.invoicePrice || 0,
-                        minStockLevel: 0,
-                        origin: procurementType === 'import' ? 'import' : 'local',
-                        warehouse: itemWarehouse
-                    });
-                }
-            }
-        });
-
-        // CRITICAL: Save to Sheets FIRST, then update state
-        if (onSaveProducts) await onSaveProducts(nextProducts);
-
-        // Reset
-        setCart([]);
-        setSupplierName('');
-        setOverheads({ logistics: 0, customsDuty: 0, importVat: 0, other: 0 });
-        setPaymentMethod('cash');
-        setPaymentCurrency('USD');
-        toast.success(`Закупка проведена!`);
     };
 
     // Функции редактирования позиций в истории закупок
@@ -713,7 +587,8 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, settings, pu
         const baseTrx = {
             date: new Date().toISOString(),
             type: 'supplier_payment' as const,
-            relatedId: selectedPurchaseForRepayment.id
+            relatedId: selectedPurchaseForRepayment.id,
+            supplierId: selectedPurchaseForRepayment.supplierId, // For supplier debt tracking in CF
         };
 
         if (distribution) {

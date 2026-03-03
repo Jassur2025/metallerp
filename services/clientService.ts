@@ -10,7 +10,7 @@ import {
     getDocs, 
     getDoc, 
     setDoc, 
-    deleteDoc, 
+    updateDoc,
     query, 
     where, 
     orderBy,
@@ -79,7 +79,7 @@ import {
     async getAll(): Promise<Client[]> {
       try {
         const querySnapshot = await getDocs(collection(db, CLIENTS_COLLECTION));
-        const clients = querySnapshot.docs.map(fromFirestore);
+        const clients = querySnapshot.docs.map(fromFirestore).filter(c => !c._deleted);
         // Sort client-side
         return clients.sort((a, b) => a.name.localeCompare(b.name));
       } catch (error) {
@@ -187,11 +187,14 @@ import {
     },
   
     /**
-     * Delete client
+     * Soft-delete client (sets _deleted flag, preserves data for audit)
      */
     async delete(id: string): Promise<void> {
       try {
-        await deleteDoc(doc(db, CLIENTS_COLLECTION, id));
+        await updateDoc(doc(db, CLIENTS_COLLECTION, id), {
+          _deleted: true,
+          _deletedAt: new Date().toISOString(),
+        });
       } catch (error) {
         logger.error('ClientService', 'Error deleting client:', error);
         throw error;
@@ -226,7 +229,7 @@ import {
     subscribe(callback: (clients: Client[]) => void, maxItems: number = 500): () => void {
         const q = query(collection(db, CLIENTS_COLLECTION), orderBy('name', 'asc'), limit(maxItems));
         const unsubscribe = onSnapshot(q, (snapshot) => {
-            const clients = snapshot.docs.map(fromFirestore);
+            const clients = snapshot.docs.map(fromFirestore).filter(c => !c._deleted);
             callback(clients);
         }, (error) => {
             logger.error('ClientService', 'Error subscribing to clients:', error);

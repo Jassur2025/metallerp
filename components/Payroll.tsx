@@ -1,11 +1,13 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
 import { useCurrentEmployee } from '../contexts/CurrentEmployeeContext';
 import { Employee, Order, Expense, AppSettings } from '../types';
 import { DEFAULT_EXCHANGE_RATE } from '../constants';
-import { DollarSign, Calendar, Download, Search, User, TrendingUp, Wallet, ArrowDownCircle, ArrowUpCircle, X } from 'lucide-react';
+import { DollarSign, Calendar, Download, Search, User, TrendingUp, Wallet, ArrowDownCircle, ArrowUpCircle, X, CheckCircle } from 'lucide-react';
 import { formatCurrency } from '../utils/finance';
 import { logger } from '../utils/logger';
+import { payrollAtomicService } from '../services/payrollAtomicService';
+import { useToast } from '../contexts/ToastContext';
 
 interface PayrollProps {
   employees: Employee[];
@@ -20,6 +22,7 @@ export const Payroll: React.FC<PayrollProps> = React.memo(({ employees, orders, 
   const { can } = useCurrentEmployee();
   const canSeeSalary = can('canViewSalary');
   const masked = '***';
+  const toast = useToast();
 
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [searchTerm, setSearchTerm] = useState('');
@@ -175,6 +178,25 @@ export const Payroll: React.FC<PayrollProps> = React.memo(({ employees, orders, 
     setSelectedDate(newDate);
   };
 
+  const handleProcessPayroll = useCallback(async () => {
+    if (!confirm(`Начислить зарплату за ${selectedDate.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' })}?`)) return;
+    try {
+      const result = await payrollAtomicService.processPayroll({
+        year: selectedDate.getFullYear(),
+        month: selectedDate.getMonth() + 1,
+        exchangeRate: settings?.defaultExchangeRate || DEFAULT_EXCHANGE_RATE,
+      });
+      if (result.processed === 0) {
+        toast.warning(result.message);
+      } else {
+        toast.success(`ЗП начислена: ${result.processed} сотрудников, $${result.totalAccrual} (${result.monthKey})`);
+      }
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Ошибка начисления ЗП';
+      toast.error(msg);
+    }
+  }, [selectedDate, settings, toast]);
+
   const selectedEmployeeData = useMemo(() => {
     if (!selectedEmployeeId) return null;
     return payrollData.find(p => p.employee.id === selectedEmployeeId);
@@ -237,6 +259,14 @@ export const Payroll: React.FC<PayrollProps> = React.memo(({ employees, orders, 
               →
             </button>
           </div>
+          
+          <button
+            onClick={handleProcessPayroll}
+            className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-lg shadow-indigo-600/20"
+          >
+            <CheckCircle size={18} />
+            Начислить ЗП
+          </button>
           
           <button className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors">
             <Download size={18} />

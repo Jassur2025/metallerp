@@ -9,7 +9,7 @@ import { SUPER_ADMIN_EMAILS, DEFAULT_EXCHANGE_RATE } from '../constants';
 import { IdGenerator } from '../utils/idGenerator';
 import { useClients } from '../hooks/useClients';
 import { useOrders } from '../hooks/useOrders';
-import { transactionService } from '../services/transactionService';
+import { paymentAtomicService } from '../services/paymentAtomicService';
 import { ClientNotesModal } from './Sales/ClientNotesModal';
 import { ClientCard, ClientFormModal, ClientListView, RepaymentModal, PhoneCheckModal, RepaymentStatsView, DebtHistoryModal } from './CRM/index';
 import type { HistoryItem } from './CRM/index';
@@ -235,64 +235,69 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
             if (repaymentMethod === 'mixed') {
                 // Handle Mix Payment
                 if (mixCashUZS > 0) {
-                    await transactionService.createPayment({
+                    await paymentAtomicService.processPayment({
                         type: 'client_payment',
                         amount: mixCashUZS,
                         currency: 'UZS',
                         exchangeRate: exchangeRate,
                         method: 'cash',
                         description: `Погашение долга (нал UZS): ${selectedClientForRepayment.name}${orderRef}`,
-                        relatedId: selectedOrderForRepayment || clientId,
+                        relatedId: clientId,
+                        orderId: selectedOrderForRepayment || undefined,
                         date: new Date().toISOString()
-                    }, clientId);
+                    });
                 }
                 if (mixCashUSD > 0) {
-                    await transactionService.createPayment({
+                    await paymentAtomicService.processPayment({
                         type: 'client_payment',
                         amount: mixCashUSD,
                         currency: 'USD',
                         method: 'cash',
                         description: `Погашение долга (нал USD): ${selectedClientForRepayment.name}${orderRef}`,
-                        relatedId: selectedOrderForRepayment || clientId,
+                        relatedId: clientId,
+                        orderId: selectedOrderForRepayment || undefined,
                         date: new Date().toISOString()
-                    }, clientId);
+                    });
                 }
                 if (mixCard > 0) {
-                     await transactionService.createPayment({
+                     await paymentAtomicService.processPayment({
                         type: 'client_payment',
                         amount: mixCard,
                         currency: 'UZS',
                         exchangeRate: exchangeRate,
                         method: 'card',
                         description: `Погашение долга (карта): ${selectedClientForRepayment.name}${orderRef}`,
-                        relatedId: selectedOrderForRepayment || clientId,
+                        relatedId: clientId,
+                        orderId: selectedOrderForRepayment || undefined,
                         date: new Date().toISOString()
-                    }, clientId);
+                    });
                 }
                 if (mixBank > 0) {
-                     await transactionService.createPayment({
+                     await paymentAtomicService.processPayment({
                         type: 'client_payment',
                         amount: mixBank,
                         currency: 'UZS',
                         exchangeRate: exchangeRate,
                         method: 'bank',
                         description: `Погашение долга (перечисл.): ${selectedClientForRepayment.name}${orderRef}`,
-                        relatedId: selectedOrderForRepayment || clientId,
+                        relatedId: clientId,
+                        orderId: selectedOrderForRepayment || undefined,
                         date: new Date().toISOString()
-                    }, clientId);
+                    });
                 }
             } else {
                 // Single Payment
-                await transactionService.createPayment({
+                await paymentAtomicService.processPayment({
                     type: 'client_payment',
                     amount: repaymentAmount,
                     currency: repaymentCurrency,
                     exchangeRate: exchangeRate,
                     method: repaymentMethod as 'cash' | 'bank' | 'card' | 'debt',
                     description: `Погашение долга: ${selectedClientForRepayment.name}${orderRef}`,
-                    relatedId: selectedOrderForRepayment || clientId,
+                    relatedId: clientId,
+                    orderId: selectedOrderForRepayment || undefined,
                     date: new Date().toISOString()
-                }, clientId);
+                });
             }
 
             toast.success('Долг успешно погашен и баланс обновлен');

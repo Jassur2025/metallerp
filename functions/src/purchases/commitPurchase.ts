@@ -56,6 +56,7 @@ interface PurchaseOverheadsInput {
 interface CommitPurchaseInput {
   items: PurchaseItemInput[];
   supplierName: string;
+  supplierId?: string; // Optional — if not provided, auto-resolve by supplierName
   overheads: PurchaseOverheadsInput;
   paymentMethod: "cash" | "bank" | "card" | "debt" | "mixed";
   paymentCurrency?: "USD" | "UZS";
@@ -159,6 +160,33 @@ export const commitPurchase = onCall(
       const settingsSnap = await tx.get(db.doc("settings/general"));
       const settings = settingsSnap.exists ? settingsSnap.data()! : {};
       const exchangeRate = safeNum(settings.defaultExchangeRate) || 12800;
+
+      // Resolve supplier (for debt tracking)
+      let resolvedSupplierId: string | null = null;
+      let supplierRef: FirebaseFirestore.DocumentReference | null = null;
+      let supplierData: FirebaseFirestore.DocumentData | null = null;
+
+      if (data.supplierId) {
+        // Explicit supplierId provided
+        supplierRef = db.doc(`suppliers/${data.supplierId}`);
+        const supplierSnap = await tx.get(supplierRef);
+        if (supplierSnap.exists) {
+          resolvedSupplierId = data.supplierId;
+          supplierData = supplierSnap.data()!;
+        }
+      } else {
+        // Auto-resolve by name
+        const supplierQuery = db.collection("suppliers")
+          .where("name", "==", data.supplierName)
+          .limit(1);
+        const supplierSnaps = await tx.get(supplierQuery);
+        if (!supplierSnaps.empty) {
+          const doc = supplierSnaps.docs[0];
+          resolvedSupplierId = doc.id;
+          supplierRef = doc.ref;
+          supplierData = doc.data();
+        }
+      }
 
       // Aggregate per-product
       const qtyByProduct = new Map<string, number>();
@@ -275,12 +303,28 @@ export const commitPurchase = onCall(
         });
       }
 
+      // Update supplier debt + totalPurchases
+      if (supplierRef && supplierData && resolvedSupplierId) {
+        const currentDebt = safeNum(supplierData.totalDebt);
+        const currentPurchases = safeNum(supplierData.totalPurchases);
+        const currentVersion = safeNum(supplierData._version);
+        const debtPortion = round2(totalLandedAmountUSD - amountPaidUSD);
+
+        tx.update(supplierRef, {
+          totalDebt: round2(Math.max(0, currentDebt + debtPortion)),
+          totalPurchases: round2(currentPurchases + totalLandedAmountUSD),
+          updatedAt: Timestamp.now(),
+          _version: currentVersion + 1,
+        });
+      }
+
       // Create purchase document
       const purchaseRef = db.doc(`purchases/${purchaseId}`);
       tx.set(purchaseRef, {
         id: purchaseId,
         date: nowIso,
         supplierName: data.supplierName,
+        ...(resolvedSupplierId && { supplierId: resolvedSupplierId }),
         status: "completed",
         items: purchaseItems,
         overheads: {
@@ -339,6 +383,64 @@ export const commitPurchase = onCall(
         createdAt: nowIso,
       });
 
+      // Write ledger entries INSIDE transaction (atomic with business data)
+      const ledgerEntries: LedgerEntryData[] = [];
+
+      // Дт 2900 Кт 6010 — Inventory receipt
+      if (totalLandedAmountUSD > 0) {
+        ledgerEntries.push({
+          date: nowIso,
+          debitAccount: AccountCode.INVENTORY,
+          creditAccount: AccountCode.ACCOUNTS_PAYABLE,
+          amount: totalLandedAmountUSD,
+          amountUZS: totalInvoiceAmountUZS - totalVatAmountUZS,
+          exchangeRate,
+          description: `Оприходование: закупка #${purchaseId} (${data.supplierName})`,
+          relatedType: "purchase",
+          relatedId: purchaseId,
+          createdBy: userEmail,
+          createdAt: nowIso,
+        });
+      }
+
+      // Дт 4410 Кт 6010 — Input VAT
+      const inputVatUSD = round2(totalVatAmountUZS / exchangeRate);
+      if (inputVatUSD > 0) {
+        ledgerEntries.push({
+          date: nowIso,
+          debitAccount: AccountCode.VAT_RECEIVABLE,
+          creditAccount: AccountCode.ACCOUNTS_PAYABLE,
+          amount: inputVatUSD,
+          exchangeRate,
+          description: `НДС входящий: закупка #${purchaseId}`,
+          relatedType: "purchase",
+          relatedId: purchaseId,
+          createdBy: userEmail,
+          createdAt: nowIso,
+        });
+      }
+
+      // Дт 6010 Кт 5010/5020/5110 — Supplier payment
+      if (amountPaidUSD > 0) {
+        const method = data.paymentMethod === "mixed" ? "cash" : data.paymentMethod;
+        ledgerEntries.push({
+          date: nowIso,
+          debitAccount: AccountCode.ACCOUNTS_PAYABLE,
+          creditAccount: cashAccount(method, data.paymentCurrency || "UZS"),
+          amount: amountPaidUSD,
+          exchangeRate,
+          description: `Оплата поставщику: закупка #${purchaseId}`,
+          relatedType: "purchase",
+          relatedId: purchaseId,
+          createdBy: userEmail,
+          createdAt: nowIso,
+        });
+      }
+
+      for (const entry of ledgerEntries) {
+        tx.set(db.collection("ledgerEntries").doc(), entry);
+      }
+
       const txResult = {
         purchaseId,
         totalLandedAmountUSD,
@@ -349,6 +451,7 @@ export const commitPurchase = onCall(
         createdBy: userEmail,
         date: nowIso,
         supplierName: data.supplierName,
+        supplierId: resolvedSupplierId,
         paymentMethod: data.paymentMethod,
         paymentCurrency: data.paymentCurrency || "UZS",
       };
@@ -360,76 +463,6 @@ export const commitPurchase = onCall(
 
       return txResult;
     });
-
-    // 5. Ledger entries (fire-and-forget)
-    // Skip if this was a cached idempotent response (ledger already written)
-    if (!("_idempotent" in result)) {
-    try {
-      const entries: LedgerEntryData[] = [];
-      const now = new Date().toISOString();
-
-      // Дт 2900 Кт 6010 — Inventory receipt
-      if (result.totalLandedAmountUSD > 0) {
-        entries.push({
-          date: result.date,
-          debitAccount: AccountCode.INVENTORY,
-          creditAccount: AccountCode.ACCOUNTS_PAYABLE,
-          amount: result.totalLandedAmountUSD,
-          amountUZS: result.totalInvoiceAmountUZS - result.totalVatAmountUZS,
-          exchangeRate: result.exchangeRate,
-          description: `Оприходование: закупка #${result.purchaseId} (${result.supplierName})`,
-          relatedType: "purchase",
-          relatedId: result.purchaseId,
-          createdBy: result.createdBy,
-          createdAt: now,
-        });
-      }
-
-      // Дт 4410 Кт 6010 — Input VAT
-      const inputVatUSD = round2(result.totalVatAmountUZS / result.exchangeRate);
-      if (inputVatUSD > 0) {
-        entries.push({
-          date: result.date,
-          debitAccount: AccountCode.VAT_RECEIVABLE,
-          creditAccount: AccountCode.ACCOUNTS_PAYABLE,
-          amount: inputVatUSD,
-          exchangeRate: result.exchangeRate,
-          description: `НДС входящий: закупка #${result.purchaseId}`,
-          relatedType: "purchase",
-          relatedId: result.purchaseId,
-          createdBy: result.createdBy,
-          createdAt: now,
-        });
-      }
-
-      // Дт 6010 Кт 5010/5020/5110 — Supplier payment
-      if (result.amountPaidUSD > 0) {
-        const method = result.paymentMethod === "mixed" ? "cash" : result.paymentMethod;
-        entries.push({
-          date: result.date,
-          debitAccount: AccountCode.ACCOUNTS_PAYABLE,
-          creditAccount: cashAccount(method, result.paymentCurrency),
-          amount: result.amountPaidUSD,
-          exchangeRate: result.exchangeRate,
-          description: `Оплата поставщику: закупка #${result.purchaseId}`,
-          relatedType: "purchase",
-          relatedId: result.purchaseId,
-          createdBy: result.createdBy,
-          createdAt: now,
-        });
-      }
-
-      if (entries.length > 0) {
-        const batch = db.batch();
-        for (const entry of entries) {
-          batch.set(db.collection("ledgerEntries").doc(), entry);
-        }
-        await batch.commit();
-      }
-    } catch (err) {
-      console.error("Purchase ledger entries failed (non-fatal):", err);
-    }
-    } // end idempotency guard
 
     return {
       success: true,

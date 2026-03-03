@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Order } from '../types';
 import { orderService } from '../services/orderService';
+import { orderAtomicService } from '../services/orderAtomicService';
 import { useToast } from '../contexts/ToastContext';
 import { logger } from '../utils/logger';
 
@@ -113,7 +114,7 @@ export const useOrders = (initialOrders: Order[] = []) => {
         try {
             // Optimistic
             setOrders(p => p.filter(o => o.id !== id));
-            await orderService.delete(id);
+            await orderAtomicService.deleteOrder(id);
             return true;
         } catch (err: unknown) {
             logger.error('useOrders', 'Error deleting order:', err);
