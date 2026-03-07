@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Product, Order, OrderItem, Expense, Client, Transaction, JournalEvent, WorkflowOrder, Employee } from '../../types';
-import { ShoppingCart, ArrowDownRight, ArrowUpRight, RefreshCw, FileText, ClipboardList, List } from 'lucide-react';
+import { ShoppingCart, ArrowDownRight, ArrowUpRight, RefreshCw, FileText, ClipboardList, List, Eye, EyeOff, Clock, Search, Edit3, Trash2, X, Tag } from 'lucide-react';
 import { useToast } from '../../contexts/ToastContext';
 import { useTheme, getThemeClasses } from '../../contexts/ThemeContext';
 import { SUPER_ADMIN_EMAILS } from '../../constants';
@@ -22,7 +22,8 @@ import { ReceiptModal } from './ReceiptModal';
 import { ClientModal } from './ClientModal';
 import { StaffModal } from './StaffModal';
 import { generateInvoicePDF, generateWaybillPDF } from '../../utils/DocumentTemplates';
-import { PaymentSplitModal, PaymentDistribution } from './PaymentSplitModal';
+import { PostSalePaymentModal, PaymentDistribution } from './PostSalePaymentModal';
+import { PaymentSplitModal } from './PaymentSplitModal';
 import { WorkflowQueue } from './WorkflowQueue';
 import { OrderEditModal } from './OrderEditModal';
 import { SalesTransactionsView } from './SalesTransactionsView';
@@ -39,6 +40,219 @@ import { getMissingItems } from '../../utils/inventoryHelpers';
 
 const isDev = import.meta.env.DEV;
 const errorDev = (...args: unknown[]) => { if (isDev) logger.error('Sales', String(args[0]), ...args.slice(1)); };
+
+// --- Order History View (inline component) ---
+const OrderHistoryView: React.FC<{
+  orders: Order[];
+  exchangeRate: number;
+  t: ReturnType<typeof getThemeClasses>;
+  theme: string;
+  onShowReceipt: (order: Order) => void;
+  onEditOrder: (orderId: string) => void;
+  onDeleteOrder: (orderId: string) => void;
+}> = ({ orders, exchangeRate, t, theme, onShowReceipt, onEditOrder, onDeleteOrder }) => {
+  const isDark = theme !== 'light';
+  const [historySearch, setHistorySearch] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const ITEMS_PER_PAGE = 15;
+
+  const filteredOrders = React.useMemo(() => {
+    if (!historySearch.trim()) return orders;
+    const q = historySearch.toLowerCase();
+    return orders.filter(o =>
+      o.customerName?.toLowerCase().includes(q) ||
+      o.sellerName?.toLowerCase().includes(q) ||
+      (o.reportNo && `#${o.reportNo}`.includes(q)) ||
+      o.id.toLowerCase().includes(q)
+    );
+  }, [orders, historySearch]);
+
+  const totalPages = Math.ceil(filteredOrders.length / ITEMS_PER_PAGE);
+  const paginatedOrders = filteredOrders.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
+
+  // Reset page when search changes
+  React.useEffect(() => { setCurrentPage(1); }, [historySearch]);
+
+  const toUZS = (usd: number) => Math.round(usd * exchangeRate);
+
+  if (orders.length === 0) {
+    return (
+      <div className={`flex-1 flex flex-col items-center justify-center ${t.textMuted} gap-3 py-16`}>
+        <div className={`w-16 h-16 rounded-2xl flex items-center justify-center ${isDark ? 'bg-slate-800/60' : 'bg-slate-100'}`}>
+          <FileText size={32} className="opacity-30" />
+        </div>
+        <p className="text-sm font-medium opacity-50">Нет продаж</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 flex flex-col overflow-hidden">
+      {/* Search + Stats */}
+      <div className="flex items-center gap-3 mb-3">
+        <div className="relative flex-1">
+          <Search size={14} className={`absolute left-3 top-1/2 -translate-y-1/2 ${t.textMuted}`} />
+          <input
+            type="text"
+            placeholder="Поиск по клиенту, продавцу, №..."
+            value={historySearch}
+            onChange={e => setHistorySearch(e.target.value)}
+            className={`w-full pl-9 pr-4 py-2 rounded-xl text-sm outline-none transition-all
+              ${isDark ? 'bg-slate-800/60 border-slate-700 text-white placeholder:text-slate-500 focus:border-blue-500/50' : 'bg-white border-slate-200 text-slate-900 placeholder:text-slate-400 focus:border-blue-400'} border`}
+          />
+        </div>
+        <div className={`px-3 py-2 rounded-xl text-xs font-mono font-bold ${isDark ? 'bg-emerald-500/10 text-emerald-400' : 'bg-emerald-50 text-emerald-600'}`}>
+          {filteredOrders.length} продаж
+        </div>
+      </div>
+
+      {/* Table Header */}
+      <div className={`grid grid-cols-[60px_1fr_1fr_120px_80px_90px_100px] gap-2 px-3 py-2 rounded-t-xl text-[10px] font-bold uppercase tracking-wider ${isDark ? 'bg-slate-800/60 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
+        <span>№</span>
+        <span>Клиент</span>
+        <span>Продавец</span>
+        <span className="text-right">Сумма</span>
+        <span className="text-center">Статус</span>
+        <span className="text-center">Дата</span>
+        <span className="text-right">Действия</span>
+      </div>
+
+      {/* Orders List */}
+      <div className="flex-1 overflow-y-auto custom-scrollbar">
+        {paginatedOrders.map((order, idx) => {
+          const statusColor = order.paymentStatus === 'paid'
+            ? (isDark ? 'text-emerald-400 bg-emerald-500/10' : 'text-emerald-600 bg-emerald-50')
+            : order.paymentStatus === 'partial'
+              ? (isDark ? 'text-amber-400 bg-amber-500/10' : 'text-amber-600 bg-amber-50')
+              : (isDark ? 'text-red-400 bg-red-500/10' : 'text-red-600 bg-red-50');
+          const statusLabel = order.paymentStatus === 'paid' ? 'Оплачен' : order.paymentStatus === 'partial' ? 'Частично' : 'Долг';
+
+          return (
+            <div
+              key={order.id}
+              className={`grid grid-cols-[60px_1fr_1fr_120px_80px_90px_100px] gap-2 px-3 py-2.5 items-center border-b transition-colors ${isDark ? 'border-slate-800/60 hover:bg-slate-800/30' : 'border-slate-100 hover:bg-slate-50'}`}
+            >
+              <span className={`font-mono font-bold text-xs ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>
+                #{order.reportNo || '—'}
+              </span>
+              <div className="min-w-0">
+                <span className={`text-xs font-medium ${t.text} truncate block`}>{order.customerName}</span>
+                {order.items.length > 0 && (
+                  <span className={`text-[9px] ${t.textMuted} truncate block`}>
+                    {order.items.slice(0, 2).map(i => i.productName).join(', ')}{order.items.length > 2 ? ` +${order.items.length - 2}` : ''}
+                  </span>
+                )}
+              </div>
+              <span className={`text-xs ${t.textMuted} truncate`}>{order.sellerName}</span>
+              <span className={`font-mono font-bold text-xs text-right ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>
+                {(order.totalAmountUZS || toUZS(order.totalAmount)).toLocaleString()} <span className="opacity-60">сўм</span>
+              </span>
+              <span className={`px-1.5 py-0.5 rounded-md text-[9px] font-bold text-center ${statusColor}`}>
+                {statusLabel}
+              </span>
+              <span className={`text-[10px] ${t.textMuted} font-mono text-center`}>
+                {new Date(order.date).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })}
+                {' '}
+                {new Date(order.date).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+              </span>
+              <div className="flex items-center justify-end gap-1">
+                <button
+                  onClick={() => onShowReceipt(order)}
+                  title="Просмотр"
+                  className={`p-1.5 rounded-lg transition-all ${isDark ? 'text-slate-400 hover:text-blue-400 hover:bg-blue-500/10' : 'text-slate-400 hover:text-blue-600 hover:bg-blue-50'}`}
+                >
+                  <Eye size={14} />
+                </button>
+                <button
+                  onClick={() => onEditOrder(order.id)}
+                  title="Редактировать"
+                  className={`p-1.5 rounded-lg transition-all ${isDark ? 'text-slate-400 hover:text-amber-400 hover:bg-amber-500/10' : 'text-slate-400 hover:text-amber-600 hover:bg-amber-50'}`}
+                >
+                  <Edit3 size={14} />
+                </button>
+                {confirmDeleteId === order.id ? (
+                  <div className="flex items-center gap-0.5">
+                    <button
+                      onClick={() => { onDeleteOrder(order.id); setConfirmDeleteId(null); }}
+                      className="p-1.5 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-all"
+                      title="Подтвердить удаление"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                    <button
+                      onClick={() => setConfirmDeleteId(null)}
+                      className={`p-1.5 rounded-lg transition-all ${isDark ? 'text-slate-400 hover:bg-slate-700' : 'text-slate-400 hover:bg-slate-200'}`}
+                      title="Отмена"
+                    >
+                      <X size={13} />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setConfirmDeleteId(order.id)}
+                    title="Удалить"
+                    className={`p-1.5 rounded-lg transition-all ${isDark ? 'text-slate-500 hover:text-red-400 hover:bg-red-500/10' : 'text-slate-300 hover:text-red-500 hover:bg-red-50'}`}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Pagination + Summary */}
+      <div className={`flex items-center justify-between mt-2 px-3 py-2 rounded-xl ${isDark ? 'bg-slate-800/40' : 'bg-slate-50'}`}>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+            disabled={currentPage === 1}
+            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all disabled:opacity-30
+              ${isDark ? 'bg-slate-700 text-slate-300 hover:bg-slate-600 disabled:hover:bg-slate-700' : 'bg-slate-200 text-slate-600 hover:bg-slate-300 disabled:hover:bg-slate-200'}`}
+          >
+            ←
+          </button>
+          {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+            let page: number;
+            if (totalPages <= 5) {
+              page = i + 1;
+            } else if (currentPage <= 3) {
+              page = i + 1;
+            } else if (currentPage >= totalPages - 2) {
+              page = totalPages - 4 + i;
+            } else {
+              page = currentPage - 2 + i;
+            }
+            return (
+              <button
+                key={page}
+                onClick={() => setCurrentPage(page)}
+                className={`w-8 h-8 rounded-lg text-xs font-bold transition-all ${currentPage === page
+                  ? (isDark ? 'bg-blue-600 text-white' : 'bg-blue-500 text-white')
+                  : (isDark ? 'bg-slate-700/60 text-slate-400 hover:bg-slate-700' : 'bg-slate-200 text-slate-600 hover:bg-slate-300')}`}
+              >
+                {page}
+              </button>
+            );
+          })}
+          <button
+            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+            disabled={currentPage === totalPages}
+            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all disabled:opacity-30
+              ${isDark ? 'bg-slate-700 text-slate-300 hover:bg-slate-600 disabled:hover:bg-slate-700' : 'bg-slate-200 text-slate-600 hover:bg-slate-300 disabled:hover:bg-slate-200'}`}
+          >
+            →
+          </button>
+        </div>
+        <span className={`text-xs font-mono font-bold ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>
+          Итого: {filteredOrders.reduce((sum, o) => sum + (o.totalAmountUZS || toUZS(o.totalAmount)), 0).toLocaleString()} сўм
+        </span>
+      </div>
+    </div>
+  );
+};
 
 export const Sales: React.FC = () => {
   const {
@@ -106,8 +320,8 @@ export const Sales: React.FC = () => {
   const [exchangeRate, setExchangeRate] = useState<number>(settings.defaultExchangeRate);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [paymentCurrency, setPaymentCurrency] = useState<Currency>('USD');
-  const [discountPercent, setDiscountPercent] = useState<number>(0);
-  const [manualTotal, setManualTotal] = useState<number | null>(null);
+  const [discountAmount, setDiscountAmount] = useState<number>(0);
+  const [discountCurrency, setDiscountCurrency] = useState<Currency>('USD');
   const [debtDueDate, setDebtDueDate] = useState<string>(''); // Payment due date for debt orders
 
   // Expense State
@@ -452,19 +666,18 @@ export const Sales: React.FC = () => {
   // Totals — IFRS 15: discount applies to net amount (before VAT)
   const subtotalUSD = cart.reduce((sum, item) => sum + item.total, 0);
 
+  // Convert discount amount to USD
+  const discountAmountUSD = discountCurrency === 'UZS' ? (exchangeRate > 0 ? discountAmount / exchangeRate : 0) : discountAmount;
+
   // Apply discount to subtotal BEFORE calculating VAT (IFRS 15 - Transaction Price)
-  const discountedSubtotal = manualTotal !== null
-    ? manualTotal / (1 + settings.vatRate / 100) // Reverse-calculate net from manual total
-    : subtotalUSD * (1 - (discountPercent || 0) / 100);
+  const discountedSubtotal = Math.max(0, subtotalUSD - discountAmountUSD);
 
   const vatAmountUSD = discountedSubtotal * (settings.vatRate / 100);
   const originalTotalUSD = subtotalUSD + (subtotalUSD * (settings.vatRate / 100));
 
-  const totalAmountUSD = manualTotal !== null
-    ? manualTotal
-    : discountedSubtotal + vatAmountUSD;
+  const totalAmountUSD = discountedSubtotal + vatAmountUSD;
 
-  const discountAmount = originalTotalUSD - totalAmountUSD;
+  const discountPercent = originalTotalUSD > 0 ? (discountAmountUSD / originalTotalUSD) * 100 : 0;
 
   const totalAmountUZS = toUZS(totalAmountUSD);
 
@@ -494,7 +707,7 @@ export const Sales: React.FC = () => {
       sellerName: sellerName || currentEmployee?.name || 'Администратор',
       items: [...cart], subtotalAmount: discountedSubtotal, vatRateSnapshot: settings.vatRate, vatAmount: vatAmountUSD,
       totalAmount: totalAmountUSD, exchangeRate, totalAmountUZS, status: 'completed', paymentMethod: method, paymentStatus, amountPaid: totalPaidUSD,
-      paymentCurrency: method === 'cash' ? (paymentCurrency || 'USD') : 'USD', // Fallback
+      paymentCurrency: method === 'cash' ? (dist.cashUSD > 0 ? 'USD' : 'UZS') : 'USD', // Determined by actual payment
       paymentDueDate, // Payment deadline for debts
     };
 
@@ -548,8 +761,8 @@ export const Sales: React.FC = () => {
       setCustomerName('');
       setSellerName('');
       setPaymentMethod('cash');
-      setDiscountPercent(0);
-      setManualTotal(null);
+      setDiscountAmount(0);
+      setDiscountCurrency('USD');
       setDebtDueDate(''); // Clear debt due date
       setLastOrder(newOrderWithClient);
       setSalesPaymentModalOpen(false); // Close if open
@@ -586,29 +799,8 @@ export const Sales: React.FC = () => {
       return;
     }
 
-    if (paymentMethod === 'mixed') {
-      setSalesPaymentModalOpen(true);
-      return;
-    }
-
-    // Construct "simple" distribution for standard methods
-    const isDebt = paymentMethod === 'debt';
-    const dist: PaymentDistribution = {
-      cashUSD: 0, cashUZS: 0, cardUZS: 0, bankUZS: 0,
-      isPaid: !isDebt, remainingUSD: isDebt ? totalAmountUSD : 0
-    };
-
-    if (paymentMethod === 'cash') {
-      if (paymentCurrency === 'UZS') dist.cashUZS = totalAmountUZS;
-      else dist.cashUSD = totalAmountUSD;
-    } else if (paymentMethod === 'card') {
-      dist.cardUZS = totalAmountUZS;
-    } else if (paymentMethod === 'bank') {
-      dist.bankUZS = totalAmountUZS;
-    }
-    // For debt, everything is 0, remaining is total.
-
-    await finalizeSale(dist, paymentMethod, isDebt ? 'unpaid' : 'paid');
+    // Always open payment modal for payment method selection
+    setSalesPaymentModalOpen(true);
   };
 
   // --- Receipt Printing ---
@@ -831,61 +1023,83 @@ export const Sales: React.FC = () => {
     }
   };
 
+  const [showBalances, setShowBalances] = useState(false);
+
   // --- Render ---
   return (
     <div className="flex flex-col h-full">
-      <BalanceBar balances={balances} orders={orders} debugStats={debugStats} />
+      {/* Balance Toggle + Bar */}
+      <div className={`flex items-center ${theme !== 'light' ? 'bg-slate-900/80 border-b border-slate-800' : 'bg-white border-b border-slate-200'} px-4 py-1.5 gap-2`}>
+        <button
+          onClick={() => setShowBalances(!showBalances)}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+            showBalances
+              ? (theme !== 'light' ? 'bg-slate-700/60 text-slate-200' : 'bg-slate-200 text-slate-700')
+              : (theme !== 'light' ? 'bg-slate-800/60 text-slate-400 hover:text-slate-200 hover:bg-slate-700/60' : 'bg-slate-100 text-slate-500 hover:text-slate-700 hover:bg-slate-200')
+          }`}
+        >
+          {showBalances ? <EyeOff size={14} /> : <Eye size={14} />}
+          Баланс
+        </button>
+        {!showBalances && (
+          <span className={`text-[11px] font-mono ${theme !== 'light' ? 'text-slate-500' : 'text-slate-400'}`}>
+            Нажмите чтобы показать кассу
+          </span>
+        )}
+      </div>
+      {showBalances && <BalanceBar balances={balances} orders={orders} debugStats={debugStats} />}
 
-      {/* Recent Orders (Desktop) */}
-      {orders.length > 0 && mode === 'sale' && (
-        <div className={`hidden lg:block ${t.bgCard} border-b ${t.border} px-6 py-3`}>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <FileText size={18} className={t.textMuted} />
-              <span className={`text-sm ${t.textMuted}`}>Последние заказы:</span>
-            </div>
-            <div className="flex gap-2 overflow-x-auto">
-              {orders.slice(0, 5).map(order => (
-                <button key={order.id} onClick={() => { setSelectedOrderForReceipt(order); setShowReceiptModal(true); }}
-                  className={`px-3 py-1.5 ${t.bgButton} ${t.text} text-xs rounded-lg font-medium whitespace-nowrap transition-colors flex items-center gap-1.5`}>
-                  <FileText size={12} />{order.id}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
+
 
       {/* Main Content */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 p-6 relative overflow-hidden">
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-4 p-4 lg:p-5 relative overflow-hidden">
         {flyingItems.map(item => <FlyingIcon key={item.id} {...item} onComplete={() => removeFlyingItem(item.id)} />)}
 
         <div className={`${mode === 'sale' ? 'lg:col-span-2' : 'lg:col-span-3'} flex flex-col h-full overflow-hidden transition-all duration-300`}>
-          {/* Mode Switcher */}
-          <div className="flex gap-2 mb-4">
-            <button onClick={() => setMode('sale')} className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${mode === 'sale' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/20' : `${t.bgCard} ${t.textMuted} ${t.bgCardHover}`}`}>
-              <ArrowDownRight size={20} /> Новая Продажа
-            </button>
-            <button onClick={() => setMode('expense')} className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${mode === 'expense' ? 'bg-red-600 text-white shadow-lg shadow-red-900/20' : `${t.bgCard} ${t.textMuted} ${t.bgCardHover}`}`}>
-              <ArrowUpRight size={20} /> Новый Расход
-            </button>
-            {(currentEmployee?.permissions?.canProcessReturns !== false) && (
-              <button onClick={() => setMode('return')} className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${mode === 'return' ? 'bg-amber-600 text-white shadow-lg shadow-amber-900/20' : `${t.bgCard} ${t.textMuted} ${t.bgCardHover}`}`}>
-                <RefreshCw size={20} /> Возврат
+          {/* Mode Switcher — Tabs + Action buttons */}
+          <div className="flex items-center gap-2 mb-4">
+            {/* Main Tabs */}
+            <div className={`flex gap-1 flex-1 ${theme !== 'light' ? 'bg-slate-800/40' : 'bg-slate-100'} p-1 rounded-xl`}>
+              {[
+                { key: 'sale' as SalesMode, label: 'Продажа', icon: <ArrowDownRight size={16} />, active: 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/20' },
+                { key: 'history' as SalesMode, label: `Продажи${orders.length > 0 ? ` (${orders.length})` : ''}`, icon: <Clock size={16} />, active: 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' },
+                ...(isCashier ? [{ key: 'workflow' as SalesMode, label: 'Workflow', icon: <ClipboardList size={16} />, active: 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20' }] : []),
+                ...(isCashier ? [{ key: 'transactions' as SalesMode, label: 'Транзакции', icon: <List size={16} />, active: 'bg-purple-600 text-white shadow-lg shadow-purple-600/20' }] : []),
+              ].map(tab => (
+                <button key={tab.key} onClick={() => setMode(tab.key)}
+                  className={`flex-1 py-2.5 rounded-lg font-semibold flex items-center justify-center gap-1.5 text-sm transition-all duration-200
+                    ${mode === tab.key ? tab.active : `${theme !== 'light' ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/40' : 'text-slate-600 hover:text-slate-900 hover:bg-white'}`}`}>
+                  {tab.icon} {tab.label}
+                </button>
+              ))}
+            </div>
+            {/* Action Buttons: Расход & Возврат */}
+            <div className="flex gap-1.5 flex-shrink-0">
+              <button
+                onClick={() => setMode(mode === 'expense' ? 'sale' : 'expense')}
+                className={`flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 border
+                  ${mode === 'expense'
+                    ? 'bg-red-600 text-white border-red-600 shadow-lg shadow-red-600/20'
+                    : (theme !== 'light'
+                      ? 'bg-slate-800/60 text-slate-400 border-slate-700/60 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/40'
+                      : 'bg-white text-slate-600 border-slate-200 hover:bg-red-50 hover:text-red-600 hover:border-red-300')}`}
+              >
+                <ArrowUpRight size={14} /> Расход
               </button>
-            )}
-
-            {isCashier && (
-              <button onClick={() => setMode('workflow')} className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${mode === 'workflow' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20' : `${t.bgCard} ${t.textMuted} ${t.bgCardHover}`}`}>
-                <ClipboardList size={20} /> Workflow
-              </button>
-            )}
-
-            {isCashier && (
-              <button onClick={() => setMode('transactions')} className={`flex-1 py-3 rounded-xl font-bold flex items-center justify-center gap-2 transition-all ${mode === 'transactions' ? 'bg-purple-600 text-white shadow-lg shadow-purple-900/20' : `${t.bgCard} ${t.textMuted} ${t.bgCardHover}`}`}>
-                <List size={20} /> Транзакции
-              </button>
-            )}
+              {currentEmployee?.permissions?.canProcessReturns !== false && (
+                <button
+                  onClick={() => setMode(mode === 'return' ? 'sale' : 'return')}
+                  className={`flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 border
+                    ${mode === 'return'
+                      ? 'bg-amber-600 text-white border-amber-600 shadow-lg shadow-amber-600/20'
+                      : (theme !== 'light'
+                        ? 'bg-slate-800/60 text-slate-400 border-slate-700/60 hover:bg-amber-500/10 hover:text-amber-400 hover:border-amber-500/40'
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-amber-50 hover:text-amber-600 hover:border-amber-300')}`}
+                >
+                  <RefreshCw size={14} /> Возврат
+                </button>
+              )}
+            </div>
           </div>
 
           <AuditAlert
@@ -917,6 +1131,35 @@ export const Sales: React.FC = () => {
               employees={employees}
               selectedEmployeeId={selectedEmployeeId}
               setSelectedEmployeeId={setSelectedEmployeeId} />
+          ) : mode === 'history' ? (
+            <OrderHistoryView
+              orders={orders} exchangeRate={exchangeRate} t={t} theme={theme}
+              onShowReceipt={(order) => { setSelectedOrderForReceipt(order); setShowReceiptModal(true); }}
+              onEditOrder={(id) => setEditingOrderId(id)}
+              onDeleteOrder={async (id) => {
+                const orderToDelete = orders.find(o => o.id === id);
+                const updated = orders.filter(o => o.id !== id);
+                try {
+                  await onSaveOrders?.(updated);
+                  setOrders(updated);
+                  toast.success(`Заказ №${orderToDelete?.reportNo || id.slice(-6)} удалён`);
+                  // Journal event
+                  await onAddJournalEvent?.({
+                    id: IdGenerator.journalEvent(),
+                    date: new Date().toISOString(),
+                    type: 'employee_action',
+                    employeeName: currentEmployee?.name || currentUserEmail || 'Администратор',
+                    action: 'Удалён заказ',
+                    description: `Заказ №${orderToDelete?.reportNo || id.slice(-6)} (${orderToDelete?.customerName || 'N/A'}) на сумму $${orderToDelete?.totalAmount.toFixed(2) || 0} удалён.`,
+                    module: 'sales',
+                    relatedType: 'order',
+                    relatedId: id,
+                  });
+                } catch (err) {
+                  toast.error('Ошибка при удалении заказа');
+                }
+              }}
+            />
           ) : mode === 'transactions' ? (
             <SalesTransactionsView
               orders={orders} transactions={transactions} expenses={expenses}
@@ -931,64 +1174,30 @@ export const Sales: React.FC = () => {
           ) : null}
         </div>
 
-        {/* Mobile Recent Orders */}
-        {orders.length > 0 && mode === 'sale' && (
-          <div className="lg:hidden bg-slate-800 border-t border-slate-700 px-3 py-2 col-span-full">
-            <div className="flex items-center gap-2 mb-1">
-              <FileText size={14} className="text-slate-400" />
-              <span className="text-xs text-slate-400">Последние чеки:</span>
-            </div>
-            <div className="flex gap-1.5 overflow-x-auto pb-1">
-              {orders.slice(0, 5).map(order => (
-                <button key={order.id} onClick={() => { setSelectedOrderForReceipt(order); setShowReceiptModal(true); }}
-                  className="px-2 py-1 bg-slate-700 hover:bg-slate-600 text-white text-[10px] rounded-md font-medium whitespace-nowrap flex items-center gap-1 flex-shrink-0">
-                  <FileText size={10} />{order.id.split('-')[1]?.slice(-6) || order.id.slice(-6)}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
         {/* Cart Panel (Desktop) */}
         {mode === 'sale' && (
           <CartPanel cart={cart} removeFromCart={removeFromCart} updateQuantity={updateQuantity} updatePrice={updatePrice}
             customerName={customerName} setCustomerName={setCustomerName}
             customerPhone={customerPhone} setCustomerPhone={setCustomerPhone} onSaveClient={onSaveClients}
             sellerName={sellerName} setSellerName={setSellerName} exchangeRate={exchangeRate}
-            paymentMethod={paymentMethod} setPaymentMethod={setPaymentMethod}
-            paymentCurrency={paymentCurrency} setPaymentCurrency={setPaymentCurrency}
             clients={clients} employees={employees} settings={settings}
             subtotalUSD={subtotalUSD} vatAmountUSD={vatAmountUSD} totalAmountUSD={totalAmountUSD} totalAmountUZS={totalAmountUZS}
             toUZS={toUZS} onCompleteOrder={completeOrder} onOpenClientModal={() => setIsClientModalOpen(true)}
             onNavigateToStaff={() => setIsStaffModalOpen(true)} lastOrder={lastOrder}
             onShowReceipt={() => {
-              setLastOrder(null); // Just close/reset if needed
-              // Logic for receipt moved to modal usage usually
+              setLastOrder(null);
             }}
             onPrintReceipt={() => { }}
             onPrintInvoice={order => generateInvoicePDF(order, settings)}
             onPrintWaybill={order => generateWaybillPDF(order, settings)}
             flyingItems={flyingItems}
 
-            // Discount Props
-            discountPercent={discountPercent}
-            onDiscountChange={(val) => {
-              setDiscountPercent(val);
-              setManualTotal(null); // Reset manual total so percentage takes precedence
-            }}
-            manualTotal={manualTotal}
-            onTotalChange={(val) => {
-              setManualTotal(val);
-              // Calculate effective percentage for display/logic
-              if (originalTotalUSD > 0) {
-                const newDiscount = ((originalTotalUSD - val) / originalTotalUSD) * 100;
-                setDiscountPercent(Math.max(0, newDiscount));
-              }
-            }}
+            // Discount Props (amount-based)
+            discountAmount={discountAmount}
+            onDiscountAmountChange={setDiscountAmount}
+            discountCurrency={discountCurrency}
+            onDiscountCurrencyChange={setDiscountCurrency}
             originalTotalUSD={originalTotalUSD}
-            // Debt Due Date
-            debtDueDate={debtDueDate}
-            onDebtDueDateChange={setDebtDueDate}
           />)}
       </div>
 
@@ -1030,14 +1239,21 @@ export const Sales: React.FC = () => {
         onConfirm={confirmWorkflowPayment}
       />
 
-      {/* Sales Mixed Payment Modal */}
-      <PaymentSplitModal
+      {/* Post-Sale Payment Modal */}
+      <PostSalePaymentModal
         isOpen={salesPaymentModalOpen}
         onClose={() => setSalesPaymentModalOpen(false)}
         totalAmountUSD={totalAmountUSD}
         totalAmountUZS={totalAmountUZS}
         exchangeRate={exchangeRate}
-        onConfirm={(dist) => finalizeSale(dist, 'mixed')}
+        onConfirm={(dist, method, modalDebtDueDate) => {
+          const pm = method as PaymentMethod;
+          const isDebt = pm === 'debt';
+          const isPartial = !dist.isPaid && pm === 'mixed';
+          const status = isDebt ? 'unpaid' : isPartial ? 'partial' : 'paid';
+          if (modalDebtDueDate) setDebtDueDate(modalDebtDueDate);
+          finalizeSale(dist, pm, status);
+        }}
       />
 
       {/* Mobile Cart Button */}
@@ -1059,25 +1275,14 @@ export const Sales: React.FC = () => {
         customerName={customerName} setCustomerName={setCustomerName}
         customerPhone={customerPhone} setCustomerPhone={setCustomerPhone} onSaveClient={onSaveClients}
         sellerName={sellerName} setSellerName={setSellerName} exchangeRate={exchangeRate}
-        paymentMethod={paymentMethod} setPaymentMethod={setPaymentMethod}
-        paymentCurrency={paymentCurrency} setPaymentCurrency={setPaymentCurrency}
         clients={clients} employees={employees} settings={settings}
         subtotalUSD={subtotalUSD} vatAmountUSD={vatAmountUSD} totalAmountUSD={totalAmountUSD} totalAmountUZS={totalAmountUZS}
         toUZS={toUZS} onCompleteOrder={completeOrder} onOpenClientModal={() => setIsClientModalOpen(true)}
         onNavigateToStaff={() => setIsStaffModalOpen(true)} flyingItems={flyingItems}
-        discountPercent={discountPercent}
-        onDiscountChange={(val) => {
-          setDiscountPercent(val);
-          setManualTotal(null);
-        }}
-        manualTotal={manualTotal}
-        onTotalChange={(val) => {
-          setManualTotal(val);
-          if (originalTotalUSD > 0) {
-            const newDiscount = ((originalTotalUSD - val) / originalTotalUSD) * 100;
-            setDiscountPercent(Math.max(0, newDiscount));
-          }
-        }}
+        discountAmount={discountAmount}
+        onDiscountAmountChange={setDiscountAmount}
+        discountCurrency={discountCurrency}
+        onDiscountCurrencyChange={setDiscountCurrency}
         originalTotalUSD={originalTotalUSD}
       />
 

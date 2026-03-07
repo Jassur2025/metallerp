@@ -18,67 +18,64 @@ interface BalanceBarProps {
 export const BalanceBar: React.FC<BalanceBarProps> = ({ balances, orders, debugStats }) => {
   const { theme } = useTheme();
   const t = getThemeClasses(theme);
+  const isDark = theme !== 'light';
   
   // Debug: count orders by payment method and currency
   const cashOrdersUSD = orders?.filter(o => o.paymentMethod === 'cash' && o.paymentCurrency !== 'UZS').length || 0;
   const cashOrdersUZS = orders?.filter(o => o.paymentMethod === 'cash' && o.paymentCurrency === 'UZS').length || 0;
   const totalCashOrders = orders?.filter(o => o.paymentMethod === 'cash').length || 0;
 
+  const balanceCards = [
+    {
+      label: 'Касса (USD)',
+      value: `$${balances.balanceCashUSD.toLocaleString()}`,
+      icon: <Wallet size={18} />,
+      iconBg: isDark ? 'bg-emerald-500/15' : 'bg-emerald-50',
+      iconColor: isDark ? 'text-emerald-400' : 'text-emerald-600',
+      valueColor: isDark ? 'text-emerald-400' : 'text-emerald-600',
+    },
+    {
+      label: 'Касса (UZS)',
+      value: `${balances.balanceCashUZS.toLocaleString()} сўм`,
+      icon: <Wallet size={18} />,
+      iconBg: isDark ? 'bg-amber-500/15' : 'bg-amber-50',
+      iconColor: isDark ? 'text-amber-400' : 'text-amber-600',
+      valueColor: isDark ? 'text-amber-400' : 'text-amber-600',
+    },
+    {
+      label: 'Р/С (UZS)',
+      value: `${balances.balanceBankUZS.toLocaleString()} сўм`,
+      icon: <Building2 size={18} />,
+      iconBg: isDark ? 'bg-purple-500/15' : 'bg-purple-50',
+      iconColor: isDark ? 'text-purple-400' : 'text-purple-600',
+      valueColor: balances.balanceBankUZS < 0 ? 'text-red-400' : (isDark ? 'text-purple-400' : 'text-purple-600'),
+    },
+    {
+      label: 'Карта (UZS)',
+      value: `${balances.balanceCardUZS.toLocaleString()} сўм`,
+      icon: <CreditCard size={18} />,
+      iconBg: isDark ? 'bg-blue-500/15' : 'bg-blue-50',
+      iconColor: isDark ? 'text-blue-400' : 'text-blue-600',
+      valueColor: isDark ? 'text-blue-400' : 'text-blue-600',
+    },
+  ];
+
   return (
-    <div className={`${t.bgCard} border-b ${t.border} p-4 space-y-3`}>
-      {/* Debug Panel */}
-      {/* Debug Panel Removed */}
-
-      {/* Balance Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className={`${t.bgPanelAlt} p-3 rounded-xl border ${t.border} flex items-center gap-3`}>
-          <div className={`p-2 ${t.iconBgEmerald} rounded-lg ${t.iconEmerald}`}>
-            <Wallet size={20} />
+    <div className={`${isDark ? 'bg-slate-900/80 border-b border-slate-800' : 'bg-white border-b border-slate-200'} px-6 py-3`}>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {balanceCards.map((card, i) => (
+          <div key={i} className={`${isDark ? 'bg-slate-800/60 border-slate-700/60 hover:bg-slate-800/80' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'} rounded-xl border px-3 py-2.5 flex items-center gap-3 transition-colors`}>
+            <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${card.iconBg} ${card.iconColor}`}>
+              {card.icon}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className={`text-[10px] font-bold ${t.textMuted} uppercase tracking-wider leading-tight`}>{card.label}</p>
+              <p className={`text-sm font-bold font-mono ${card.valueColor} truncate leading-tight mt-0.5`}>
+                {card.value}
+              </p>
+            </div>
           </div>
-          <div>
-            <p className={`text-xs ${t.textMuted} uppercase`}>Касса (USD)</p>
-            <p className={`text-lg font-mono font-bold ${t.text}`}>
-              ${balances.balanceCashUSD.toLocaleString()}
-            </p>
-
-          </div>
-        </div>
-
-        <div className={`${t.bgPanelAlt} p-3 rounded-xl border ${t.border} flex items-center gap-3`}>
-          <div className={`p-2 ${t.iconBgEmerald} rounded-lg ${t.iconEmerald}`}>
-            <Wallet size={20} />
-          </div>
-          <div>
-            <p className={`text-xs ${t.textMuted} uppercase`}>Касса (UZS)</p>
-            <p className={`text-lg font-mono font-bold ${t.text}`}>
-              {balances.balanceCashUZS.toLocaleString()} сўм
-            </p>
-          </div>
-        </div>
-
-        <div className={`${t.bgPanelAlt} p-3 rounded-xl border ${t.border} flex items-center gap-3`}>
-          <div className={`p-2 ${t.iconBgPurple} rounded-lg ${t.iconPurple}`}>
-            <Building2 size={20} />
-          </div>
-          <div>
-            <p className={`text-xs ${t.textMuted} uppercase`}>Р/С (UZS)</p>
-            <p className={`text-lg font-mono font-bold ${t.text}`}>
-              {balances.balanceBankUZS.toLocaleString()} сўм
-            </p>
-          </div>
-        </div>
-
-        <div className={`${t.bgPanelAlt} p-3 rounded-xl border ${t.border} flex items-center gap-3`}>
-          <div className={`p-2 ${t.iconBgBlue} rounded-lg ${t.iconBlue}`}>
-            <CreditCard size={20} />
-          </div>
-          <div>
-            <p className={`text-xs ${t.textMuted} uppercase`}>Карта (UZS)</p>
-            <p className={`text-lg font-mono font-bold ${t.text}`}>
-              {balances.balanceCardUZS.toLocaleString()} сўм
-            </p>
-          </div>
-        </div>
+        ))}
       </div>
     </div>
   );

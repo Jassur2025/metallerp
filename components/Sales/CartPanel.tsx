@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
-import { ShoppingCart, Trash2, User, Plus, CheckCircle, FileText, Printer, Percent, Tag, Calendar } from 'lucide-react';
+import { ShoppingCart, Trash2, User, Plus, CheckCircle, FileText, Tag, Eraser } from 'lucide-react';
 import { OrderItem, Client, Employee, Order, AppSettings } from '../../types';
-import { DEFAULT_EXCHANGE_RATE } from '../../constants';
-import { PaymentMethod, Currency, FlyingItem } from './types';
+import { Currency, FlyingItem } from './types';
 import { useTheme, getThemeClasses } from '../../contexts/ThemeContext';
 import { ClientDropdown } from '../ClientDropdown';
 import { IdGenerator } from '../../utils/idGenerator';
@@ -16,10 +15,6 @@ interface CartPanelProps {
   setCustomerName: (val: string) => void;
   sellerName: string;
   setSellerName: (val: string) => void;
-  paymentMethod: PaymentMethod;
-  setPaymentMethod: (val: PaymentMethod) => void;
-  paymentCurrency: Currency;
-  setPaymentCurrency: (val: Currency) => void;
   clients: Client[];
   employees: Employee[];
   settings: AppSettings;
@@ -37,15 +32,12 @@ interface CartPanelProps {
   onPrintInvoice: (order: Order) => void;
   onPrintWaybill: (order: Order) => void;
   flyingItems: FlyingItem[];
-  // Discount Props
-  discountPercent?: number;
-  onDiscountChange?: (val: number) => void;
-  manualTotal?: number | null;
-  onTotalChange?: (val: number) => void;
+  // Discount Props (amount-based)
+  discountAmount?: number;
+  onDiscountAmountChange?: (val: number) => void;
+  discountCurrency?: Currency;
+  onDiscountCurrencyChange?: (val: Currency) => void;
   originalTotalUSD?: number;
-  // Debt Due Date
-  debtDueDate?: string;
-  onDebtDueDateChange?: (val: string) => void;
   // Yangi qo'shilgan prop: yangi mijozni saqlash
   onSaveClient?: (clients: Client[]) => void;
   customerPhone?: string;
@@ -62,10 +54,6 @@ export const CartPanel: React.FC<CartPanelProps> = ({
   setCustomerName,
   sellerName,
   setSellerName,
-  paymentMethod,
-  setPaymentMethod,
-  paymentCurrency,
-  setPaymentCurrency,
   clients,
   employees,
   settings,
@@ -83,13 +71,11 @@ export const CartPanel: React.FC<CartPanelProps> = ({
   onPrintInvoice,
   onPrintWaybill,
   flyingItems,
-  discountPercent = 0,
-  onDiscountChange,
-  manualTotal,
-  onTotalChange,
+  discountAmount = 0,
+  onDiscountAmountChange,
+  discountCurrency = 'USD',
+  onDiscountCurrencyChange,
   originalTotalUSD = 0,
-  debtDueDate = '',
-  onDebtDueDateChange,
   onSaveClient,
   customerPhone = '',
   setCustomerPhone = () => { },
@@ -103,133 +89,43 @@ export const CartPanel: React.FC<CartPanelProps> = ({
   const toggleCurrency = (productId: string) => {
     setInputCurrencies(prev => ({ ...prev, [productId]: prev[productId] === 'UZS' ? 'USD' : 'UZS' }));
   };
-  const [customRoundedValue, setCustomRoundedValue] = useState<string>('');
 
-  // Calculate discount amount
-  const discountAmountUSD = originalTotalUSD > 0 ? originalTotalUSD - totalAmountUSD : 0;
+  // Calculate discount display
+  const discountAmountUSD = discountCurrency === 'UZS' ? (exchangeRate > 0 ? discountAmount / exchangeRate : 0) : discountAmount;
   const discountAmountUZS = toUZS(discountAmountUSD);
+  const discountPercent = originalTotalUSD > 0 ? (discountAmountUSD / originalTotalUSD) * 100 : 0;
 
-  // Quick discount percentages
-  const quickDiscounts = [1, 2, 3, 5, 10];
-
-  // Round to nearest value options
-  const getRoundOptions = () => {
-    const currentUZS = toUZS(originalTotalUSD);
-    const options: number[] = [];
-
-    // Round down options
-    const roundTo = [1000, 5000, 10000, 50000, 100000];
-    roundTo.forEach(r => {
-      const rounded = Math.floor(currentUZS / r) * r;
-      if (rounded > 0 && rounded < currentUZS && !options.includes(rounded)) {
-        options.push(rounded);
-      }
-    });
-
-    return options.sort((a, b) => b - a).slice(0, 4);
-  };
-
-  const handleRoundTo = (roundedUZS: number) => {
-    if (onTotalChange) {
-      const rate = settings.defaultExchangeRate || DEFAULT_EXCHANGE_RATE;
-      const newTotalUSD = roundedUZS / rate;
-      onTotalChange(newTotalUSD);
-    }
-  };
-
-  const handleCustomRound = () => {
-    const value = parseFloat(customRoundedValue);
-    if (!isNaN(value) && value > 0 && onTotalChange) {
-      const rate = settings.defaultExchangeRate || DEFAULT_EXCHANGE_RATE;
-      onTotalChange(value / rate);
-      setCustomRoundedValue('');
-    }
-  };
+  const isDark = theme !== 'light';
 
   return (
-    <div className={`hidden lg:flex ${t.bgCard} border ${t.border} rounded-2xl flex-col ${t.shadow} overflow-hidden h-full`}>
-      <div id="cart-target" className={`p-6 border-b ${t.border} ${t.bgPanelAlt} relative transition-colors duration-300 flex justify-between items-center`}>
-        <h3 className={`text-xl font-bold ${t.text} flex items-center gap-2 z-10`}>
-          <ShoppingCart className={`${t.accent} transition-transform duration-300 ${flyingItems.length > 0 ? 'scale-110' : 'scale-100'}`} /> Корзина
-        </h3>
-      </div>
-
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {cart.length === 0 ? (
-          <div className={`h-full flex flex-col items-center justify-center ${t.textMuted} gap-2 opacity-50`}>
-            <ShoppingCart size={48} />
-            <p>Корзина пуста</p>
+    <div className={`hidden lg:flex ${isDark ? 'bg-slate-900/95 border-slate-700/80' : `${t.bgCard} border-slate-200`} border rounded-2xl flex-col overflow-hidden h-full`}>
+      {/* ЧЕК Header */}
+      <div id="cart-target" className={`px-4 py-3 ${isDark ? 'bg-slate-800/80 border-b border-slate-700/60' : 'bg-slate-50 border-b border-slate-200'} flex justify-between items-center`}>
+        <div className="flex items-center gap-2.5">
+          <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isDark ? 'bg-amber-500/20' : 'bg-blue-50'}`}>
+            <ShoppingCart size={18} className={`${isDark ? 'text-amber-400' : 'text-blue-600'} transition-transform duration-300 ${flyingItems.length > 0 ? 'scale-110' : 'scale-100'}`} />
           </div>
-        ) : (
-          cart.map(item => (
-            <div key={item.productId} className={`${t.bgPanelAlt} border ${t.border} rounded-xl p-3 flex flex-col gap-2 animate-fade-in`}>
-              <div className="flex justify-between">
-                <span className={`font-medium ${t.textSecondary} text-sm truncate max-w-[180px]`}>
-                  {item.productName}
-                  {item.dimensions && item.dimensions !== '-' && <span className={`text-xs ${t.textMuted} ml-1`}>({item.dimensions})</span>}
-                </span>
-                <button onClick={() => removeFromCart(item.productId)} className={`${t.textMuted} hover:text-red-500 flex-shrink-0`}>
-                  <Trash2 size={16} />
-                </button>
-              </div>
-              <div className="flex justify-between items-end mt-1">
-                <div className={`flex items-center gap-1`}>
-                  <button
-                    onClick={() => updateQuantity(item.productId, item.quantity - 1)}
-                    className={`w-7 h-7 flex items-center justify-center rounded-lg text-lg font-bold transition-colors
-                      ${theme === 'light' ? 'bg-slate-200 hover:bg-slate-300 text-slate-700' : 'bg-slate-700 hover:bg-slate-600 text-slate-300'}`}
-                  >−</button>
-                  <div className={`flex items-center gap-1 ${t.bgInput} rounded-lg p-1 border ${t.borderInput}`}>
-                    <input
-                      type="number"
-                      className={`w-12 bg-transparent text-center font-mono text-sm ${t.text} outline-none focus:ring-0`}
-                      value={item.quantity}
-                      onChange={e => updateQuantity(item.productId, Number(e.target.value))}
-                    />
-                    <span className={`text-xs ${t.textMuted} pr-1`}>{item.unit}</span>
-                  </div>
-                  <button
-                    onClick={() => updateQuantity(item.productId, item.quantity + 1)}
-                    className={`w-7 h-7 flex items-center justify-center rounded-lg text-lg font-bold transition-colors
-                      ${theme === 'light' ? 'bg-blue-100 hover:bg-blue-200 text-blue-700' : 'bg-primary-500/20 hover:bg-primary-500/40 text-primary-400'}`}
-                  >+</button>
-                </div>
-                <div className="text-right flex flex-col items-end">
-                  <div className={`flex items-center gap-1 ${t.bgInput} rounded-lg pl-1 pr-1 py-0.5 border ${t.borderInput} mb-1 w-[100px]`}>
-                    <button
-                      onClick={() => toggleCurrency(item.productId)}
-                      className={`text-[10px] font-bold px-1 rounded transition-colors ${inputCurrencies[item.productId] === 'UZS'
-                          ? 'text-emerald-500 hover:bg-emerald-500/20'
-                          : 'text-blue-400 hover:bg-blue-500/20'
-                        }`}
-                      title="Сменить валюту ввода"
-                    >
-                      {inputCurrencies[item.productId] === 'UZS' ? 'UZS' : '$'}
-                    </button>
-                    <input
-                      type="number"
-                      className={`w-full bg-transparent text-right font-mono text-xs ${t.text} outline-none focus:ring-0`}
-                      value={inputCurrencies[item.productId] === 'UZS' ? Math.round(item.priceAtSale * exchangeRate) : item.priceAtSale}
-                      onChange={e => {
-                        const val = Number(e.target.value);
-                        updatePrice(item.productId, inputCurrencies[item.productId] === 'UZS' ? (exchangeRate > 0 ? val / exchangeRate : 0) : val);
-                      }}
-                    />
-                  </div>
-                  <span className={`font-mono font-bold ${t.textSecondary} block text-sm`}>
-                    {toUZS(item.total).toLocaleString()} сўм
-                  </span>
-                </div>
-              </div>
-            </div>
-          ))
+          <div>
+            <h3 className={`text-base font-bold ${t.text} leading-tight`}>ЧЕК</h3>
+            {cart.length > 0 && <span className={`text-[10px] ${t.textMuted}`}>{cart.length} позиций</span>}
+          </div>
+        </div>
+        {cart.length > 0 && (
+          <button
+            onClick={() => cart.forEach(item => removeFromCart(item.productId))}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all
+              ${isDark ? 'text-slate-400 hover:text-red-400 hover:bg-red-500/10' : 'text-slate-500 hover:text-red-500 hover:bg-red-50'}`}
+          >
+            <Eraser size={13} /> Очистить
+          </button>
         )}
       </div>
 
-      <div className={`p-3 ${t.bgPanelAlt} border-t ${t.border} space-y-2`}>
+      {/* Client & Seller — TOP SECTION */}
+      <div className={`px-4 py-3 ${isDark ? 'border-b border-slate-700/40' : 'border-b border-slate-200'}`}>
         <div className="grid grid-cols-2 gap-2">
           <div className="space-y-1">
-            <label className={`text-[10px] font-medium ${t.textMuted} uppercase flex items-center gap-1`}><User size={10} /> Клиент</label>
+            <label className={`text-[10px] font-bold ${t.textMuted} uppercase tracking-wider flex items-center gap-1`}><User size={10} /> Клиент</label>
             <div className="flex gap-1">
               <div className="flex-1 w-full min-w-0">
                 <ClientDropdown
@@ -249,7 +145,7 @@ export const CartPanel: React.FC<CartPanelProps> = ({
                   const name = customerName.trim();
                   if (!name || !onSaveClient) { return; }
                   const exists = clients.find(c => c.name.toLowerCase() === name.toLowerCase());
-                  if (exists) return; // Allaqachon bor
+                  if (exists) return;
                   const newClient: Client = {
                     id: IdGenerator.client(),
                     name,
@@ -261,17 +157,17 @@ export const CartPanel: React.FC<CartPanelProps> = ({
                   };
                   onSaveClient([...clients, newClient]);
                 }}
-                className={`${t.bgButton} border ${t.borderInput} rounded-lg px-2 flex-shrink-0 ${theme === 'light' ? 'text-emerald-600 bg-emerald-50 hover:bg-emerald-100' : 'text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20'} transition-colors`}
+                className={`${isDark ? 'bg-emerald-500/10 text-emerald-400 border-slate-700 hover:bg-emerald-500/20' : 'bg-emerald-50 text-emerald-600 border-slate-200 hover:bg-emerald-100'} border rounded-lg px-2 flex-shrink-0 transition-colors`}
               >
                 <Plus size={14} />
               </button>
             </div>
           </div>
           <div className="space-y-1">
-            <label className={`text-[10px] font-medium ${t.textMuted} uppercase flex items-center gap-1`}><User size={10} /> Продавец</label>
+            <label className={`text-[10px] font-bold ${t.textMuted} uppercase tracking-wider flex items-center gap-1`}><User size={10} /> Продавец</label>
             <div className="flex gap-1">
               <select
-                className={`flex-1 ${t.bgInput} border ${t.borderInput} rounded-lg px-2 py-1.5 ${t.text} text-xs ${t.focusRing} outline-none appearance-none`}
+                className={`flex-1 ${isDark ? 'bg-slate-800/80 border-slate-700 text-white' : `${t.bgInput} border-slate-200 text-slate-900`} border rounded-lg px-2 py-1.5 text-xs outline-none appearance-none`}
                 value={sellerName}
                 onChange={e => setSellerName(e.target.value)}
               >
@@ -285,7 +181,7 @@ export const CartPanel: React.FC<CartPanelProps> = ({
               </select>
               <button
                 onClick={onNavigateToStaff}
-                className={`${theme === 'light' ? 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-600' : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-400 hover:text-white'} border rounded-lg px-2 transition-colors`}
+                className={`${isDark ? 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-400 hover:text-white' : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-600'} border rounded-lg px-2 transition-colors`}
                 title="Добавить сотрудника"
               >
                 <Plus size={14} />
@@ -293,232 +189,277 @@ export const CartPanel: React.FC<CartPanelProps> = ({
             </div>
           </div>
         </div>
+      </div>
 
-        {/* Payment Method Selector */}
-        <div className="space-y-1">
-          <label className={`text-[10px] font-medium ${t.textMuted} uppercase`}>Способ оплаты</label>
-          <div className="grid grid-cols-2 gap-1.5">
-            <button
-              onClick={() => setPaymentMethod('cash')}
-              className={`px-2 py-1.5 rounded-lg text-[10px] font-bold border transition-all ${paymentMethod === 'cash' ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : (theme === 'light' ? 'bg-slate-100 border-slate-200 text-slate-600 hover:bg-slate-200' : 'bg-slate-800 border-slate-600 text-slate-400 hover:bg-slate-700')}`}
-            >
-              Наличные
-            </button>
-            <button
-              onClick={() => setPaymentMethod('card')}
-              className={`px-2 py-1.5 rounded-lg text-[10px] font-bold border transition-all ${paymentMethod === 'card' ? 'bg-blue-500/20 border-blue-500 text-blue-400' : (theme === 'light' ? 'bg-slate-100 border-slate-200 text-slate-600 hover:bg-slate-200' : 'bg-slate-800 border-slate-600 text-slate-400 hover:bg-slate-700')}`}
-            >
-              Карта (UZS)
-            </button>
-            <button
-              onClick={() => setPaymentMethod('bank')}
-              className={`px-2 py-1.5 rounded-lg text-[10px] font-bold border transition-all ${paymentMethod === 'bank' ? 'bg-purple-500/20 border-purple-500 text-purple-400' : (theme === 'light' ? 'bg-slate-100 border-slate-200 text-slate-600 hover:bg-slate-200' : 'bg-slate-800 border-slate-600 text-slate-400 hover:bg-slate-700')}`}
-            >
-              Перечисление (UZS)
-            </button>
-            <button
-              onClick={() => setPaymentMethod('debt')}
-              className={`px-2 py-1.5 rounded-lg text-[10px] font-bold border transition-all ${paymentMethod === 'debt' ? 'bg-red-500/20 border-red-500 text-red-400' : (theme === 'light' ? 'bg-slate-100 border-slate-200 text-slate-600 hover:bg-slate-200' : 'bg-slate-800 border-slate-600 text-slate-400 hover:bg-slate-700')}`}
-            >
-              Долг (USD)
-            </button>
-            <button
-              onClick={() => setPaymentMethod('mixed')}
-              className={`px-2 py-1.5 rounded-lg text-[10px] font-bold border transition-all col-span-2 ${paymentMethod === 'mixed' ? 'bg-amber-500/20 border-amber-500 text-amber-400' : (theme === 'light' ? 'bg-slate-100 border-slate-200 text-slate-600 hover:bg-slate-200' : 'bg-slate-800 border-slate-600 text-slate-400 hover:bg-slate-700')}`}
-            >
-              Смешанная оплата (Частично)
-            </button>
+      {/* Cart Items - scrollable */}
+      <div className="flex-1 overflow-y-auto custom-scrollbar">
+        {cart.length === 0 ? (
+          <div className={`h-full flex flex-col items-center justify-center ${t.textMuted} gap-3 py-12`}>
+            <div className={`w-16 h-16 rounded-2xl flex items-center justify-center ${isDark ? 'bg-slate-800/60' : 'bg-slate-100'}`}>
+              <ShoppingCart size={32} className="opacity-30" />
+            </div>
+            <p className="text-sm font-medium opacity-50">Корзина пуста</p>
           </div>
+        ) : (
+          <div className={`divide-y ${isDark ? 'divide-slate-700/30' : 'divide-slate-100'}`}>
+            {cart.map((item, idx) => (
+              <div key={item.productId} className={`px-4 py-3 transition-all animate-fade-in ${isDark ? 'hover:bg-slate-800/40' : 'hover:bg-slate-50'}`}>
+                {/* Row 1: Name + Delete */}
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <div className="flex-1 min-w-0">
+                    <span className={`font-semibold ${t.text} text-sm block truncate`}>
+                      {item.productName}
+                    </span>
+                    {item.dimensions && item.dimensions !== '-' && (
+                      <span className={`text-[10px] ${t.textMuted} font-mono`}>{item.dimensions}</span>
+                    )}
+                  </div>
+                  <button onClick={() => removeFromCart(item.productId)}
+                    className={`p-1 rounded-lg transition-all ${isDark ? 'text-slate-600 hover:text-red-400 hover:bg-red-500/10' : 'text-slate-300 hover:text-red-500 hover:bg-red-50'}`}>
+                    <Trash2 size={14} />
+                  </button>
+                </div>
 
-          {/* Currency Selector for Cash */}
-          {paymentMethod === 'cash' && (
-            <div className="flex gap-1.5 mt-1 animate-fade-in">
-              <button
-                onClick={() => setPaymentCurrency('UZS')}
-                className={`flex-1 py-1 rounded text-[10px] font-bold border ${paymentCurrency === 'UZS' ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : (theme === 'light' ? 'bg-slate-100 border-slate-200 text-slate-600' : 'bg-slate-800 border-slate-600 text-slate-400')}`}
-              >
-                В Сумах (UZS)
-              </button>
-              <button
-                onClick={() => setPaymentCurrency('USD')}
-                className={`flex-1 py-1 rounded text-[10px] font-bold border ${paymentCurrency === 'USD' ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : (theme === 'light' ? 'bg-slate-100 border-slate-200 text-slate-600' : 'bg-slate-800 border-slate-600 text-slate-400')}`}
-              >
-                В Долларах (USD)
-              </button>
-            </div>
-          )}
+                {/* Row 2: Price input | Qty controls | Line total */}
+                <div className="flex items-center justify-between gap-2">
+                  {/* Price input */}
+                  <div className={`flex items-center gap-0.5 ${isDark ? 'bg-slate-800/60 border-slate-700' : 'bg-slate-50 border-slate-200'} rounded-lg border px-1.5 py-1 w-[90px]`}>
+                    <button
+                      onClick={() => toggleCurrency(item.productId)}
+                      className={`text-[10px] font-bold px-1 rounded transition-colors flex-shrink-0 ${inputCurrencies[item.productId] === 'UZS'
+                          ? 'text-emerald-500 hover:bg-emerald-500/20'
+                          : (isDark ? 'text-blue-400 hover:bg-blue-500/20' : 'text-blue-600 hover:bg-blue-50')
+                        }`}
+                      title="Сменить валюту ввода"
+                    >
+                      {inputCurrencies[item.productId] === 'UZS' ? 'UZS' : '$'}
+                    </button>
+                    <input
+                      type="number"
+                      className={`w-full bg-transparent text-right font-mono text-xs ${t.text} outline-none focus:ring-0`}
+                      value={inputCurrencies[item.productId] === 'UZS' ? Math.round(item.priceAtSale * exchangeRate) : item.priceAtSale}
+                      onChange={e => {
+                        const val = Number(e.target.value);
+                        updatePrice(item.productId, inputCurrencies[item.productId] === 'UZS' ? (exchangeRate > 0 ? val / exchangeRate : 0) : val);
+                      }}
+                    />
+                  </div>
 
-          {/* Due Date for Debt / Mixed Payment */}
-          {(paymentMethod === 'debt' || paymentMethod === 'mixed') && (
-            <div className="mt-2 animate-fade-in">
-              <label className={`flex items-center gap-1 text-xs ${t.textMuted} mb-1`}>
-                <Calendar size={12} />
-                Срок оплаты долга
-              </label>
-              <input
-                type="date"
-                value={debtDueDate}
-                onChange={(e) => onDebtDueDateChange?.(e.target.value)}
-                min={new Date().toISOString().split('T')[0]}
-                className={`w-full ${t.input} border ${t.border} rounded-lg px-3 py-2 text-sm ${t.text} focus:ring-2 focus:ring-red-500 outline-none`}
-                placeholder="Выберите дату"
-              />
-            </div>
-          )}
-        </div>
+                  {/* Quantity controls - POS style */}
+                  <div className="flex items-center gap-0.5">
+                    <button
+                      onClick={() => updateQuantity(item.productId, item.quantity - 1)}
+                      className={`w-7 h-7 flex items-center justify-center rounded-lg text-base font-bold transition-all
+                        ${isDark ? 'bg-slate-700/80 hover:bg-slate-600 text-slate-300 active:bg-slate-500' : 'bg-slate-200 hover:bg-slate-300 text-slate-700'}`}
+                    >−</button>
+                    <div className={`flex items-center ${isDark ? 'bg-slate-800/60' : 'bg-slate-50'} rounded-lg px-1`}>
+                      <input
+                        type="number"
+                        className={`w-10 bg-transparent text-center font-mono text-sm font-bold ${t.text} outline-none focus:ring-0`}
+                        value={item.quantity}
+                        onChange={e => updateQuantity(item.productId, Number(e.target.value))}
+                      />
+                      <span className={`text-[10px] ${t.textMuted} pr-0.5`}>{item.unit}</span>
+                    </div>
+                    <button
+                      onClick={() => updateQuantity(item.productId, item.quantity + 1)}
+                      className={`w-7 h-7 flex items-center justify-center rounded-lg text-base font-bold transition-all
+                        ${isDark ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 active:bg-amber-500/40' : 'bg-blue-100 hover:bg-blue-200 text-blue-700'}`}
+                    >+</button>
+                  </div>
 
-        {/* Discount Section */}
+                  {/* Line total */}
+                  <span className={`font-mono font-bold text-sm min-w-[80px] text-right ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>
+                    {toUZS(item.total).toLocaleString()}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Bottom Panel - Fixed */}
+      <div className={`${isDark ? 'bg-slate-800/60 border-t border-slate-700/60' : 'bg-slate-50 border-t border-slate-200'} flex flex-col`}>
+
+        {/* Discount Section (amount-based) */}
         {cart.length > 0 && (
-          <div className="space-y-1">
+          <div className="px-4 py-2">
             <button
               onClick={() => setShowDiscountPanel(!showDiscountPanel)}
-              className={`w-full flex items-center justify-between px-2 py-1.5 rounded-lg border transition-all ${discountPercent > 0
-                ? 'bg-orange-500/20 border-orange-500 text-orange-400'
-                : (theme === 'light' ? 'bg-slate-100 border-slate-200 text-slate-600 hover:bg-slate-200' : 'bg-slate-800 border-slate-600 text-slate-400 hover:bg-slate-700')
-                }`}
+              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl border transition-all ${discountAmount > 0
+                ? (isDark ? 'bg-orange-500/15 border-orange-500/40 text-orange-400' : 'bg-orange-50 border-orange-300 text-orange-600')
+                : (isDark ? 'bg-slate-800/40 border-slate-700/60 text-slate-400 hover:bg-slate-700/60 hover:text-slate-200' : 'bg-slate-100 border-slate-200 text-slate-600 hover:bg-slate-200')
+              }`}
             >
-              <span className="flex items-center gap-2 text-xs font-medium">
-                <Tag size={14} />
-                {discountPercent > 0
-                  ? `Скидка: ${discountPercent.toFixed(1)}% (-${discountAmountUZS.toLocaleString()} сўм)`
+              <span className="flex items-center gap-2 text-xs font-semibold">
+                <Tag size={13} />
+                {discountAmount > 0
+                  ? `Скидка: ${discountCurrency === 'UZS' ? `${discountAmount.toLocaleString()} сўм` : `$${discountAmount.toFixed(2)}`} (${discountPercent.toFixed(1)}%)`
                   : 'Добавить скидку'
                 }
               </span>
-              <Percent size={14} />
+              <Tag size={13} />
             </button>
 
             {showDiscountPanel && (
-              <div className={`${theme === 'light' ? 'bg-slate-50 border-slate-200' : 'bg-slate-800/50 border-slate-700'} rounded-xl p-3 space-y-3 border animate-fade-in`}>
-                {/* Quick Discount Buttons */}
+              <div className={`${isDark ? 'bg-slate-800/40 border-slate-700/60' : 'bg-slate-50 border-slate-200'} rounded-xl p-3 space-y-3 border animate-fade-in mt-2`}>
+                {/* Currency Toggle */}
                 <div className="space-y-1">
-                  <label className={`text-[10px] font-medium ${t.textMuted} uppercase`}>Быстрая скидка %</label>
-                  <div className="flex gap-1.5 flex-wrap">
-                    {quickDiscounts.map(d => (
-                      <button
-                        key={d}
-                        onClick={() => onDiscountChange?.(discountPercent === d ? 0 : d)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${Math.abs(discountPercent - d) < 0.1
-                          ? 'bg-orange-500 text-white'
-                          : (theme === 'light' ? 'bg-slate-200 text-slate-600 hover:bg-slate-300' : 'bg-slate-700 text-slate-300 hover:bg-slate-600')
-                          }`}
-                      >
-                        {d}%
-                      </button>
-                    ))}
+                  <label className={`text-[10px] font-bold ${t.textMuted} uppercase tracking-wider`}>Валюта скидки</label>
+                  <div className="flex gap-1.5">
                     <button
-                      onClick={() => onDiscountChange?.(0)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold ${theme === 'light' ? 'bg-slate-200 text-red-500 hover:bg-red-100' : 'bg-slate-700 text-red-400 hover:bg-red-500/20'} transition-all`}
+                      onClick={() => onDiscountCurrencyChange?.('USD')}
+                      className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-all ${discountCurrency === 'USD'
+                        ? (isDark ? 'bg-blue-500/20 border-blue-500 text-blue-400' : 'bg-blue-50 border-blue-400 text-blue-600')
+                        : (isDark ? 'bg-slate-800 border-slate-600 text-slate-400' : 'bg-slate-100 border-slate-200 text-slate-600')}`}
                     >
-                      ✕
+                      USD ($)
+                    </button>
+                    <button
+                      onClick={() => onDiscountCurrencyChange?.('UZS')}
+                      className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-all ${discountCurrency === 'UZS'
+                        ? (isDark ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : 'bg-emerald-50 border-emerald-400 text-emerald-600')
+                        : (isDark ? 'bg-slate-800 border-slate-600 text-slate-400' : 'bg-slate-100 border-slate-200 text-slate-600')}`}
+                    >
+                      UZS (сўм)
                     </button>
                   </div>
                 </div>
 
-                {/* Round To Options */}
+                {/* Discount Amount Input */}
                 <div className="space-y-1">
-                  <label className={`text-[10px] font-medium ${t.textMuted} uppercase`}>Округлить до (UZS)</label>
-                  <div className="flex gap-1.5 flex-wrap">
-                    {getRoundOptions().map(val => (
-                      <button
-                        key={val}
-                        onClick={() => handleRoundTo(val)}
-                        className={`px-2 py-1.5 rounded-lg text-xs font-mono font-bold ${theme === 'light' ? 'bg-slate-200 text-slate-600 hover:bg-blue-100 hover:text-blue-600' : 'bg-slate-700 text-slate-300 hover:bg-blue-500/20 hover:text-blue-400'} transition-all`}
-                      >
-                        {val.toLocaleString()}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Custom Value Input */}
-                <div className="space-y-1">
-                  <label className={`text-[10px] font-medium ${t.textMuted} uppercase`}>Своя сумма (UZS)</label>
+                  <label className={`text-[10px] font-bold ${t.textMuted} uppercase tracking-wider`}>
+                    Сумма скидки ({discountCurrency === 'UZS' ? 'сўм' : '$'})
+                  </label>
                   <div className="flex gap-2">
                     <input
                       type="number"
-                      placeholder="Введите сумму..."
-                      className={`flex-1 ${t.bgInput} border ${t.borderInput} rounded-lg px-3 py-1.5 ${t.text} text-sm ${t.focusRing} outline-none`}
-                      value={customRoundedValue}
-                      onChange={(e) => setCustomRoundedValue(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && handleCustomRound()}
+                      placeholder={discountCurrency === 'UZS' ? 'Например: 50000' : 'Например: 5'}
+                      className={`flex-1 ${isDark ? 'bg-slate-800/80 border-slate-700 text-white' : `${t.bgInput} border-slate-200`} border rounded-lg px-3 py-2 text-sm font-mono outline-none focus:ring-2 ${isDark ? 'focus:ring-orange-500/30' : 'focus:ring-orange-400/30'}`}
+                      value={discountAmount || ''}
+                      onChange={(e) => onDiscountAmountChange?.(Number(e.target.value) || 0)}
                     />
-                    <button
-                      onClick={handleCustomRound}
-                      disabled={!customRoundedValue}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:text-slate-500 text-white transition-all`}
-                    >
-                      OK
-                    </button>
+                    {discountAmount > 0 && (
+                      <button
+                        onClick={() => onDiscountAmountChange?.(0)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold ${isDark ? 'bg-slate-700 text-red-400 hover:bg-red-500/20' : 'bg-slate-200 text-red-500 hover:bg-red-100'} transition-all`}
+                      >
+                        ✕
+                      </button>
+                    )}
                   </div>
                 </div>
+
+                {/* Quick discount amounts */}
+                <div className="space-y-1">
+                  <label className={`text-[10px] font-bold ${t.textMuted} uppercase tracking-wider`}>Быстрая скидка</label>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {(discountCurrency === 'UZS'
+                      ? [5000, 10000, 50000, 100000, 500000]
+                      : [1, 2, 5, 10, 20]
+                    ).map(val => (
+                      <button
+                        key={val}
+                        onClick={() => onDiscountAmountChange?.(discountAmount === val ? 0 : val)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold font-mono transition-all ${discountAmount === val
+                          ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/30'
+                          : (isDark ? 'bg-slate-700 text-slate-300 hover:bg-slate-600' : 'bg-slate-200 text-slate-600 hover:bg-slate-300')
+                        }`}
+                      >
+                        {discountCurrency === 'UZS' ? val.toLocaleString() : `$${val}`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Info line */}
+                {discountAmount > 0 && (
+                  <div className={`text-[11px] font-mono ${isDark ? 'text-slate-500' : 'text-slate-400'} pt-1`}>
+                    ≈ {discountCurrency === 'UZS'
+                      ? `$${discountAmountUSD.toFixed(2)}`
+                      : `${discountAmountUZS.toLocaleString()} сўм`
+                    } ({discountPercent.toFixed(1)}%)
+                  </div>
+                )}
               </div>
             )}
           </div>
         )}
 
-        <div className={`flex flex-col gap-1 pt-2 border-t ${t.border} text-xs`}>
-          <div className="flex justify-between items-center">
+        {/* Totals */}
+        <div className={`px-4 py-3 ${isDark ? 'bg-slate-900/50 border-t border-slate-700/40' : 'bg-white border-t border-slate-200'} space-y-1.5`}>
+          <div className="flex justify-between items-center text-xs">
             <span className={t.textMuted}>Подытог (без НДС):</span>
-            <span className={`font-mono ${t.textSecondary}`}>${subtotalUSD.toFixed(2)}</span>
+            <span className={`font-mono font-medium ${t.textSecondary}`}>${subtotalUSD.toFixed(2)}</span>
           </div>
-          <div className="flex justify-between items-center text-amber-400">
-            <span className="">НДС ({settings.vatRate}%):</span>
-            <span className="font-mono">+${vatAmountUSD.toFixed(2)}</span>
+          <div className={`flex justify-between items-center text-xs ${isDark ? 'text-amber-400' : 'text-amber-600'}`}>
+            <span>НДС ({settings.vatRate}%):</span>
+            <span className="font-mono font-medium">+${vatAmountUSD.toFixed(2)}</span>
           </div>
-          {discountPercent > 0 && (
-            <div className="flex justify-between items-center text-orange-400">
-              <span className="">Скидка ({discountPercent.toFixed(1)}%):</span>
-              <span className="font-mono">-${discountAmountUSD.toFixed(2)}</span>
+          {discountAmount > 0 && (
+            <div className="flex justify-between items-center text-xs text-orange-400">
+              <span>Скидка:</span>
+              <span className="font-mono font-medium">−${discountAmountUSD.toFixed(2)} ({discountPercent.toFixed(1)}%)</span>
             </div>
           )}
-          {discountPercent > 0 && (
+          {discountAmount > 0 && (
             <div className={`flex justify-between items-center ${t.textMuted} text-[10px]`}>
-              <span className="">Было:</span>
+              <span>Было:</span>
               <span className="font-mono line-through">${originalTotalUSD.toFixed(2)} / {toUZS(originalTotalUSD).toLocaleString()} сўм</span>
             </div>
           )}
-          <div className={`flex justify-between items-center pt-1 border-t ${t.border}`}>
-            <span className={`${t.text} font-bold`}>ИТОГО (USD):</span>
-            <span className={`font-mono ${t.text} font-bold`}>${totalAmountUSD.toFixed(2)}</span>
+
+          {/* Divider */}
+          <div className={`border-t ${isDark ? 'border-slate-700/60' : 'border-slate-200'} my-1`} />
+
+          {/* ИТОГО */}
+          <div className="flex justify-between items-center">
+            <span className={`font-bold text-sm ${t.text}`}>ИТОГО:</span>
+            <span className={`font-mono font-extrabold text-2xl ${discountAmount > 0 ? 'text-orange-400' : (isDark ? 'text-emerald-400' : 'text-emerald-600')}`}>
+              {totalAmountUZS.toLocaleString()} <span className="text-sm font-bold opacity-70">сўм</span>
+            </span>
           </div>
-          <div className={`flex justify-between items-center pt-0.5`}>
-            <span className={`${t.text} font-bold`}>К оплате (UZS):</span>
-            <span className={`text-xl font-bold font-mono ${discountPercent > 0 ? 'text-orange-400' : 'text-emerald-400'}`}>{totalAmountUZS.toLocaleString()}</span>
+          <div className="flex justify-between items-center">
+            <span className={`text-xs ${t.textMuted}`}>В долларах:</span>
+            <span className={`font-mono font-bold text-sm ${t.text}`}>${totalAmountUSD.toFixed(2)}</span>
           </div>
         </div>
 
-        <button
-          onClick={onCompleteOrder}
-          disabled={cart.length === 0 || !customerName}
-          className={`w-full ${theme === 'light' ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-emerald-600 hover:bg-emerald-500'} disabled:bg-slate-700 disabled:cursor-not-allowed text-white py-2.5 rounded-xl font-bold text-base flex items-center justify-center gap-2 transition-all shadow-lg shadow-emerald-600/20`}
-        >
-          <CheckCircle size={18} />
-          {paymentMethod === 'debt' ? 'Оформить в долг' : 'Оформить и оплатить'}
-        </button>
+        {/* Action Button */}
+        <div className="px-4 pb-3 pt-1 flex gap-2">
+          <button
+            onClick={onCompleteOrder}
+            disabled={cart.length === 0 || !customerName}
+            className={`flex-1 ${isDark
+              ? 'bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 disabled:from-slate-700 disabled:to-slate-700'
+              : 'bg-emerald-500 hover:bg-emerald-600 disabled:bg-slate-300'} disabled:cursor-not-allowed text-white py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all shadow-lg ${cart.length > 0 && customerName ? (isDark ? 'shadow-emerald-600/30' : 'shadow-emerald-500/30') : ''}`}
+          >
+            <CheckCircle size={18} />
+            Оформить {cart.length > 0 && totalAmountUZS > 0 ? `${totalAmountUZS.toLocaleString()} сўм` : ''}
+          </button>
+        </div>
 
         {/* Receipt Buttons */}
         {lastOrder && (
-          <div className="flex gap-2 mt-2">
+          <div className="flex gap-2 px-4 pb-3">
             <button
               onClick={() => onShowReceipt(lastOrder)}
-              className={`flex-1 ${theme === 'light' ? 'bg-blue-500 hover:bg-blue-600' : 'bg-blue-600 hover:bg-blue-500'} text-white py-2 rounded-xl font-medium text-sm flex items-center justify-center gap-2 transition-all shadow-lg shadow-blue-600/20`}
+              className={`flex-1 ${isDark ? 'bg-blue-600 hover:bg-blue-500' : 'bg-blue-500 hover:bg-blue-600'} text-white py-2 rounded-xl font-medium text-xs flex items-center justify-center gap-1.5 transition-all`}
             >
-              <FileText size={16} />
-              Просмотр чека
+              <FileText size={14} /> Чек
             </button>
             <button
               onClick={() => onPrintInvoice(lastOrder)}
-              className={`flex-1 ${theme === 'light' ? 'bg-indigo-500 hover:bg-indigo-600' : 'bg-indigo-600 hover:bg-indigo-500'} text-white py-2 rounded-xl font-medium text-sm flex items-center justify-center gap-2 transition-all shadow-lg shadow-indigo-600/20`}
+              className={`flex-1 ${isDark ? 'bg-indigo-600 hover:bg-indigo-500' : 'bg-indigo-500 hover:bg-indigo-600'} text-white py-2 rounded-xl font-medium text-xs flex items-center justify-center gap-1.5 transition-all`}
             >
-              <FileText size={16} />
-              Счет
+              <FileText size={14} /> Счёт
             </button>
             <button
               onClick={() => onPrintWaybill(lastOrder)}
-              className={`flex-1 ${theme === 'light' ? 'bg-purple-500 hover:bg-purple-600' : 'bg-purple-600 hover:bg-purple-500'} text-white py-2 rounded-xl font-medium text-sm flex items-center justify-center gap-2 transition-all shadow-lg shadow-purple-600/20`}
+              className={`flex-1 ${isDark ? 'bg-purple-600 hover:bg-purple-500' : 'bg-purple-500 hover:bg-purple-600'} text-white py-2 rounded-xl font-medium text-xs flex items-center justify-center gap-1.5 transition-all`}
             >
-              <FileText size={16} />
-              Накладная
+              <FileText size={14} /> Накладная
             </button>
           </div>
         )}
@@ -526,7 +467,6 @@ export const CartPanel: React.FC<CartPanelProps> = ({
     </div>
   );
 };
-
 
 
 
