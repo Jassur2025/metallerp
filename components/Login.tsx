@@ -57,7 +57,7 @@ export const Login: React.FC = () => {
                 </div>
 
                 <div className="mt-8 text-center text-xs text-slate-500">
-                    <p>© 2024–2025 MetalMaster. Все права защищены.</p>
+                    <p>© 2024–2026 MetalMaster. Все права защищены.</p>
                 </div>
             </div>
         </div>

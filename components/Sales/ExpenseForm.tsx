@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileText } from 'lucide-react';
+import { ArrowDownCircle } from 'lucide-react';
 import { ExpenseCategory, Employee } from '../../types';
 import { useTheme, getThemeClasses } from '../../contexts/ThemeContext';
 
@@ -59,12 +59,22 @@ export const ExpenseForm: React.FC<ExpenseFormProps> = ({
   // Check if selected category is salary related
   const isSalaryCategory = expenseCategory === 'Зарплата' || expenseCategory === 'Аванс сотрудникам' || expenseCategory.toLowerCase().includes('зарплата') || expenseCategory.toLowerCase().includes('аванс');
 
+  const isDark = theme !== 'light';
+
   return (
-    <div className={`flex-1 ${t.bgCard} border ${t.border} rounded-2xl p-6 overflow-y-auto`}>
-      <h3 className={`text-xl font-bold ${t.text} mb-6 flex items-center gap-2`}>
-        <FileText className="text-red-500" /> Оформление Расхода
-      </h3>
-      <div className="space-y-6 max-w-lg">
+    <div className={`flex-1 ${t.bgCard} border ${t.border} rounded-2xl overflow-y-auto`}>
+      {/* Header */}
+      <div className={`px-5 py-4 border-b ${t.border} flex items-center gap-3`}>
+        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isDark ? 'bg-red-500/15' : 'bg-red-50'}`}>
+          <ArrowDownCircle size={20} className="text-red-500" />
+        </div>
+        <div>
+          <h3 className={`text-base font-bold ${t.text}`}>Оформление расхода</h3>
+          <p className={`text-xs ${t.textMuted}`}>Укажите сумму, источник и категорию</p>
+        </div>
+      </div>
+      <div className="p-5">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 max-w-2xl">
         <div>
           <label className={`block text-sm font-medium ${t.textMuted} mb-2`}>Описание расхода</label>
           <input
@@ -236,15 +246,17 @@ export const ExpenseForm: React.FC<ExpenseFormProps> = ({
 
         <button
           onClick={onSubmit}
-          disabled={isSubmitting}
-          className={`w-full py-4 rounded-xl font-bold text-lg shadow-lg transition-all mt-4 ${
-            isSubmitting
-              ? 'bg-gray-500 text-gray-300 cursor-not-allowed shadow-none'
-              : 'bg-red-600 hover:bg-red-500 text-white shadow-red-600/20'
-          }`}
+          disabled={isSubmitting || !expenseAmount || !expenseCategory}
+          className={`w-full py-3.5 rounded-xl font-bold text-sm shadow-lg transition-all flex items-center justify-center gap-2 lg:col-span-2
+            ${isSubmitting || !expenseAmount || !expenseCategory
+              ? `${isDark ? 'bg-slate-800 border border-slate-700 text-slate-500' : 'bg-slate-100 border border-slate-200 text-slate-400'} cursor-not-allowed shadow-none`
+              : 'bg-red-600 hover:bg-red-500 active:bg-red-700 text-white shadow-red-600/20'
+            }`}
         >
-          {isSubmitting ? 'Сохранение...' : 'Добавить Расход'}
+          <ArrowDownCircle size={17} />
+          {isSubmitting ? 'Сохранение...' : 'Записать расход'}
         </button>
+      </div>
       </div>
     </div>
   );

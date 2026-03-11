@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Order, Product, Transaction } from '../types';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
-import { Table, Search, Download, Filter, Calendar, User, ShoppingCart, Package, ChevronDown, ChevronUp } from 'lucide-react';
+import { Table, Search, Download, Filter, Calendar, User, ShoppingCart, Package, ChevronDown, ChevronUp, Scale } from 'lucide-react';
 
 interface SalesStatisticsProps {
   orders: Order[];
@@ -24,6 +24,7 @@ interface SalesRow {
   paymentStatus: string;
   paymentCurrency: string;
   totalAmountUZS: number;
+  weightKg: number; // Вес позиции в кг
 }
 
 export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, products, transactions }) => {
@@ -57,21 +58,31 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
         const product = products.find(p => p.id === item.productId);
         const dimensions = product?.dimensions || '-';
 
+        // Calculate weight: if unit is tons, convert directly; else use weightPerMeter
+        const qty = safeNumber(item.quantity);
+        let weightKg = 0;
+        if (item.unit === 'т') {
+          weightKg = qty * 1000;
+        } else if (product?.weightPerMeter) {
+          weightKg = qty * product.weightPerMeter;
+        }
+
         rows.push({
           orderId: order.id,
           date: order.date,
           customerName: order.customerName || 'Неизвестный',
-          sellerName: order.sellerName || 'Не указан',
+          sellerName: (order.sellerName && !order.sellerName.startsWith('[') && !order.sellerName.startsWith('{')) ? order.sellerName : 'Не указан',
           dimensions: dimensions,
           productName: item.productName,
-          quantity: safeNumber(item.quantity),
+          quantity: qty,
           unit: item.unit,
           priceAtSale: safeNumber(item.priceAtSale),
           total: safeNumber(item.total),
           paymentMethod: order.paymentMethod,
           paymentStatus: order.paymentStatus,
           paymentCurrency: order.paymentCurrency || (order.paymentMethod === 'cash' ? 'USD' : (order.paymentMethod === 'debt' ? 'USD' : 'UZS')),
-          totalAmountUZS: safeNumber(order.totalAmountUZS)
+          totalAmountUZS: safeNumber(order.totalAmountUZS),
+          weightKg
         });
       });
     });
@@ -156,7 +167,10 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
   // Statistics
   const totalSales = filteredRows.reduce((sum, r) => sum + r.total, 0);
   const totalQuantity = filteredRows.reduce((sum, r) => sum + r.quantity, 0);
+  const totalWeightKg = filteredRows.reduce((sum, r) => sum + r.weightKg, 0);
   const uniqueOrders = new Set(filteredRows.map(r => r.orderId)).size;
+
+  const fmtWeight = (kg: number) => kg >= 1000 ? `${(kg / 1000).toFixed(2)} т` : `${kg.toFixed(0)} кг`;
 
   // Format date
   const formatDate = (dateString: string) => {
@@ -189,7 +203,7 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
 
   // Export to CSV
   const exportToCSV = () => {
-    const headers = ['ID заказа', 'Дата', 'Клиент', 'Продавец', 'Размер', 'Товар', 'Количество', 'Ед.', 'Цена', 'Сумма', 'Валюта', 'Метод оплаты', 'Статус оплаты'];
+    const headers = ['ID заказа', 'Дата', 'Клиент', 'Продавец', 'Размер', 'Товар', 'Количество', 'Ед.', 'Вес (кг)', 'Цена', 'Сумма', 'Валюта', 'Метод оплаты', 'Статус оплаты'];
     const csvRows = [
       headers.join(','),
       ...filteredRows.map(row => [
@@ -201,6 +215,7 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
         `"${row.productName}"`,
         safeNumber(row.quantity),
         row.unit,
+        row.weightKg.toFixed(1),
         safeNumber(row.priceAtSale).toFixed(2),
         safeNumber(row.total).toFixed(2),
         formatCurrency(row),
@@ -265,7 +280,7 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
       </div>
 
       {/* Statistics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className={`${t.bgCard} rounded-xl p-4 border ${t.border}`}>
           <div className="flex items-center justify-between">
             <div>
@@ -291,6 +306,15 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
               <p className="text-2xl font-bold text-purple-500">{uniqueOrders}</p>
             </div>
             <Calendar className="text-purple-500" size={32} />
+          </div>
+        </div>
+        <div className={`${t.bgCard} rounded-xl p-4 border ${t.border}`}>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className={`text-xs ${t.textMuted} uppercase mb-1`}>Общий вес продаж</p>
+              <p className="text-2xl font-bold text-blue-500">{fmtWeight(totalWeightKg)}</p>
+            </div>
+            <Scale className="text-blue-500" size={32} />
           </div>
         </div>
       </div>
@@ -437,6 +461,7 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
                   </div>
                 </th>
                 <th className={`px-4 py-3 text-right text-xs font-medium ${t.textMuted} uppercase`}>Кол-во</th>
+                <th className={`px-4 py-3 text-right text-xs font-medium text-blue-500 uppercase`}>Вес</th>
                 <th className={`px-4 py-3 text-right text-xs font-medium ${t.textMuted} uppercase`}>Цена</th>
                 <th
                   className={`px-4 py-3 text-right text-xs font-medium ${t.textMuted} uppercase cursor-pointer ${theme === 'dark' ? 'hover:bg-slate-700/50' : 'hover:bg-slate-100'} transition-colors`}
@@ -455,7 +480,7 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
             <tbody className={`divide-y ${t.divide}`}>
               {filteredRows.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className={`px-4 py-12 text-center ${t.textMuted}`}>
+                  <td colSpan={12} className={`px-4 py-12 text-center ${t.textMuted}`}>
                     <Package className="w-12 h-12 mx-auto mb-3 opacity-20" />
                     <p>Нет данных для отображения</p>
                   </td>
@@ -486,6 +511,9 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
                         </td>
                         <td className={`px-4 py-3 text-sm text-right ${t.textMuted} font-mono`}>
                           {safeNumber(row.quantity)} <span className={`text-xs ${t.textMuted}`}>{row.unit}</span>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-right font-mono text-blue-500">
+                          {row.weightKg > 0 ? fmtWeight(row.weightKg) : <span className={t.textMuted}>—</span>}
                         </td>
                         <td className={`px-4 py-3 text-sm text-right ${t.textMuted} font-mono`}>
                           ${safeNumber(row.priceAtSale).toFixed(2)}
@@ -532,7 +560,7 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
                       {/* Mixed details row */}
                       {isExpanded && isMixed && (
                         <tr className={`${theme === 'dark' ? 'bg-slate-800/50' : 'bg-slate-50'}`}>
-                          <td colSpan={11} className="px-4 py-3">
+                          <td colSpan={12} className="px-4 py-3">
                             <div className={`${theme === 'dark' ? 'bg-slate-900/50' : 'bg-slate-100'} rounded-lg p-3 border ${t.border} ml-10 max-w-2xl`}>
                               <div className={`text-xs font-bold ${t.textMuted} mb-2 uppercase`}>Детализация оплаты (ID: {row.orderId})</div>
                               {orderTrx.length === 0 ? (
@@ -564,10 +592,13 @@ export const SalesStatistics: React.FC<SalesStatisticsProps> = ({ orders, produc
                   <td colSpan={7} className={`px-4 py-3 text-right text-sm font-medium ${t.textMuted}`}>
                     Итого:
                   </td>
+                  <td className="px-4 py-3 text-right font-mono font-bold text-blue-500">
+                    {fmtWeight(totalWeightKg)}
+                  </td>
                   <td className="px-4 py-3 text-right font-mono font-bold text-lg text-emerald-500">
                     ${totalSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </td>
-                  <td colSpan={2}></td>
+                  <td colSpan={3}></td>
                 </tr>
               </tfoot>
             )}

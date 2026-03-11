@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { ChevronDown, ChevronRight, History, Wallet, Edit, Save, X, Trash2, Warehouse } from 'lucide-react';
+import { ChevronDown, ChevronRight, History, Wallet, Edit, Save, X, Trash2, Warehouse, DollarSign, TrendingDown, Clock } from 'lucide-react';
 import type { Product, Purchase, Transaction, PurchaseItem, WarehouseType } from '../../types';
 import { WarehouseLabels, Unit } from '../../types';
 import { useTheme } from '../../contexts/ThemeContext';
 import { getThemeClasses } from '../../contexts/ThemeContext';
+import { useConfirm } from '../ConfirmDialog';
 
 interface HistoryTabProps {
   purchases: Purchase[];
@@ -30,8 +31,10 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({
 }) => {
   const { theme } = useTheme();
   const t = getThemeClasses(theme);
+  const isDark = theme !== 'light';
   const totalPaid = purchases.reduce((sum, p) => sum + (p.amountPaidUSD ?? p.amountPaid ?? 0), 0);
   const totalDebt = purchases.reduce((sum, p) => sum + (Math.max(0, (p.totalInvoiceAmount || 0) - (p.amountPaidUSD ?? p.amountPaid ?? 0))), 0);
+  const totalInvoices = purchases.reduce((sum, p) => sum + (p.totalInvoiceAmount || 0), 0);
 
   // Editing state
   const [editingItem, setEditingItem] = useState<{ purchaseId: string; itemIndex: number } | null>(null);
@@ -65,23 +68,58 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({
     setEditingItem(null);
   };
 
-  const handleDeleteItem = (purchaseId: string, itemIndex: number) => {
+  const { confirm: confirmDialog } = useConfirm();
+
+  const handleDeleteItem = async (purchaseId: string, itemIndex: number) => {
     if (!onDeletePurchaseItem) return;
-    if (confirm('Удалить эту позицию из закупки?')) {
+    if (await confirmDialog({ title: 'Удалить позицию?', message: 'Удалить эту позицию из закупки?', variant: 'danger', confirmText: 'Удалить' })) {
       onDeletePurchaseItem(purchaseId, itemIndex);
     }
   };
 
   return (
-    <div className={`flex-1 ${t.bgCard} rounded-xl border ${t.border} shadow-lg overflow-hidden flex flex-col`}>
-      <div className={`p-4 border-b ${t.border} flex justify-between items-center ${t.bg}`}>
-        <h3 className={`font-bold ${t.text} flex items-center gap-2`}>
-          <History size={18} className={t.textMuted} /> История закупок и Долги
-        </h3>
+    <div className={`flex-1 ${isDark ? 'bg-gradient-to-b from-slate-800/90 to-slate-900/90' : 'bg-white'} rounded-2xl border ${t.border} shadow-lg overflow-hidden flex flex-col`}>
+      {/* Header with Summary Cards */}
+      <div className={`px-5 py-4 border-b ${t.border} ${isDark ? 'bg-slate-800/60' : 'bg-slate-50'}`}>
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-slate-500/10">
+              <History size={16} className={t.textMuted} />
+            </div>
+            <h3 className={`font-bold ${t.text}`}>История закупок и Долги</h3>
+          </div>
+          <div className={`${isDark ? 'bg-slate-700/50 border-slate-600/50' : 'bg-slate-100 border-slate-200'} px-3 py-1.5 rounded-full border`}>
+            <span className={`text-xs ${t.textMuted} font-semibold`}>{purchases.length} закупок</span>
+          </div>
+        </div>
+        {/* Summary Cards */}
+        <div className="grid grid-cols-3 gap-3">
+          <div className={`p-3 rounded-xl ${isDark ? 'bg-slate-800/60 border-slate-700/60' : 'bg-white border-slate-200'} border`}>
+            <div className="flex items-center gap-2 mb-1">
+              <DollarSign size={13} className={t.textMuted} />
+              <span className={`text-[10px] ${t.textMuted} uppercase font-semibold tracking-wider`}>Всего закупок</span>
+            </div>
+            <p className={`text-lg font-mono font-bold ${t.text}`}>${totalInvoices.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+          </div>
+          <div className={`p-3 rounded-xl ${isDark ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-emerald-50 border-emerald-200'} border`}>
+            <div className="flex items-center gap-2 mb-1">
+              <Wallet size={13} className="text-emerald-500" />
+              <span className="text-[10px] text-emerald-500 uppercase font-semibold tracking-wider">Оплачено</span>
+            </div>
+            <p className={`text-lg font-mono font-bold ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>${totalPaid.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+          </div>
+          <div className={`p-3 rounded-xl ${isDark ? 'bg-red-500/5 border-red-500/20' : 'bg-red-50 border-red-200'} border`}>
+            <div className="flex items-center gap-2 mb-1">
+              <TrendingDown size={13} className="text-red-500" />
+              <span className="text-[10px] text-red-500 uppercase font-semibold tracking-wider">Общий долг</span>
+            </div>
+            <p className={`text-lg font-mono font-bold ${isDark ? 'text-red-400' : 'text-red-600'}`}>${totalDebt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+          </div>
+        </div>
       </div>
       <div className="flex-1 overflow-y-auto">
         <table className="w-full text-left text-sm">
-          <thead className={`${t.bg} text-xs uppercase ${t.textMuted} font-medium sticky top-0`}>
+          <thead className={`${isDark ? 'bg-slate-800/40' : 'bg-slate-50'} text-xs uppercase ${t.textMuted} font-semibold sticky top-0 z-10`}>
             <tr>
               <th className="px-6 py-4">Дата</th>
               <th className="px-6 py-4">Поставщик</th>
@@ -105,7 +143,7 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({
                 return (
                   <React.Fragment key={purchase.id}>
                     <tr
-                      className={`hover:${t.bgHover} transition-colors cursor-pointer`}
+                      className={`hover:${isDark ? 'bg-white/[0.02]' : 'bg-slate-50/50'} transition-colors duration-150 cursor-pointer`}
                       onClick={() => togglePurchaseExpand(purchase.id)}
                     >
                       <td className={`px-6 py-4 ${t.textMuted}`}>
@@ -173,9 +211,9 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({
                         {debt > 0 && (
                           <button
                             onClick={() => handleOpenRepayModal(purchase)}
-                            className={`text-xs ${t.bgHover} hover:bg-emerald-600 text-white px-3 py-1.5 rounded transition-colors flex items-center gap-1 ml-auto`}
+                            className="text-xs bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white px-3.5 py-1.5 rounded-lg transition-all duration-200 flex items-center gap-1.5 ml-auto shadow-sm hover:shadow-md font-semibold"
                           >
-                            <Wallet size={14} /> Оплатить
+                            <Wallet size={13} /> Оплатить
                           </button>
                         )}
                       </td>
@@ -378,28 +416,6 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({
       </div>
 
 
-      <div className={`p-4 border-t ${t.border} ${t.bg} flex justify-end gap-8`}>
-        <div className="text-right">
-          <div className={`text-xs uppercase ${t.textMuted} font-bold mb-1`}>Всего Оплачено</div>
-          <div className={`text-xl font-mono font-bold ${theme === 'dark' ? 'text-emerald-400' : 'text-emerald-600'}`}>
-            ${totalPaid.toLocaleString()}
-          </div>
-        </div>
-        <div className="text-right">
-          <div className={`text-xs uppercase ${t.textMuted} font-bold mb-1`}>Общий Долг</div>
-          <div className={`text-xl font-mono font-bold ${theme === 'dark' ? 'text-red-400' : 'text-red-600'}`}>
-            ${totalDebt.toLocaleString()}
-          </div>
-        </div>
-      </div>
     </div >
   );
 };
-
-
-
-
-
-
-
-

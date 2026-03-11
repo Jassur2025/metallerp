@@ -150,7 +150,8 @@ export const Dashboard: React.FC<DashboardProps> = React.memo(({ products, order
     const sellerSales: Record<string, { name: string; revenue: number; orders: number }> = {};
 
     filteredOrders.forEach(order => {
-      const sellerName = order.sellerName || 'Не указан';
+      const rawSeller = order.sellerName || '';
+      const sellerName = (!rawSeller || rawSeller.startsWith('[') || rawSeller.startsWith('{')) ? 'Не указан' : rawSeller;
       if (!sellerSales[sellerName]) {
         sellerSales[sellerName] = { name: sellerName, revenue: 0, orders: 0 };
       }

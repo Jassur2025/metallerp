@@ -162,6 +162,15 @@ export const DEFAULT_EXPENSE_CATEGORIES = [
   { id: 'household', name: 'Хозяйственные затраты', pnlCategory: 'administrative' as const },
 ];
 
+export const DEFAULT_MANUFACTURERS = [
+  'INSIGHT UNION',
+  'SOFMET',
+  'TMZ (ТМЗ)',
+  'BEKABAD (Бекабад)',
+  'CHINA (Китай)',
+  'RUSSIA (Россия)',
+];
+
 // Default Settings
 export const defaultSettings: AppSettings = {
   vatRate: 12,

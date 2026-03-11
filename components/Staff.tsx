@@ -6,6 +6,7 @@ import { useCurrentEmployee } from '../contexts/CurrentEmployeeContext';
 import { Plus, Search, Edit2, Phone, Mail, Briefcase, Calendar, DollarSign, User, Shield, CheckCircle, XCircle, Trash2, Database, RefreshCw, Upload, Cloud, LayoutGrid, List } from 'lucide-react';
 import { IdGenerator } from '../utils/idGenerator';
 import { useEmployees } from '../hooks/useEmployees';
+import { useConfirm } from './ConfirmDialog';
 
 
 interface StaffProps {
@@ -126,8 +127,11 @@ export const Staff: React.FC<StaffProps> = React.memo(({ employees: sheetsEmploy
         setIsModalOpen(false);
     };
 
+    const { confirmDelete } = useConfirm();
+
     const handleDelete = async (employeeId: string) => {
-        if (!window.confirm('Вы уверены, что хотите удалить этого сотрудника?')) return;
+        const emp = employees.find(e => e.id === employeeId);
+        if (!await confirmDelete(emp?.name || 'Сотрудник')) return;
         
         // Hard delete from Firebase
         await deleteEmployee(employeeId, false);

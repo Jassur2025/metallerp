@@ -1,6 +1,7 @@
 export { ClientCard } from './ClientCard';
 export { ClientFormModal } from './ClientFormModal';
 export { ClientListView } from './ClientListView';
+export { ClientDetailView } from './ClientDetailView';
 export { RepaymentModal } from './RepaymentModal';
 export { PhoneCheckModal } from './PhoneCheckModal';
 export { RepaymentStatsView } from './RepaymentStatsView';

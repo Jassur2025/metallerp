@@ -1023,31 +1023,21 @@ export const Sales: React.FC = () => {
     }
   };
 
-  const [showBalances, setShowBalances] = useState(false);
+  const [showBalances, setShowBalances] = useState(true);
 
   // --- Render ---
   return (
     <div className="flex flex-col h-full">
       {/* Balance Toggle + Bar */}
-      <div className={`flex items-center ${theme !== 'light' ? 'bg-slate-900/80 border-b border-slate-800' : 'bg-white border-b border-slate-200'} px-4 py-1.5 gap-2`}>
-        <button
-          onClick={() => setShowBalances(!showBalances)}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-            showBalances
-              ? (theme !== 'light' ? 'bg-slate-700/60 text-slate-200' : 'bg-slate-200 text-slate-700')
-              : (theme !== 'light' ? 'bg-slate-800/60 text-slate-400 hover:text-slate-200 hover:bg-slate-700/60' : 'bg-slate-100 text-slate-500 hover:text-slate-700 hover:bg-slate-200')
-          }`}
-        >
-          {showBalances ? <EyeOff size={14} /> : <Eye size={14} />}
-          Баланс
-        </button>
-        {!showBalances && (
-          <span className={`text-[11px] font-mono ${theme !== 'light' ? 'text-slate-500' : 'text-slate-400'}`}>
-            Нажмите чтобы показать кассу
-          </span>
-        )}
+      <div className={`${theme !== 'light' ? 'bg-slate-900/80 border-b border-slate-800' : 'bg-white border-b border-slate-200'}`}>
+        <BalanceBar
+          balances={balances}
+          orders={orders}
+          debugStats={debugStats}
+          isVisible={showBalances}
+          onToggle={() => setShowBalances(!showBalances)}
+        />
       </div>
-      {showBalances && <BalanceBar balances={balances} orders={orders} debugStats={debugStats} />}
 
 
 

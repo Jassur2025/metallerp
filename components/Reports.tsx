@@ -104,7 +104,7 @@ export const Reports: React.FC<ReportsProps> = React.memo(({ orders, expenses, p
       <div className={`flex-1 overflow-auto ${t.bgMain} custom-scrollbar`}>
         {activeTab === 'pnl' && <PnL orders={orders} expenses={expenses} fixedAssets={fixedAssets} expenseCategories={settings.expenseCategories} defaultExchangeRate={settings.defaultExchangeRate} onUpdateExpense={onUpdateExpense} onDeleteExpense={onDeleteExpense} />}
         {activeTab === 'cashflow' && <CashFlow orders={orders} expenses={expenses} settings={settings} onAddExpense={onAddExpense} transactions={transactions} />}
-        {activeTab === 'sales' && <SalesAnalytics orders={orders} settings={settings} />}
+        {activeTab === 'sales' && <SalesAnalytics orders={orders} products={products} settings={settings} />}
         {activeTab === 'statistics' && <SalesStatistics orders={orders} products={products} transactions={transactions} />}
         {activeTab === 'vat' && <VatReport purchases={purchases} orders={orders} expenses={expenses} settings={settings} />}
         {activeTab === 'trialbalance' && <TrialBalance />}

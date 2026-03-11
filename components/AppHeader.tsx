@@ -1,5 +1,5 @@
 import React from 'react';
-import { Menu } from 'lucide-react';
+import { Menu, Sun, Moon } from 'lucide-react';
 import { headerTitles } from '../config/navigation';
 
 interface AppHeaderProps {
@@ -7,6 +7,7 @@ interface AppHeaderProps {
   error: string | null;
   theme?: 'light' | 'dark';
   onToggleSidebar: () => void;
+  onToggleTheme?: () => void;
 }
 
 export const AppHeader: React.FC<AppHeaderProps> = React.memo(({
@@ -14,6 +15,7 @@ export const AppHeader: React.FC<AppHeaderProps> = React.memo(({
   error,
   theme = 'dark',
   onToggleSidebar,
+  onToggleTheme,
 }) => {
   const isLight = theme === 'light';
 
@@ -42,6 +44,18 @@ export const AppHeader: React.FC<AppHeaderProps> = React.memo(({
           <div className="text-red-400 text-xs lg:text-sm bg-red-500/10 px-2 lg:px-3 py-1 rounded-full border border-red-500/20 animate-pulse hidden sm:block">
             {error}
           </div>
+        )}
+        {onToggleTheme && (
+          <button
+            onClick={onToggleTheme}
+            className={`p-2 rounded-lg transition-all duration-200 ${isLight
+              ? 'hover:bg-slate-100 text-slate-500 hover:text-slate-800'
+              : 'hover:bg-slate-700 text-slate-400 hover:text-yellow-300'
+            }`}
+            title={isLight ? 'Тёмная тема' : 'Светлая тема'}
+          >
+            {isLight ? <Moon size={20} /> : <Sun size={20} />}
+          </button>
         )}
       </div>
     </header>

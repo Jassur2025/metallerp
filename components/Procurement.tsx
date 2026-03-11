@@ -6,6 +6,7 @@ import { useToast } from '../contexts/ToastContext';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
 import { PaymentSplitModal, PaymentDistribution } from './Sales/PaymentSplitModal';
 import { CancelWorkflowModal } from './CancelWorkflowModal';
+import { useConfirm } from './ConfirmDialog';
 
 import type { ProcurementProps, ProcurementTab, ProcurementType, PaymentMethod, PaymentCurrency, Totals, Balances } from './Procurement/types';
 import { TopBar } from './Procurement/TopBar';
@@ -18,10 +19,11 @@ import { logger } from '../utils/logger';
 import { getMissingItems } from '../utils/inventoryHelpers';
 import { purchaseAtomicService } from '../services/purchaseAtomicService';
 
-export const Procurement: React.FC<ProcurementProps> = ({ products, settings, purchases, onSavePurchases, transactions, workflowOrders, onSaveWorkflowOrders, onSaveProducts, onSaveTransactions, onUpdatePurchase, balances }) => {
+export const Procurement: React.FC<ProcurementProps> = ({ products, clients, settings, purchases, onSavePurchases, transactions, workflowOrders, onSaveWorkflowOrders, onSaveProducts, onSaveTransactions, onUpdatePurchase, balances }) => {
     const toast = useToast();
     const { theme } = useTheme();
     const t = getThemeClasses(theme);
+    const { confirm: confirmDialog } = useConfirm();
     const [activeTab, setActiveTab] = useState<ProcurementTab>(() => {
         const saved = localStorage.getItem('procurement_active_tab');
         return (saved === 'workflow' || saved === 'history' || saved === 'new') ? saved : 'new';
@@ -228,6 +230,34 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, settings, pu
         setInputPrice(0);
     };
 
+    // Quick-add product from visual grid (1-click)
+    const quickAddProduct = useCallback((product: Product) => {
+        if (cart.some(i => i.productId === product.id)) {
+            toast.warning('Этот товар уже добавлен. Измените кол-во в таблице.');
+            return;
+        }
+        const rate = settings.defaultExchangeRate || DEFAULT_EXCHANGE_RATE;
+        const price = procurementType === 'local'
+            ? Math.round((product.costPrice || 0) * rate) // UZS cost
+            : (product.costPrice || product.pricePerUnit || 0); // USD cost
+
+        const vatRate = settings.vatRate || 12;
+        const newItem: PurchaseItem = {
+            productId: product.id,
+            productName: product.name,
+            dimensions: product.dimensions,
+            quantity: 1,
+            unit: product.unit,
+            invoicePrice: price,
+            invoicePriceWithoutVat: price / (1 + vatRate / 100),
+            vatAmount: price - (price / (1 + vatRate / 100)),
+            landedCost: price,
+            totalLineCost: price / rate,
+            totalLineCostUZS: price
+        };
+        setCart(prev => [...prev, newItem]);
+    }, [cart, procurementType, settings, toast]);
+
     const removeItem = useCallback((productId: string) => {
         setCart(prev => prev.filter(item => item.productId !== productId));
     }, []);
@@ -395,7 +425,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, settings, pu
             if (!balanceCheck.ok) {
                 toast.error(balanceCheck.message);
                 // Предложить записать в долг
-                const confirmDebt = window.confirm(`${balanceCheck.message}\n\nЗаписать закупку в долг поставщику?`);
+                const confirmDebt = await confirmDialog({ title: 'Недостаточно средств', message: `${balanceCheck.message}\n\nЗаписать закупку в долг поставщику?`, variant: 'warning', confirmText: 'В долг' });
                 if (confirmDebt) {
                     setPaymentMethod('debt');
                     toast.info('Закупка будет записана в долг. Нажмите "Провести" ещё раз.');
@@ -792,6 +822,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, settings, pu
                     procurementType={procurementType}
                     supplierName={supplierName}
                     setSupplierName={setSupplierName}
+                    clients={clients}
                     date={date}
                     setDate={setDate}
                     paymentMethod={paymentMethod}
@@ -809,6 +840,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, settings, pu
                     setInputPrice={setInputPrice}
                     openNewProductModal={openNewProductModal}
                     handleAddItem={handleAddItem}
+                    quickAddProduct={quickAddProduct}
                     removeItem={removeItem}
                     updateCartItemQty={updateCartItemQty}
                     updateCartItemPrice={updateCartItemPrice}

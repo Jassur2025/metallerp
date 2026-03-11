@@ -95,6 +95,17 @@ export const ProductCreateModal = React.memo<ProductCreateModalProps>(({
                                 <option value="local">Местный</option>
                             </select>
                         </div>
+                        <div>
+                            <label className="block text-sm font-medium text-slate-400 mb-1">Вес 1 метра (кг/м)</label>
+                            <input
+                                type="number"
+                                step="0.01"
+                                placeholder="9.95"
+                                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white font-mono focus:ring-2 focus:ring-emerald-500 outline-none"
+                                value={newProduct.weightPerMeter ?? ''}
+                                onChange={e => setNewProduct({ ...newProduct, weightPerMeter: e.target.value ? Number(e.target.value) : undefined })}
+                            />
+                        </div>
                     </div>
                     <button
                         onClick={() => onCreate(newProduct)}

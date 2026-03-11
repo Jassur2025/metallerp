@@ -5,9 +5,10 @@ import { Product, ProductType, Unit, WarehouseType, WarehouseLabels, AppSettings
 import { useToast } from '../contexts/ToastContext';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
 import { useCurrentEmployee } from '../contexts/CurrentEmployeeContext';
-import { Plus, Search, Trash2, DollarSign, Pencil, TrendingUp, Lock, Warehouse, Building2, Cloud, RefreshCw } from 'lucide-react';
-import { DEFAULT_EXCHANGE_RATE } from '../constants';
+import { Plus, Search, Trash2, DollarSign, Pencil, TrendingUp, Lock, Warehouse, Building2, Cloud, RefreshCw, Scale, Package, Layers } from 'lucide-react';
+import { DEFAULT_EXCHANGE_RATE, DEFAULT_MANUFACTURERS } from '../constants';
 import { IdGenerator } from '../utils/idGenerator';
+import { useConfirm } from './ConfirmDialog';
 
 
 interface InventoryProps {
@@ -21,9 +22,11 @@ export const Inventory: React.FC<InventoryProps> = ({ products, onSaveProducts, 
   const toast = useToast();
   const { theme } = useTheme();
   const t = getThemeClasses(theme);
+  const isDark = theme !== 'light';
   const { can, employee: ctxEmployee } = useCurrentEmployee();
   const currentEmployee = propEmployee ?? ctxEmployee;
   const canSeeCost = can('canViewCostPrice');
+  const { confirmDelete } = useConfirm();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -53,21 +56,22 @@ export const Inventory: React.FC<InventoryProps> = ({ products, onSaveProducts, 
   const [editingId, setEditingId] = useState<string | null>(null);
 
   // Product Form State
+  const manufacturers = settings?.manufacturers || DEFAULT_MANUFACTURERS;
   const [formData, setFormData] = useState<Partial<Product>>({
     type: ProductType.PIPE,
     unit: Unit.METER,
     quantity: 0,
     pricePerUnit: 0,
     costPrice: 0,
-    manufacturer: 'INSIGHT UNION'
+    manufacturer: manufacturers[0] || ''
   });
 
-  const handleDelete = (id: string) => {
-    if (confirm('Вы уверены, что хотите удалить этот товар?')) {
-      const updatedProducts = products.filter(p => p.id !== id);
-      if (onSaveProducts) {
-        onSaveProducts(updatedProducts);
-      }
+  const handleDelete = async (id: string) => {
+    const product = products.find(p => p.id === id);
+    if (!await confirmDelete(product?.name || 'Товар')) return;
+    const updatedProducts = products.filter(p => p.id !== id);
+    if (onSaveProducts) {
+      onSaveProducts(updatedProducts);
     }
   };
 
@@ -82,7 +86,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, onSaveProducts, 
       name: '',
       dimensions: '',
       steelGrade: '',
-      manufacturer: 'INSIGHT UNION',
+      manufacturer: manufacturers[0] || '',
     });
     setShowAddModal(true);
   };
@@ -113,6 +117,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, onSaveProducts, 
             unit: formData.unit as Unit,
             pricePerUnit: Number(formData.pricePerUnit) || 0,
             costPrice: Number(formData.costPrice) || 0,
+            weightPerMeter: formData.weightPerMeter || undefined,
           };
         }
         return p;
@@ -129,7 +134,8 @@ export const Inventory: React.FC<InventoryProps> = ({ products, onSaveProducts, 
         unit: formData.unit as Unit || Unit.METER,
         pricePerUnit: Number(formData.pricePerUnit) || 0,
         costPrice: Number(formData.costPrice) || 0,
-        minStockLevel: 0
+        minStockLevel: 0,
+        weightPerMeter: formData.weightPerMeter || undefined,
       };
       updatedProducts = [...products, product];
     }
@@ -205,6 +211,31 @@ export const Inventory: React.FC<InventoryProps> = ({ products, onSaveProducts, 
       totalWriteDown: ((p.costPrice || 0) - (p.pricePerUnit || 0)) * (p.quantity || 0),
       warehouse: p.warehouse
     }));
+  }, [products]);
+
+  // Category statistics for info cards
+  const categoryStats = useMemo(() => {
+    const stats: Record<string, { count: number; totalQty: number; totalWeightKg: number; unit: string }> = {};
+    for (const p of products) {
+      const key = p.type || 'Прочее';
+      if (!stats[key]) stats[key] = { count: 0, totalQty: 0, totalWeightKg: 0, unit: '' };
+      stats[key].count++;
+      stats[key].totalQty += p.quantity || 0;
+      stats[key].unit = p.unit || 'м';
+      if (p.unit === 'т') {
+        stats[key].totalWeightKg += (p.quantity || 0) * 1000;
+      } else if (p.weightPerMeter) {
+        stats[key].totalWeightKg += (p.quantity || 0) * p.weightPerMeter;
+      }
+    }
+    // Total across all
+    const totalWeightKg = products.reduce((sum, p) => {
+      if (p.unit === 'т') return sum + (p.quantity || 0) * 1000;
+      if (p.weightPerMeter) return sum + (p.quantity || 0) * p.weightPerMeter;
+      return sum;
+    }, 0);
+    const totalQty = products.reduce((sum, p) => sum + (p.quantity || 0), 0);
+    return { byType: stats, totalWeightKg, totalQty, totalCount: products.length };
   }, [products]);
 
   // Virtualizers for desktop and mobile
@@ -327,26 +358,90 @@ export const Inventory: React.FC<InventoryProps> = ({ products, onSaveProducts, 
         </div>
       )}
 
-      {(currentEmployee?.permissions?.canEditProducts !== false) && (
-        <button
-          onClick={openAddModal}
-          className={`${theme === 'light' ? 'bg-[#1A73E8] hover:bg-[#1557B0]' : 'bg-primary-600 hover:bg-primary-500'} text-white px-3 sm:px-4 py-2 rounded-lg flex items-center justify-center gap-2 transition-colors ${t.shadow} text-sm sm:text-base`}
-        >
-          <Plus size={18} /> <span className="hidden sm:inline">Добавить товар</span><span className="sm:hidden">Добавить</span>
-        </button>
-      )}
+      {/* Category Info Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+        {/* Total summary card */}
+        <div className={`${isDark ? 'bg-gradient-to-br from-slate-800 to-slate-800/80 border-slate-700' : 'bg-gradient-to-br from-white to-slate-50 border-slate-200'} rounded-xl border p-3 relative overflow-hidden`}>
+          <div className={`absolute top-2 right-2 ${isDark ? 'text-emerald-500/20' : 'text-emerald-500/10'}`}><Layers size={28} /></div>
+          <p className={`text-[10px] uppercase tracking-wider font-semibold ${t.textMuted} mb-1`}>Всего</p>
+          <p className={`text-lg font-bold ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>{categoryStats.totalCount}</p>
+          <p className={`text-[10px] ${t.textMuted}`}>товаров</p>
+        </div>
+        {/* Weight total card */}
+        <div className={`${isDark ? 'bg-gradient-to-br from-blue-900/30 to-slate-800/80 border-blue-500/20' : 'bg-gradient-to-br from-blue-50 to-white border-blue-200'} rounded-xl border p-3 relative overflow-hidden`}>
+          <div className={`absolute top-2 right-2 ${isDark ? 'text-blue-500/20' : 'text-blue-500/10'}`}><Scale size={28} /></div>
+          <p className={`text-[10px] uppercase tracking-wider font-semibold ${isDark ? 'text-blue-400' : 'text-blue-600'} mb-1`}>Общий вес</p>
+          <p className={`text-lg font-bold font-mono ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>
+            {categoryStats.totalWeightKg >= 1000 ? `${(categoryStats.totalWeightKg / 1000).toFixed(1)} т` : `${categoryStats.totalWeightKg.toFixed(0)} кг`}
+          </p>
+          {categoryStats.totalWeightKg >= 1000 && (
+            <p className={`text-[10px] ${t.textMuted}`}>{categoryStats.totalWeightKg.toFixed(0)} кг</p>
+          )}
+        </div>
+        {/* Per-type cards */}
+        {Object.entries(categoryStats.byType)
+          .sort(([,a], [,b]) => b.totalWeightKg - a.totalWeightKg || b.totalQty - a.totalQty)
+          .slice(0, 4)
+          .map(([type, s]) => {
+            const colorMap: Record<string, { cardDark: string; cardLight: string; iconDark: string; iconLight: string; labelDark: string; labelLight: string }> = {
+              'Труба': {
+                cardDark: 'bg-gradient-to-br from-blue-900/20 to-slate-800/80 border-blue-500/20',
+                cardLight: 'bg-gradient-to-br from-blue-50 to-white border-blue-200',
+                iconDark: 'text-blue-500/20', iconLight: 'text-blue-500/10',
+                labelDark: 'text-blue-400', labelLight: 'text-blue-600',
+              },
+              'Профиль': {
+                cardDark: 'bg-gradient-to-br from-emerald-900/20 to-slate-800/80 border-emerald-500/20',
+                cardLight: 'bg-gradient-to-br from-emerald-50 to-white border-emerald-200',
+                iconDark: 'text-emerald-500/20', iconLight: 'text-emerald-500/10',
+                labelDark: 'text-emerald-400', labelLight: 'text-emerald-600',
+              },
+              'Лист': {
+                cardDark: 'bg-gradient-to-br from-amber-900/20 to-slate-800/80 border-amber-500/20',
+                cardLight: 'bg-gradient-to-br from-amber-50 to-white border-amber-200',
+                iconDark: 'text-amber-500/20', iconLight: 'text-amber-500/10',
+                labelDark: 'text-amber-400', labelLight: 'text-amber-600',
+              },
+              'Балка': {
+                cardDark: 'bg-gradient-to-br from-purple-900/20 to-slate-800/80 border-purple-500/20',
+                cardLight: 'bg-gradient-to-br from-purple-50 to-white border-purple-200',
+                iconDark: 'text-purple-500/20', iconLight: 'text-purple-500/10',
+                labelDark: 'text-purple-400', labelLight: 'text-purple-600',
+              },
+            };
+            const fallback = {
+              cardDark: 'bg-gradient-to-br from-slate-800 to-slate-800/80 border-slate-600/20',
+              cardLight: 'bg-gradient-to-br from-slate-50 to-white border-slate-200',
+              iconDark: 'text-slate-500/20', iconLight: 'text-slate-500/10',
+              labelDark: 'text-slate-400', labelLight: 'text-slate-600',
+            };
+            const c = colorMap[type] || fallback;
+            return (
+              <div key={type} className={`${isDark ? c.cardDark : c.cardLight} rounded-xl border p-3 relative overflow-hidden`}>
+                <div className={`absolute top-2 right-2 ${isDark ? c.iconDark : c.iconLight}`}><Package size={24} /></div>
+                <p className={`text-[10px] uppercase tracking-wider font-semibold ${isDark ? c.labelDark : c.labelLight} mb-1`}>{type}</p>
+                <p className={`text-sm font-bold ${t.text}`}>{s.count} <span className={`text-[10px] font-normal ${t.textMuted}`}>поз.</span></p>
+                <div className="flex items-center justify-between mt-0.5">
+                  <span className={`text-[10px] font-mono ${t.textMuted}`}>{s.totalQty.toLocaleString()} {s.unit}</span>
+                  {s.totalWeightKg > 0 && (
+                    <span className={`text-[10px] font-mono font-bold ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>
+                      {s.totalWeightKg >= 1000 ? `${(s.totalWeightKg / 1000).toFixed(1)}т` : `${s.totalWeightKg.toFixed(0)}кг`}
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+      </div>
 
-
-
-
-      {/* Search + Sort */}
-      <div className="flex flex-col sm:flex-row gap-3">
+      {/* Search + Sort + Add button */}
+      <div className="flex flex-col sm:flex-row gap-2">
         <div className="relative flex-1">
-          <Search className={`absolute left-3 top-1/2 -translate-y-1/2 ${t.textMuted}`} size={20} />
+          <Search className={`absolute left-3 top-1/2 -translate-y-1/2 ${t.textMuted}`} size={18} />
           <input
             type="text"
             placeholder="Поиск по названию или размерам..."
-            className={`w-full ${t.bgCard} border ${t.borderInput} ${t.text} pl-10 pr-4 py-3 rounded-xl ${t.focusRing} focus:outline-none transition-all ${t.textPlaceholder}`}
+            className={`w-full ${t.bgCard} border ${t.borderInput} ${t.text} pl-10 pr-4 py-2.5 rounded-xl ${t.focusRing} focus:outline-none transition-all ${t.textPlaceholder} text-sm`}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
@@ -354,12 +449,20 @@ export const Inventory: React.FC<InventoryProps> = ({ products, onSaveProducts, 
         <select
           value={sortMode}
           onChange={(e) => setSortMode(e.target.value as typeof sortMode)}
-          className={`${t.bgCard} border ${t.borderInput} ${t.text} px-3 py-3 rounded-xl ${t.focusRing} focus:outline-none`}
+          className={`${t.bgCard} border ${t.borderInput} ${t.text} px-3 py-2.5 rounded-xl ${t.focusRing} focus:outline-none text-sm`}
         >
           <option value="qty_desc">Остаток: по убыванию</option>
           <option value="qty_asc">Остаток: по возрастанию</option>
           <option value="name_asc">Название: А → Я</option>
         </select>
+        {(currentEmployee?.permissions?.canEditProducts !== false) && (
+          <button
+            onClick={openAddModal}
+            className={`${isDark ? 'bg-primary-600 hover:bg-primary-500' : 'bg-[#1A73E8] hover:bg-[#1557B0]'} text-white px-4 py-2.5 rounded-xl flex items-center gap-2 transition-colors text-sm font-semibold whitespace-nowrap`}
+          >
+            <Plus size={16} /> Добавить
+          </button>
+        )}
       </div>
 
       {/* Virtualized List Container */}
@@ -367,7 +470,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, onSaveProducts, 
         {/* Virtual Table - Desktop */}
         <div className={`hidden lg:block ${t.bgCard} rounded-xl border ${t.border} overflow-hidden ${t.shadow}`}>
           {/* Table Header */}
-          <div className={`${t.bgPanelAlt} text-xs uppercase tracking-wider ${t.textMuted} font-medium grid grid-cols-[1.5fr_100px_80px_1fr_1fr_1fr_1fr_1fr_1fr_100px]`}>
+          <div className={`${t.bgPanelAlt} text-xs uppercase tracking-wider ${t.textMuted} font-medium grid grid-cols-[1.5fr_100px_80px_1fr_1fr_1fr_1fr_80px_1fr_1fr_100px]`}>
             <div className="px-6 py-4">Наименование</div>
             <div className="px-2 py-4">Производ.</div>
             <div className="px-6 py-4">Склад</div>
@@ -375,6 +478,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, onSaveProducts, 
             <div className="px-6 py-4">Размеры</div>
             <div className="px-6 py-4">Сталь</div>
             <div className="px-6 py-4 text-right">Остаток</div>
+            <div className="px-3 py-4 text-right text-blue-500">Вес</div>
             <div className="px-6 py-4 text-right">Себест.</div>
             <div className="px-6 py-4 text-right">Цена</div>
             <div className="px-6 py-4 text-center">Действия</div>
@@ -382,8 +486,10 @@ export const Inventory: React.FC<InventoryProps> = ({ products, onSaveProducts, 
 
           {/* Virtualized Body */}
           {sortedProducts.length === 0 ? (
-            <div className={`px-6 py-12 text-center ${t.textMuted}`}>
-              Товары не найдены
+            <div className={`flex flex-col items-center justify-center py-16 ${t.textMuted}`}>
+              <Package size={48} className="mb-4 opacity-20" />
+              <p className="text-lg font-medium mb-1">{searchTerm ? 'Товары не найдены' : 'Склад пуст'}</p>
+              <p className="text-sm">{searchTerm ? 'Попробуйте изменить запрос' : 'Добавьте первый товар, чтобы начать'}</p>
             </div>
           ) : (
             <div
@@ -404,7 +510,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, onSaveProducts, 
                   return (
                     <div
                       key={product.id}
-                      className={`absolute top-0 left-0 w-full grid grid-cols-[1.5fr_100px_80px_1fr_1fr_1fr_1fr_1fr_1fr_100px] items-center ${t.bgCardHover} transition-colors border-b ${t.border}`}
+                      className={`absolute top-0 left-0 w-full grid grid-cols-[1.5fr_100px_80px_1fr_1fr_1fr_1fr_80px_1fr_1fr_100px] items-center ${t.bgCardHover} transition-colors border-b ${t.border}`}
                       style={{
                         height: `${ROW_HEIGHT}px`,
                         transform: `translateY(${virtualRow.start}px)`,
@@ -442,6 +548,19 @@ export const Inventory: React.FC<InventoryProps> = ({ products, onSaveProducts, 
                       <div className={`px-6 text-right font-mono ${product.quantity <= product.minStockLevel ? t.danger : t.text}`}>
                         {product.quantity} <span className={`text-xs ${t.textMuted}`}>{product.unit}</span>
                       </div>
+                      <div className="px-3 text-right font-mono text-xs">
+                        {(() => {
+                          if (product.unit === 'т') {
+                            const wKg = product.quantity * 1000;
+                            return <span className="text-blue-500 font-semibold">{wKg >= 1000 ? `${(wKg / 1000).toFixed(2)} т` : `${wKg.toFixed(0)} кг`}</span>;
+                          }
+                          if (product.weightPerMeter) {
+                            const wKg = product.quantity * product.weightPerMeter;
+                            return <span className="text-blue-500 font-semibold">{wKg >= 1000 ? `${(wKg / 1000).toFixed(2)} т` : `${wKg.toFixed(0)} кг`}</span>;
+                          }
+                          return <span className={t.textMuted}>—</span>;
+                        })()}
+                      </div>
                       <div className="px-6 text-right font-mono text-slate-400">
                         {canSeeCost ? (
                           fmtPrice(product.costPrice || 0)
@@ -478,8 +597,22 @@ export const Inventory: React.FC<InventoryProps> = ({ products, onSaveProducts, 
           )}
 
           {/* Footer Stats */}
-          <div className={`px-6 py-3 ${t.bgPanelAlt} border-t ${t.border} text-sm ${t.textMuted}`}>
-            Всего: {sortedProducts.length} товаров
+          <div className={`px-6 py-3 ${t.bgPanelAlt} border-t ${t.border} text-sm ${t.textMuted} flex items-center justify-between`}>
+            <span>Всего: {sortedProducts.length} товаров</span>
+            {(() => {
+              const totalKg = sortedProducts.reduce((sum, p) => {
+                if (p.unit === 'т') return sum + p.quantity * 1000;
+                if (p.weightPerMeter) return sum + p.quantity * p.weightPerMeter;
+                return sum;
+              }, 0);
+              return totalKg > 0 ? (
+                <span className="flex items-center gap-1.5 text-blue-500 font-medium">
+                  <Scale size={14} />
+                  Общий вес: <span className="font-mono font-bold">{totalKg >= 1000 ? `${(totalKg / 1000).toFixed(3)} т` : `${totalKg.toFixed(1)} кг`}</span>
+                  {totalKg >= 1000 && <span className="text-xs opacity-60">({totalKg.toFixed(0)} кг)</span>}
+                </span>
+              ) : null;
+            })()}
           </div>
         </div>
 
@@ -487,7 +620,9 @@ export const Inventory: React.FC<InventoryProps> = ({ products, onSaveProducts, 
         <div className="lg:hidden">
           {sortedProducts.length === 0 ? (
             <div className={`${t.bgCard} rounded-xl border ${t.border} p-12 text-center ${t.textMuted}`}>
-              Товары не найдены
+              <Package size={40} className="mx-auto mb-3 opacity-20" />
+              <p className="font-medium mb-1">{searchTerm ? 'Товары не найдены' : 'Склад пуст'}</p>
+              <p className="text-sm">{searchTerm ? 'Попробуйте изменить запрос' : 'Добавьте первый товар'}</p>
             </div>
           ) : (
             <>
@@ -535,8 +670,8 @@ export const Inventory: React.FC<InventoryProps> = ({ products, onSaveProducts, 
                                 </span>
                               )}
                               {product.manufacturer && (
-                                <span className={`text-[10px] px-1.5 py-0.5 rounded border ml-1 ${product.manufacturer === 'INSIGHT UNION' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
-                                    product.manufacturer === 'SOFMET' ? 'bg-orange-500/10 text-orange-400 border-orange-500/20' :
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded border ml-1 ${product.manufacturer === manufacturers[0] ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
+                                    product.manufacturer === manufacturers[1] ? 'bg-orange-500/10 text-orange-400 border-orange-500/20' :
                                       'bg-slate-500/10 text-slate-400 border-slate-500/20'
                                   }`}>
                                   {product.manufacturer}
@@ -589,6 +724,16 @@ export const Inventory: React.FC<InventoryProps> = ({ products, onSaveProducts, 
                             <div>
                               <p className={`${t.textMuted} mb-0.5`}>Цена</p>
                               <p className={`font-mono ${t.success}`}>{fmtPrice(product.pricePerUnit)}</p>
+                            </div>
+                            <div>
+                              <p className={`${t.textMuted} mb-0.5`}>Вес</p>
+                              <p className="font-mono text-blue-500 font-semibold">
+                                {(() => {
+                                  if (product.unit === 'т') { const w = product.quantity * 1000; return w >= 1000 ? `${(w / 1000).toFixed(2)} т` : `${w.toFixed(0)} кг`; }
+                                  if (product.weightPerMeter) { const w = product.quantity * product.weightPerMeter; return w >= 1000 ? `${(w / 1000).toFixed(2)} т` : `${w.toFixed(0)} кг`; }
+                                  return <span className={t.textMuted}>—</span>;
+                                })()}
+                              </p>
                             </div>
                             <div>
                               <p className={`${t.textMuted} mb-0.5`}>Сталь</p>
@@ -648,7 +793,7 @@ export const Inventory: React.FC<InventoryProps> = ({ products, onSaveProducts, 
                         onChange={e => setFormData({ ...formData, manufacturer: e.target.value })}
                       >
                         <option value="">— Не указан —</option>
-                        {(settings?.manufacturers || ['INSIGHT UNION', 'SOFMET', 'TMZ (ТМЗ)', 'BEKABAD (Бекабад)', 'CHINA (Китай)', 'RUSSIA (Россия)']).map(m => (
+                        {manufacturers.map(m => (
                           <option key={m} value={m}>{m}</option>
                         ))}
                       </select>
@@ -686,6 +831,18 @@ export const Inventory: React.FC<InventoryProps> = ({ products, onSaveProducts, 
                       className={`w-full ${t.bgInput} border ${t.borderInput} rounded-lg px-3 py-2 ${t.text} outline-none`}
                       value={formData.steelGrade || ''}
                       onChange={e => setFormData({ ...formData, steelGrade: e.target.value })}
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className={`text-xs font-medium ${t.textMuted}`}>Вес 1 метра (кг/м)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      className={`w-full ${t.bgInput} border ${t.borderInput} rounded-lg px-3 py-2 ${t.text} font-mono outline-none`}
+                      value={formData.weightPerMeter ?? ''}
+                      onChange={e => setFormData({ ...formData, weightPerMeter: e.target.value ? Number(e.target.value) : undefined })}
+                      placeholder="9.95"
                     />
                   </div>
 

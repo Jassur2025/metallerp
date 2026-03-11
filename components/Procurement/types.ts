@@ -1,4 +1,4 @@
-import type { AppSettings, Product, Purchase, PurchaseItem, PurchaseOverheads, Transaction, WorkflowOrder } from '../../types';
+import type { AppSettings, Client, Product, Purchase, PurchaseItem, PurchaseOverheads, Transaction, WorkflowOrder } from '../../types';
 
 export interface Balances {
   cashUSD: number;
@@ -9,6 +9,7 @@ export interface Balances {
 
 export interface ProcurementProps {
   products: Product[];
+  clients: Client[];
   settings: AppSettings;
   purchases: Purchase[];
   onSavePurchases: (purchases: Purchase[]) => void;

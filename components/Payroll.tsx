@@ -3,11 +3,12 @@ import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
 import { useCurrentEmployee } from '../contexts/CurrentEmployeeContext';
 import { Employee, Order, Expense, AppSettings } from '../types';
 import { DEFAULT_EXCHANGE_RATE } from '../constants';
-import { DollarSign, Calendar, Download, Search, User, TrendingUp, Wallet, ArrowDownCircle, ArrowUpCircle, X, CheckCircle } from 'lucide-react';
+import { DollarSign, Calendar, Download, Search, User, TrendingUp, Wallet, ArrowDownCircle, ArrowUpCircle, X, CheckCircle, Users } from 'lucide-react';
 import { formatCurrency } from '../utils/finance';
 import { logger } from '../utils/logger';
 import { payrollAtomicService } from '../services/payrollAtomicService';
 import { useToast } from '../contexts/ToastContext';
+import { useConfirm } from './ConfirmDialog';
 
 interface PayrollProps {
   employees: Employee[];
@@ -178,8 +179,10 @@ export const Payroll: React.FC<PayrollProps> = React.memo(({ employees, orders, 
     setSelectedDate(newDate);
   };
 
+  const { confirm: confirmDialog } = useConfirm();
+
   const handleProcessPayroll = useCallback(async () => {
-    if (!confirm(`Начислить зарплату за ${selectedDate.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' })}?`)) return;
+    if (!await confirmDialog({ title: 'Начислить зарплату?', message: `Начислить зарплату за ${selectedDate.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' })}?`, variant: 'warning', confirmText: 'Начислить' })) return;
     try {
       const result = await payrollAtomicService.processPayroll({
         year: selectedDate.getFullYear(),
@@ -356,7 +359,16 @@ export const Payroll: React.FC<PayrollProps> = React.memo(({ employees, orders, 
               </tr>
             </thead>
             <tbody className={`divide-y ${t.divide}`}>
-              {payrollData.map((row) => (
+              {payrollData.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className={`px-6 py-16 text-center ${t.textMuted}`}>
+                    <Users size={40} className="mx-auto mb-3 opacity-20" />
+                    <p className="font-medium mb-1">Сотрудников не найдено</p>
+                    <p className="text-sm">Добавьте сотрудников в разделе «Персонал»</p>
+                  </td>
+                </tr>
+              ) : (
+              payrollData.map((row) => (
                 <tr key={row.employee.id} className={`${t.bgCardHover} transition-colors`}>
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
@@ -416,7 +428,8 @@ export const Payroll: React.FC<PayrollProps> = React.memo(({ employees, orders, 
                     </button>
                   </td>
                 </tr>
-              ))}
+              ))
+              )}
             </tbody>
           </table>
         </div>
@@ -465,6 +478,7 @@ export const Payroll: React.FC<PayrollProps> = React.memo(({ employees, orders, 
                <h3 className={`font-bold ${t.text} mb-4`}>История выплат и авансов</h3>
                
                {selectedEmployeeAdvances.length > 0 ? (
+                 <div className="overflow-x-auto">
                  <table className="w-full text-sm">
                    <thead className={`${t.bgPanelAlt} ${t.textMuted} text-xs uppercase`}>
                      <tr>
@@ -499,6 +513,7 @@ export const Payroll: React.FC<PayrollProps> = React.memo(({ employees, orders, 
                      ))}
                    </tbody>
                  </table>
+                 </div>
                ) : (
                  <div className={`text-center py-8 ${t.textMuted}`}>
                    В этом месяце выплат не было

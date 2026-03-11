@@ -225,7 +225,7 @@ export const VatReport: React.FC<VatReportProps> = ({ purchases, orders, expense
                             <ArrowDownRight size={16} className="text-emerald-500" /> Входящий НДС и Пошлины (Импорт)
                         </h3>
                     </div>
-                    <div className="flex-1 overflow-y-auto">
+                    <div className="flex-1 overflow-auto">
                         <table className="w-full text-left text-sm">
                             <thead className={`${theme === 'dark' ? 'bg-slate-900' : 'bg-slate-100'} text-xs uppercase ${t.textMuted} font-medium sticky top-0`}>
                                 <tr>
@@ -266,7 +266,7 @@ export const VatReport: React.FC<VatReportProps> = ({ purchases, orders, expense
                             <ArrowUpRight size={16} className="text-red-500" /> Исходящий НДС (Продажи)
                         </h3>
                     </div>
-                    <div className="flex-1 overflow-y-auto">
+                    <div className="flex-1 overflow-auto">
                         <table className="w-full text-left text-sm">
                             <thead className={`${theme === 'dark' ? 'bg-slate-900' : 'bg-slate-100'} text-xs uppercase ${t.textMuted} font-medium sticky top-0`}>
                                 <tr>
@@ -306,7 +306,7 @@ export const VatReport: React.FC<VatReportProps> = ({ purchases, orders, expense
                         <List size={16} className="text-blue-500" /> Реестр НДС (Все операции)
                     </h3>
                 </div>
-                <div className="flex-1 overflow-y-auto">
+                <div className="flex-1 overflow-auto">
                     <table className="w-full text-left text-sm">
                         <thead className={`${theme === 'dark' ? 'bg-slate-900' : 'bg-slate-100'} text-xs uppercase ${t.textMuted} font-medium sticky top-0`}>
                             <tr>

@@ -194,7 +194,7 @@ export const TrialBalance: React.FC = React.memo(() => {
 
       {/* Table */}
       {data && data.rows.length > 0 && (
-        <div className={`${t.bgCard} rounded-xl border ${t.border} overflow-hidden shadow-sm`}>
+        <div className={`${t.bgCard} rounded-xl border ${t.border} overflow-hidden shadow-sm overflow-x-auto`}>
           <table className="w-full">
             <thead>
               <tr className={`${t.bgMain} border-b ${t.border}`}>

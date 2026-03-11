@@ -3,6 +3,7 @@ import { Order, Transaction, Expense, JournalEvent } from '../../types';
 import { num } from '../../utils/finance';
 import { DEFAULT_EXCHANGE_RATE } from '../../constants';
 import { TransactionsManager } from './TransactionsManager';
+import { useConfirm } from '../ConfirmDialog';
 
 interface SalesTransactionsViewProps {
   orders: Order[];
@@ -31,6 +32,8 @@ export const SalesTransactionsView: React.FC<SalesTransactionsViewProps> = React
   onAddJournalEvent, currentUserEmail, exchangeRate, t, theme,
   setEditingOrderId, onToast
 }) => {
+  const { confirmDelete } = useConfirm();
+
   return (
     <div className="space-y-6 flex-1 overflow-y-auto custom-scrollbar pr-2 pb-10">
       {/* Detailed cash balance report */}
@@ -80,7 +83,7 @@ export const SalesTransactionsView: React.FC<SalesTransactionsViewProps> = React
                     </button>
                     <button
                       onClick={async () => {
-                        if (confirm(`Удалить заказ ${o.id}?`)) {
+                        if (await confirmDelete(`Заказ ${o.id}`)) {
                           const updated = orders.filter(ord => ord.id !== o.id);
                           await onSaveOrders?.(updated);
                           setOrders(updated);

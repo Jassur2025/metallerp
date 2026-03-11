@@ -1,13 +1,14 @@
 
 import React, { useMemo, useState } from 'react';
-import { Order, AppSettings } from '../types';
+import { Order, Product, AppSettings } from '../types';
 import { validateUSD, num } from '../utils/finance';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend } from 'recharts';
-import { Users, Briefcase, TrendingUp, Crown, Wallet, Package, X, ChevronRight } from 'lucide-react';
+import { Users, Briefcase, TrendingUp, Crown, Wallet, Package, X, ChevronRight, Scale } from 'lucide-react';
 
 interface SalesAnalyticsProps {
     orders: Order[];
+    products: Product[];
     settings: AppSettings;
 }
 
@@ -16,6 +17,7 @@ interface ProductStat {
     quantity: number;
     total: number;
     unit: string;
+    weightKg: number;
 }
 
 interface StatItem {
@@ -26,7 +28,7 @@ interface StatItem {
     [key: string]: string | number | Record<string, ProductStat>;
 }
 
-export const SalesAnalytics: React.FC<SalesAnalyticsProps> = ({ orders, settings }) => {
+export const SalesAnalytics: React.FC<SalesAnalyticsProps> = ({ orders, products, settings }) => {
     const { theme } = useTheme();
     const t = getThemeClasses(theme);
     const [selectedClient, setSelectedClient] = useState<StatItem | null>(null);
@@ -74,16 +76,26 @@ export const SalesAnalytics: React.FC<SalesAnalyticsProps> = ({ orders, settings
                                 name: pName,
                                 quantity: 0,
                                 total: 0,
-                                unit: item.unit
+                                unit: item.unit,
+                                weightKg: 0
                             };
                         }
-                        clients[clientName].purchasedProducts[pName].quantity += Number(item.quantity) || 0;
+                        const qty = Number(item.quantity) || 0;
+                        clients[clientName].purchasedProducts[pName].quantity += qty;
                         clients[clientName].purchasedProducts[pName].total += Number(item.total) || 0;
+                        // Calculate weight
+                        const prod = products.find(p => p.id === item.productId);
+                        if (item.unit === 'т') {
+                            clients[clientName].purchasedProducts[pName].weightKg += qty * 1000;
+                        } else if (prod?.weightPerMeter) {
+                            clients[clientName].purchasedProducts[pName].weightKg += qty * prod.weightPerMeter;
+                        }
                     });
                 }
 
                 // --- Process Seller ---
-                const sellerName = order.sellerName ? order.sellerName.trim() : 'Не указан';
+                const rawSeller = order.sellerName ? order.sellerName.trim() : '';
+                const sellerName = (!rawSeller || rawSeller.startsWith('[') || rawSeller.startsWith('{')) ? 'Не указан' : rawSeller;
                 if (!sellers[sellerName]) {
                     sellers[sellerName] = {
                         name: sellerName,
@@ -108,7 +120,16 @@ export const SalesAnalytics: React.FC<SalesAnalyticsProps> = ({ orders, settings
             averageCheck,
             totalRevenue
         };
-    }, [orders]);
+    }, [orders, products]);
+
+    // Total weight across all client products
+    const totalWeightKg = useMemo(() => {
+        return stats.clients.reduce((sum, client) => {
+            return sum + Object.values(client.purchasedProducts).reduce((s, p) => s + (p as ProductStat).weightKg, 0);
+        }, 0);
+    }, [stats.clients]);
+
+    const fmtWeight = (kg: number) => kg >= 1000 ? `${(kg / 1000).toFixed(2)} т` : `${kg.toFixed(0)} кг`;
 
     const formatCurrency = (val: number) => {
         if (typeof val !== 'number' || isNaN(val)) return '$0.00';
@@ -134,7 +155,7 @@ export const SalesAnalytics: React.FC<SalesAnalyticsProps> = ({ orders, settings
             </div>
 
             {/* Global Summary Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                 <div className={`${t.bgCard} p-6 rounded-2xl border ${t.border} shadow-lg flex items-center gap-4`}>
                     <div className="p-3 bg-emerald-500/10 rounded-xl text-emerald-500">
                         <TrendingUp size={32} />
@@ -162,6 +183,15 @@ export const SalesAnalytics: React.FC<SalesAnalyticsProps> = ({ orders, settings
                         <p className={`text-2xl font-bold ${t.text}`}>
                             {formatCurrency(stats.averageCheck)}
                         </p>
+                    </div>
+                </div>
+                <div className={`${t.bgCard} p-6 rounded-2xl border ${t.border} shadow-lg flex items-center gap-4`}>
+                    <div className="p-3 bg-cyan-500/10 rounded-xl text-cyan-500">
+                        <Scale size={32} />
+                    </div>
+                    <div>
+                        <p className={`${t.textMuted} text-sm`}>Общий вес продаж</p>
+                        <p className={`text-2xl font-bold ${t.text}`}>{fmtWeight(totalWeightKg)}</p>
                     </div>
                 </div>
             </div>
@@ -373,7 +403,7 @@ export const SalesAnalytics: React.FC<SalesAnalyticsProps> = ({ orders, settings
                         </div>
 
                         <div className="p-6 overflow-y-auto">
-                            <div className="grid grid-cols-3 gap-4 mb-6">
+                            <div className="grid grid-cols-4 gap-4 mb-6">
                                 <div className={`${theme === 'dark' ? 'bg-slate-700/30' : 'bg-slate-100'} p-4 rounded-xl border ${t.border}`}>
                                     <p className={`text-xs ${t.textMuted} uppercase`}>Всего заказов</p>
                                     <p className={`text-2xl font-bold ${t.text} mt-1`}>{selectedClient.ordersCount}</p>
@@ -388,6 +418,12 @@ export const SalesAnalytics: React.FC<SalesAnalyticsProps> = ({ orders, settings
                                     <p className={`text-xs ${t.textMuted} uppercase`}>Сумма покупок</p>
                                     <p className="text-2xl font-bold text-emerald-500 mt-1">{formatCurrency(selectedClient.totalAmount)}</p>
                                 </div>
+                                <div className={`${theme === 'dark' ? 'bg-slate-700/30' : 'bg-slate-100'} p-4 rounded-xl border ${t.border}`}>
+                                    <p className={`text-xs ${t.textMuted} uppercase`}>Общий вес</p>
+                                    <p className="text-2xl font-bold text-cyan-500 mt-1">
+                                        {fmtWeight(Object.values(selectedClient.purchasedProducts).reduce((s, p) => s + (p as ProductStat).weightKg, 0))}
+                                    </p>
+                                </div>
                             </div>
 
                             <h4 className={`text-lg font-bold ${t.text} mb-4 flex items-center gap-2`}>
@@ -400,6 +436,7 @@ export const SalesAnalytics: React.FC<SalesAnalyticsProps> = ({ orders, settings
                                         <tr>
                                             <th className="px-4 py-3">Товар</th>
                                             <th className="px-4 py-3 text-right">Кол-во</th>
+                                            <th className="px-4 py-3 text-right text-blue-500">Вес</th>
                                             <th className="px-4 py-3 text-right">Сумма (USD)</th>
                                         </tr>
                                     </thead>
@@ -411,6 +448,9 @@ export const SalesAnalytics: React.FC<SalesAnalyticsProps> = ({ orders, settings
                                                     <td className={`px-4 py-3 font-medium ${t.text}`}>{product.name}</td>
                                                     <td className={`px-4 py-3 text-right font-mono ${t.textMuted}`}>
                                                         {product.quantity} <span className="text-xs">{product.unit}</span>
+                                                    </td>
+                                                    <td className="px-4 py-3 text-right font-mono text-blue-500">
+                                                        {product.weightKg > 0 ? fmtWeight(product.weightKg) : <span className={t.textMuted}>—</span>}
                                                     </td>
                                                     <td className="px-4 py-3 text-right font-mono font-bold text-emerald-500">
                                                         {formatCurrency(product.total)}

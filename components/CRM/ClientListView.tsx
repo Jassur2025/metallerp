@@ -1,7 +1,7 @@
 import React from 'react';
 import { Client } from '../../types';
 import { useTheme, getThemeClasses } from '../../contexts/ThemeContext';
-import { Edit, Trash2, Wallet, History, MessageSquare } from 'lucide-react';
+import { Edit, Trash2, Wallet, History, MessageSquare, Eye } from 'lucide-react';
 
 interface ClientListViewProps {
     clients: Client[];
@@ -12,11 +12,12 @@ interface ClientListViewProps {
     onRepay: (client: Client) => void;
     onHistory: (client: Client) => void;
     onNotes: (client: Client) => void;
+    onView: (client: Client) => void;
 }
 
 export const ClientListView: React.FC<ClientListViewProps> = ({
     clients, calculateClientDebt, calculateClientPurchases,
-    onEdit, onDelete, onRepay, onHistory, onNotes
+    onEdit, onDelete, onRepay, onHistory, onNotes, onView
 }) => {
     const { theme } = useTheme();
     const t = getThemeClasses(theme);
@@ -74,6 +75,9 @@ export const ClientListView: React.FC<ClientListViewProps> = ({
                         </span>
                         {/* Actions */}
                         <div className="flex items-center justify-end gap-1">
+                            <button onClick={() => onView(client)} className={`p-1.5 rounded-lg ${theme === 'dark' ? 'hover:bg-indigo-900/40 text-indigo-400' : 'hover:bg-indigo-100 text-indigo-600'} transition-colors`} title="Подробнее">
+                                <Eye size={14} />
+                            </button>
                             <button onClick={() => onNotes(client)} className={`p-1.5 rounded-lg ${theme === 'dark' ? 'hover:bg-slate-600' : 'hover:bg-slate-200'} ${t.textMuted} transition-colors`} title="Заметки">
                                 <MessageSquare size={14} />
                             </button>

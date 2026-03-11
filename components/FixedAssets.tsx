@@ -5,6 +5,7 @@ import { Plus, Trash2, RefreshCw, Landmark, Calendar, DollarSign, TrendingDown, 
 import { useToast } from '../contexts/ToastContext';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
 import { fixedAssetsAtomicService } from '../services/fixedAssetsAtomicService';
+import { useConfirm } from './ConfirmDialog';
 
 interface FixedAssetsProps {
     assets: FixedAsset[];
@@ -92,8 +93,11 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
         }
     };
 
+    const { confirm: confirmDialog, confirmDelete } = useConfirm();
+
     const handleDelete = async (id: string) => {
-        if (!confirm('Вы уверены, что хотите списать это основное средство?')) return;
+        const asset = assets.find(a => a.id === id);
+        if (!await confirmDelete(asset?.name || 'Основное средство')) return;
         try {
             await fixedAssetsAtomicService.deleteFixedAsset(id);
             toast.success('Основное средство списано (IAS 16.67)');
@@ -115,7 +119,7 @@ export const FixedAssets: React.FC<FixedAssetsProps> = ({
     };
 
     const runMonthlyDepreciation = async () => {
-        if (!confirm('Рассчитать амортизацию за 1 месяц для всех активов?')) return;
+        if (!await confirmDialog({ title: 'Амортизация', message: 'Рассчитать амортизацию за 1 месяц для всех активов?', variant: 'warning', confirmText: 'Рассчитать' })) return;
 
         try {
             const result = await fixedAssetsAtomicService.runDepreciation();

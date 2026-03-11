@@ -158,6 +158,7 @@ export interface Product extends Versionable {
   manufacturer?: string; // Производитель
   origin?: 'import' | 'local'; // New field: Origin of the product
   warehouse?: WarehouseType; // Склад: Основной или Облачный
+  weightPerMeter?: number; // кг/м — вес 1 метра (для расчёта тоннажа)
   // _version and updatedAt inherited from Versionable
 }
 

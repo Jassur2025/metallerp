@@ -53,14 +53,17 @@ export function useAppData(activeTab: string = 'dashboard') {
   const purchaseEnabled  = setsOverlap(visited, PURCHASE_TABS);
 
   // ── Core collections (always active) ──────────────────────
-  const { products, addProduct, updateProduct } = useProducts();
-  const { orders, setOrders, addOrder, updateOrder, deleteOrder } = useOrders();
-  const { transactions, addTransaction, updateTransaction, deleteTransaction } = useTransactions();
+  const { products, loading: productsLoading, addProduct, updateProduct } = useProducts();
+  const { orders, loading: ordersLoading, setOrders, addOrder, updateOrder, deleteOrder } = useOrders();
+  const { transactions, loading: transactionsLoading, addTransaction, updateTransaction, deleteTransaction } = useTransactions();
   const { expenses, addExpense, updateExpense, deleteExpense } = useExpenses({
     transactions, addTransaction, updateTransaction, deleteTransaction,
   });
-  const { clients, addClient, updateClient } = useClients();
-  const { employees, addEmployee, updateEmployee } = useEmployees();
+  const { clients, loading: clientsLoading, addClient, updateClient } = useClients();
+  const { employees, loading: employeesLoading, addEmployee, updateEmployee } = useEmployees();
+
+  // True while any core collection is still loading its first snapshot
+  const coreLoading = productsLoading || ordersLoading || transactionsLoading || clientsLoading || employeesLoading;
 
   // ── Secondary collections (lazy) ─────────────────────────
   const { fixedAssets, addAsset, updateAsset } = useFixedAssets({ enabled: fixedEnabled });
@@ -91,6 +94,8 @@ export function useAppData(activeTab: string = 'dashboard') {
   useDebtRecalculation({ clients, orders, transactions, updateClient });
 
   return {
+    // Loading
+    coreLoading,
     // Raw collections
     products, orders, setOrders, transactions, expenses, fixedAssets,
     clients, employees, purchases, journalEvents, workflowOrders,

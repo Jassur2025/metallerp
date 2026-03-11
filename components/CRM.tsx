@@ -1,9 +1,9 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { Client, Order, Transaction, AppSettings } from '../types';
+import { Client, Order, Transaction, AppSettings, Purchase } from '../types';
 import { User } from 'firebase/auth';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
-import { Plus, Search, Smartphone, LayoutGrid, List } from 'lucide-react';
+import { Plus, Search, Smartphone, LayoutGrid, List, Users } from 'lucide-react';
 import { checkAllPhones } from '../utils/phoneFormatter';
 import { SUPER_ADMIN_EMAILS, DEFAULT_EXCHANGE_RATE } from '../constants';
 import { IdGenerator } from '../utils/idGenerator';
@@ -11,7 +11,8 @@ import { useClients } from '../hooks/useClients';
 import { useOrders } from '../hooks/useOrders';
 import { paymentAtomicService } from '../services/paymentAtomicService';
 import { ClientNotesModal } from './Sales/ClientNotesModal';
-import { ClientCard, ClientFormModal, ClientListView, RepaymentModal, PhoneCheckModal, RepaymentStatsView, DebtHistoryModal } from './CRM/index';
+import { useConfirm } from './ConfirmDialog';
+import { ClientCard, ClientFormModal, ClientListView, RepaymentModal, PhoneCheckModal, RepaymentStatsView, DebtHistoryModal, ClientDetailView } from './CRM/index';
 import type { HistoryItem } from './CRM/index';
 import type { UnpaidOrder, PaymentRecord } from './CRM/index';
 import { useCRMDebt, orderMatchesClient } from '../hooks/useCRMDebt';
@@ -26,13 +27,14 @@ interface CRMProps {
     onSaveTransactions?: (transactions: Transaction[]) => Promise<boolean | void>;
     currentUser?: User | null;
     settings?: AppSettings;
+    purchases?: Purchase[];
 }
 
 type CRMView = 'clients' | 'repaymentStats';
 
 // HistoryItem type imported from ./CRM/DebtHistoryModal
 
-export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders: legacyOrders, onSaveOrders, transactions, onSaveTransactions, currentUser, settings: settingsProp }) => {
+export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders: legacyOrders, onSaveOrders, transactions, onSaveTransactions, currentUser, settings: settingsProp, purchases: purchasesProp = [] }) => {
     const toast = useToast();
     const { theme } = useTheme();
     const t = getThemeClasses(theme);
@@ -71,6 +73,9 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
     // Notes Modal State
     const [isNotesModalOpen, setIsNotesModalOpen] = useState(false);
     const [selectedClientForNotes, setSelectedClientForNotes] = useState<Client | null>(null);
+
+    // Detail View State
+    const [selectedClientForDetail, setSelectedClientForDetail] = useState<Client | null>(null);
 
     // View mode toggle
     const [crmViewMode, setCrmViewMode] = useState<'grid' | 'list'>(() => {
@@ -201,6 +206,10 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
         setIsNotesModalOpen(true);
     }, []);
 
+    const handleOpenDetailView = useCallback((client: Client) => {
+        setSelectedClientForDetail(client);
+    }, []);
+
     const handleSave = async () => {
         if (!formData.name || !formData.phone) {
             toast.warning('Имя и Телефон обязательны!');
@@ -215,12 +224,15 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
         setIsModalOpen(false);
     };
 
+    const { confirmDelete } = useConfirm();
+
     const handleDelete = async (clientId: string) => {
         if (!isAdmin) {
              toast.error('Только администраторы могут удалять клиентов');
              return;
         }
-        if (!window.confirm('Вы уверены, что хотите удалить этого клиента?')) return;
+        const client = clients.find(c => c.id === clientId);
+        if (!await confirmDelete(client?.name || 'Клиент')) return;
 
         await deleteClient(clientId);
     };
@@ -470,6 +482,20 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
 
     return (
         <div className="p-3 sm:p-4 lg:p-6 space-y-4 lg:space-y-6 animate-fade-in h-[calc(100vh-2rem)] flex flex-col">
+            {/* Client Detail View - Full Page */}
+            {selectedClientForDetail ? (
+                <ClientDetailView
+                    client={selectedClientForDetail}
+                    orders={orders}
+                    transactions={transactions}
+                    purchases={purchasesProp}
+                    calculateClientDebt={calculateClientDebt}
+                    calculateClientPurchases={calculateClientPurchases}
+                    onBack={() => setSelectedClientForDetail(null)}
+                    onRepay={handleOpenRepayModal}
+                />
+            ) : (
+            <>
             {/* Header with Tabs */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
@@ -594,21 +620,30 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
 
                     {/* === GRID VIEW === */}
                     {crmViewMode === 'grid' && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 overflow-y-auto pb-12 custom-scrollbar">
-                            {displayedClients.map(client => (
-                                <ClientCard
-                                    key={client.id}
-                                    client={client}
-                                    debt={calculateClientDebt(client)}
-                                    purchases={calculateClientPurchases(client)}
-                                    onEdit={handleOpenModal}
-                                    onDelete={handleDelete}
-                                    onRepay={handleOpenRepayModal}
-                                    onHistory={handleOpenDebtHistoryModal}
-                                    onNotes={handleOpenNotesModal}
-                                />
-                            ))}
-                        </div>
+                        displayedClients.length === 0 ? (
+                            <div className={`flex flex-col items-center justify-center py-16 ${t.textMuted}`}>
+                                <Users size={48} className="mb-4 opacity-20" />
+                                <p className="text-lg font-medium mb-1">Клиентов пока нет</p>
+                                <p className="text-sm">Нажмите «Добавить клиента», чтобы начать</p>
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 overflow-y-auto pb-12 custom-scrollbar">
+                                {displayedClients.map(client => (
+                                    <ClientCard
+                                        key={client.id}
+                                        client={client}
+                                        debt={calculateClientDebt(client)}
+                                        purchases={calculateClientPurchases(client)}
+                                        onEdit={handleOpenModal}
+                                        onDelete={handleDelete}
+                                        onRepay={handleOpenRepayModal}
+                                        onHistory={handleOpenDebtHistoryModal}
+                                        onNotes={handleOpenNotesModal}
+                                        onView={handleOpenDetailView}
+                                    />
+                                ))}
+                            </div>
+                        )
                     )}
 
                     {/* === LIST VIEW === */}
@@ -622,6 +657,7 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
                             onRepay={handleOpenRepayModal}
                             onHistory={handleOpenDebtHistoryModal}
                             onNotes={handleOpenNotesModal}
+                            onView={handleOpenDetailView}
                         />
                     )}
 
@@ -649,9 +685,10 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
                     )}
                 </>
             )}
+            </>
+            )}
 
             {/* Modals - Available in all views */}
-            {/* Edit/Create Modal */}
             <ClientFormModal
                 isOpen={isModalOpen}
                 onClose={() => setIsModalOpen(false)}
@@ -661,7 +698,6 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
                 onSave={handleSave}
             />
 
-            {/* Repayment Modal */}
             {selectedClientForRepayment && (
                 <RepaymentModal
                     isOpen={isRepayModalOpen}
@@ -690,8 +726,7 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
                     onSubmit={handleRepayDebt}
                 />
             )}
-            
-            {/* Phone Check Modal - Only for Admin */}
+
             {phoneCheckResults && (
                 <PhoneCheckModal
                     isOpen={isPhoneCheckModalOpen}
@@ -700,7 +735,6 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
                 />
             )}
 
-            {/* Debt History Modal */}
             {isDebtHistoryModalOpen && selectedClientForHistory && (
                 <DebtHistoryModal
                     client={selectedClientForHistory}
@@ -708,7 +742,7 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
                     onClose={() => setIsDebtHistoryModalOpen(false)}
                 />
             )}
-            {/* Client Notes Modal - Rendered conditionally */}
+
             <ClientNotesModal
                 client={selectedClientForNotes}
                 isOpen={isNotesModalOpen}

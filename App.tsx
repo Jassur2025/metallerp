@@ -1,5 +1,5 @@
 import React, { useState, useEffect, lazy, Suspense, useMemo, useCallback } from 'react';
-import { Shield } from 'lucide-react';
+import { Shield, RefreshCw } from 'lucide-react';
 
 // Lazy load components for better performance
 const Dashboard = lazy(() => import('./components/Dashboard').then(m => ({ default: m.Dashboard })));
@@ -51,6 +51,7 @@ const AppContent: React.FC = () => {
 
   // ── All data, handlers, and side-effects in one hook ──────
   const {
+    coreLoading,
     products, orders, setOrders, transactions, expenses, fixedAssets,
     clients, employees, purchases, journalEvents, workflowOrders,
     deleteTransaction, deleteExpense, updatePurchase, updateExpense,
@@ -138,6 +139,18 @@ const AppContent: React.FC = () => {
     return <Login />;
   }
 
+  // Global loading screen while core Firestore data arrives
+  if (coreLoading) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-slate-900">
+        <div className="text-center">
+          <RefreshCw className="w-10 h-10 animate-spin text-indigo-500 mx-auto mb-4" />
+          <p className="text-slate-400 text-sm">Загрузка данных...</p>
+        </div>
+      </div>
+    );
+  }
+
   const renderContent = () => {
     // Security check: if user doesn't have permission for active tab, show access denied or redirect
     // We skip check for 'settings' as it might be needed for basic user profile, 
@@ -171,6 +184,7 @@ const AppContent: React.FC = () => {
       case 'import':
         return renderLazyComponent(<Procurement
           products={products}
+          clients={clients}
           settings={settings}
           purchases={purchases}
           onSavePurchases={handleSavePurchases}
@@ -251,6 +265,7 @@ const AppContent: React.FC = () => {
           onSaveTransactions={handleSaveTransactions}
           currentUser={user}
           settings={settings}
+          purchases={purchases}
         />);
       case 'staff':
         return renderLazyComponent(<Staff employees={employees} onSave={handleSaveEmployees} />);
@@ -301,6 +316,10 @@ const AppContent: React.FC = () => {
             error={error}
             theme={settings.theme}
             onToggleSidebar={handleToggleSidebar}
+            onToggleTheme={() => {
+              const newTheme = settings.theme === 'light' ? 'dark' : 'light';
+              saveSettingsToFirestore({ ...settings, theme: newTheme });
+            }}
           />
 
           {/* Content Area */}

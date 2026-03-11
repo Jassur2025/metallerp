@@ -62,14 +62,24 @@ export const WorkflowQueue: React.FC<WorkflowQueueProps> = React.memo(({
                   {(wf.items || []).slice(0, 5).map((it: OrderItem, idx: number) => {
                     const prod = products.find(p => p.id === it.productId);
                     const dims = prod?.dimensions || it.dimensions || '';
+                    const priceListPrice = prod?.pricePerUnit || it.priceAtSale;
+                    const itemDiscount = priceListPrice > 0 ? ((priceListPrice - it.priceAtSale) / priceListPrice) * 100 : 0;
+                    const hasItemDiscount = itemDiscount > 0.1;
                     return (
-                      <div key={idx} className={`flex justify-between ${t.textSecondary}`}>
-                        <span className="truncate max-w-[260px]">
+                      <div key={idx} className={`flex justify-between items-center ${t.textSecondary}`}>
+                        <span className="truncate max-w-[220px]">
                           {it.productName}
                           {dims && dims !== '-' && <span className={`${t.textMuted} ml-1`}>({dims})</span>}
                           <span className={`${t.textMuted} ml-1`}>× {it.quantity}</span>
                         </span>
-                        <span className={`font-mono ${t.textMuted}`}>{Math.round(Number(it.total || 0) * Number(wf.exchangeRate || exchangeRate)).toLocaleString()} сум</span>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          {hasItemDiscount && (
+                            <span className="text-[10px] font-bold text-orange-400 bg-orange-500/10 px-1.5 py-0.5 rounded">
+                              -{itemDiscount.toFixed(1)}%
+                            </span>
+                          )}
+                          <span className={`font-mono ${t.textMuted}`}>{Math.round(Number(it.total || 0) * Number(wf.exchangeRate || exchangeRate)).toLocaleString()} сум</span>
+                        </div>
                       </div>
                     );
                   })}

@@ -149,62 +149,75 @@ export const ProductGrid: React.FC<ProductGridProps> = ({
 
         {/* === GRID VIEW === */}
         {viewMode === 'grid' && (
-          <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 pb-4">
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-2.5 pb-4">
             {filteredProducts.map(product => {
               const priceUZS = toUZS(product.pricePerUnit);
               const isLowStock = product.quantity <= 10;
+              const isOutOfStock = product.quantity === 0;
               return (
                 <button
                   key={product.id}
                   onClick={(e) => onAddToCart(e, product)}
-                  className={`${isDark ? 'bg-slate-800/70 border-slate-700/80 hover:border-amber-500/50 hover:bg-slate-800' : `${t.bgCard} border-slate-200 hover:border-blue-400 hover:shadow-blue-100`} border rounded-2xl p-3.5 text-left transition-all duration-200 
-                    hover:shadow-xl active:scale-[0.98]
-                    group relative overflow-hidden`}
+                  disabled={isOutOfStock}
+                  className={`${isDark
+                    ? 'bg-slate-800/60 border-slate-700/60 hover:border-amber-500/60 hover:bg-slate-800/90 active:bg-slate-700'
+                    : `bg-white border-slate-200 hover:border-blue-400 hover:shadow-md hover:shadow-blue-100`
+                  } border rounded-xl p-3 text-left transition-all duration-150
+                    active:scale-[0.97] group relative overflow-hidden disabled:opacity-50 disabled:cursor-not-allowed`}
                 >
-                  {/* Top row: Name + Dimensions badge */}
-                  <div className="flex items-start justify-between gap-2 mb-1.5">
-                    <h3 className={`font-bold ${t.text} text-sm leading-snug truncate flex-1`}>
+                  {/* Top: Name + dims */}
+                  <div className="flex items-start gap-1.5 mb-1">
+                    <h3 className={`font-bold ${t.text} text-[13px] leading-snug flex-1 truncate`}>
                       {product.name}
                     </h3>
-                    <span className={`text-xs font-bold ${isDark ? 'bg-slate-700 text-slate-300 border-slate-600' : 'bg-slate-100 text-slate-600 border-slate-200'} px-2 py-0.5 rounded-lg font-mono whitespace-nowrap border`}>
+                    {product.origin === 'import' && (
+                      <span className={`text-[9px] ${isDark ? 'bg-purple-500/20 text-purple-400 border-purple-500/30' : 'bg-purple-50 text-purple-600 border-purple-200'} px-1.5 py-0.5 rounded font-bold border flex-shrink-0`}>
+                        IMP
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Dims + grade row */}
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <span className={`text-[11px] font-mono font-bold ${isDark ? 'text-slate-300' : 'text-slate-700'} px-1.5 py-0.5 rounded ${isDark ? 'bg-slate-700/60' : 'bg-slate-100'}`}>
                       {product.dimensions}
                     </span>
+                    {product.steelGrade && product.steelGrade !== '-' && (
+                      <span className={`text-[10px] ${t.textMuted} truncate`}>{product.steelGrade}</span>
+                    )}
                   </div>
 
-                  {/* Steel grade */}
-                  <p className={`text-[11px] ${t.textMuted} mb-2 font-medium`}>{product.steelGrade}</p>
-
-                  {/* Price */}
-                  <div className="flex items-baseline gap-2 mb-2">
-                    <span className={`text-lg font-extrabold font-mono ${isDark ? 'text-emerald-400' : 'text-emerald-600'} leading-tight`}>
-                      {priceUZS.toLocaleString()}
-                    </span>
-                    <span className={`text-[10px] ${t.textMuted} font-medium`}>сўм</span>
-                    <span className={`text-[10px] ${t.textMuted} font-mono ml-auto`}>
-                      ${product.pricePerUnit.toFixed(2)}/{product.unit}
-                    </span>
-                  </div>
-
-                  {/* Bottom row: Stock + badges */}
-                  <div className="flex items-center justify-between">
-                    <span className={`text-xs font-semibold ${isLowStock ? 'text-orange-400' : t.textMuted}`}>
-                      {isLowStock && '⚠ '}{product.quantity.toLocaleString()} {product.unit}
-                    </span>
-                    <div className="flex items-center gap-1.5">
-                      {product.origin === 'import' && (
-                        <span className={`text-[9px] ${isDark ? 'bg-purple-500/20 text-purple-400 border-purple-500/30' : 'bg-purple-50 text-purple-600 border-purple-200'} px-1.5 py-0.5 rounded-lg font-bold border`}>
-                          IMP
-                        </span>
-                      )}
-                      <span className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all opacity-0 group-hover:opacity-100
-                        ${isDark ? 'bg-amber-500/20 text-amber-400' : 'bg-blue-50 text-blue-600'}`}>
-                        <Plus size={16} strokeWidth={2.5} />
+                  {/* Price row */}
+                  <div className={`rounded-lg px-2 py-1.5 mb-2 ${isDark ? 'bg-emerald-500/10' : 'bg-emerald-50'}`}>
+                    <div className="flex items-baseline justify-between">
+                      <span className={`text-base font-extrabold font-mono ${isDark ? 'text-emerald-400' : 'text-emerald-600'} leading-tight`}>
+                        {priceUZS.toLocaleString()}
+                        <span className={`text-[10px] font-semibold ml-1 opacity-70`}>сўм</span>
+                      </span>
+                      <span className={`text-[10px] ${t.textMuted} font-mono`}>
+                        ${product.pricePerUnit.toFixed(2)}
                       </span>
                     </div>
                   </div>
 
-                  {/* Hover ring */}
-                  <div className={`absolute inset-0 rounded-2xl pointer-events-none transition-opacity opacity-0 group-hover:opacity-100 ${isDark ? 'ring-2 ring-amber-500/30' : 'ring-2 ring-blue-400/30'}`} />
+                  {/* Bottom: Stock + Add btn */}
+                  <div className="flex items-center justify-between">
+                    <span className={`text-[11px] font-semibold flex items-center gap-1 ${isLowStock ? 'text-orange-400' : t.textMuted}`}>
+                      {isLowStock && <span className="text-orange-400">⚠</span>}
+                      {product.quantity.toLocaleString()} {product.unit}
+                    </span>
+                    <span className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all flex-shrink-0
+                      ${isDark
+                        ? 'bg-amber-500/20 text-amber-400 group-hover:bg-amber-500/35'
+                        : 'bg-blue-100 text-blue-600 group-hover:bg-blue-200'
+                      }`}>
+                      <Plus size={15} strokeWidth={2.5} />
+                    </span>
+                  </div>
+
+                  {/* Active ring on hover */}
+                  <div className={`absolute inset-0 rounded-xl pointer-events-none transition-opacity opacity-0 group-hover:opacity-100
+                    ${isDark ? 'ring-1 ring-amber-500/30' : 'ring-1 ring-blue-400/40'}`} />
                 </button>
               );
             })}

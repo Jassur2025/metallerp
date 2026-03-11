@@ -1,7 +1,7 @@
 import React from 'react';
 import { Client } from '../../types';
 import { useTheme, getThemeClasses } from '../../contexts/ThemeContext';
-import { Phone, Mail, MapPin, Edit, Trash2, Wallet, History, MessageSquare } from 'lucide-react';
+import { Phone, Mail, MapPin, Edit, Trash2, Wallet, History, MessageSquare, Eye } from 'lucide-react';
 
 interface ClientCardProps {
     client: Client;
@@ -12,10 +12,11 @@ interface ClientCardProps {
     onRepay: (client: Client) => void;
     onHistory: (client: Client) => void;
     onNotes: (client: Client) => void;
+    onView: (client: Client) => void;
 }
 
 export const ClientCard: React.FC<ClientCardProps> = ({
-    client, debt, purchases, onEdit, onDelete, onRepay, onHistory, onNotes
+    client, debt, purchases, onEdit, onDelete, onRepay, onHistory, onNotes, onView
 }) => {
     const { theme } = useTheme();
     const t = getThemeClasses(theme);
@@ -106,6 +107,13 @@ export const ClientCard: React.FC<ClientCardProps> = ({
             </div>
 
             <div className="mt-4 flex gap-2">
+                <button
+                    onClick={() => onView(client)}
+                    className={`px-3 ${theme === 'dark' ? 'bg-indigo-600 hover:bg-indigo-500' : 'bg-indigo-100 hover:bg-indigo-200 text-indigo-700'} py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-1`}
+                    title="Подробнее"
+                >
+                    <Eye size={16} />
+                </button>
                 <button
                     onClick={() => onNotes(client)}
                     className={`px-3 ${theme === 'dark' ? 'bg-slate-700 hover:bg-slate-600' : 'bg-slate-200 hover:bg-slate-300 text-slate-700'} py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-1`}

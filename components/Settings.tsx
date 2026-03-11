@@ -7,58 +7,12 @@ import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
 import { ExpenseCategoriesTab } from './Settings/ExpenseCategoriesTab';
 import { ManufacturersTab } from './Settings/ManufacturersTab';
 import { AccountingPeriodsTab } from './Settings/AccountingPeriodsTab';
+import { DEFAULT_EXPENSE_CATEGORIES, DEFAULT_MANUFACTURERS } from '../constants';
+import { useConfirm } from './ConfirmDialog';
 
 const EMPTY_COMPANY: CompanyDetails = {
   name: '', address: '', phone: '', inn: '', mfo: '', bankName: '', accountNumber: ''
 };
-
-const DEFAULT_MANUFACTURERS = [
-  'INSIGHT UNION',
-  'SOFMET',
-  'TMZ (ТМЗ)',
-  'BEKABAD (Бекабад)',
-  'CHINA (Китай)',
-  'RUSSIA (Россия)',
-];
-
-
-
-// Дефолтные категории расходов
-const DEFAULT_EXPENSE_CATEGORIES: ExpenseCategory[] = [
-    { id: 'rent', name: 'Аренда земельных участков, зданий и сооружений', pnlCategory: 'administrative' },
-    { id: 'special_equipment', name: 'Аренда специальной техники', pnlCategory: 'operational' },
-    { id: 'bank_fees', name: 'Банковские комиссии', pnlCategory: 'administrative' },
-    { id: 'sales_bonus', name: 'Бонусы от продаж', pnlCategory: 'commercial' },
-    { id: 'customs', name: 'Государственные пошлины', pnlCategory: 'administrative' },
-    { id: 'salary', name: 'Зарплата', pnlCategory: 'administrative' },
-    { id: 'crane_costs', name: 'Затраты крана', pnlCategory: 'operational' },
-    { id: 'food', name: 'Затраты питания', pnlCategory: 'operational' },
-    { id: 'corporate_events', name: 'Затраты по корпоративно-культурным мероприятиям', pnlCategory: 'operational' },
-    { id: 'office_supplies', name: 'Канцелярские затраты', pnlCategory: 'administrative' },
-    { id: 'business_trips', name: 'Командировки и встречи', pnlCategory: 'administrative' },
-    { id: 'utilities', name: 'Коммунальные затраты', pnlCategory: 'administrative' },
-    { id: 'training', name: 'Корпоративное обучение', pnlCategory: 'administrative' },
-    { id: 'corporate_gifts', name: 'Корпоративные подарки', pnlCategory: 'administrative' },
-    { id: 'courier_fuel', name: 'Курьерские\\ГСМ затраты', pnlCategory: 'administrative' },
-    { id: 'marketing', name: 'Маркетинг и реклама', pnlCategory: 'commercial' },
-    { id: 'loading', name: 'Погрузочные затраты', pnlCategory: 'commercial' },
-    { id: 'postal', name: 'Почтовые затраты', pnlCategory: 'administrative' },
-    { id: 'bonus', name: 'Премии', pnlCategory: 'commercial' },
-    { id: 'professional_services', name: 'Профессиональные услуги', pnlCategory: 'administrative' },
-    { id: 'other_services', name: 'Прочие услуги', pnlCategory: 'administrative' },
-    { id: 'metal_services', name: 'Прочие услуги по металл сервису', pnlCategory: 'operational' },
-    { id: 'materials', name: 'Расходные материалы для обработки металла', pnlCategory: 'operational' },
-    { id: 'overtime', name: 'Сверхурочная работа', pnlCategory: 'operational' },
-    { id: 'internet', name: 'Связь и интернет', pnlCategory: 'administrative' },
-    { id: 'social', name: 'Социальная политика', pnlCategory: 'administrative' },
-    { id: 'construction', name: 'Строительные затраты', pnlCategory: 'operational' },
-    { id: 'telecom_it', name: 'Телекоммуникации и ИТ', pnlCategory: 'administrative' },
-    { id: 'os_maintenance', name: 'Техническое обслуживание ОС', pnlCategory: 'administrative' },
-    { id: 'transport_purchases', name: 'Транспортные услуги при закупках', pnlCategory: 'operational' },
-    { id: 'crane_services', name: 'Услуги крана при закупках', pnlCategory: 'operational' },
-    { id: 'insurance', name: 'Услуги страхования', pnlCategory: 'commercial' },
-    { id: 'household', name: 'Хозяйственные затраты', pnlCategory: 'administrative' },
-];
 
 interface SettingsProps {
     settings: AppSettings;
@@ -69,6 +23,7 @@ interface SettingsProps {
 export const Settings: React.FC<SettingsProps> = React.memo(({ settings, onSave, currentUserEmail }) => {
     const { theme } = useTheme();
     const t = getThemeClasses(theme);
+    const { confirm: confirmDialog } = useConfirm();
     const [formData, setFormData] = useState<AppSettings>({
         ...settings,
         expenseCategories: settings.expenseCategories || DEFAULT_EXPENSE_CATEGORIES,
@@ -358,8 +313,8 @@ export const Settings: React.FC<SettingsProps> = React.memo(({ settings, onSave,
                             </div>
                             <div className="space-y-2 flex flex-col justify-end">
                                 <button
-                                    onClick={() => {
-                                        if (confirm('Вы уверены, что хотите сбросить нумерацию отчётов до 1?')) {
+                                    onClick={async () => {
+                                        if (await confirmDialog({ title: 'Сбросить нумерацию?', message: 'Вы уверены, что хотите сбросить нумерацию отчётов до 1?', variant: 'warning', confirmText: 'Сбросить' })) {
                                             setFormData({ ...formData, nextReportNo: 1 });
                                             setMessage('Нумерация отчётов сброшена до 1');
                                             setTimeout(() => setMessage(null), 3000);

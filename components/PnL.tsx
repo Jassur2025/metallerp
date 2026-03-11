@@ -31,7 +31,7 @@ interface MonthData {
     netProfit: number;
 }
 
-export const PnL: React.FC<PnLProps> = ({ orders, expenses, fixedAssets = [], expenseCategories = [], defaultExchangeRate = 12600, onUpdateExpense, onDeleteExpense }) => {
+export const PnL: React.FC<PnLProps> = ({ orders, expenses, fixedAssets = [], expenseCategories = [], defaultExchangeRate = 12800, onUpdateExpense, onDeleteExpense }) => {
     const { theme } = useTheme();
     const t = getThemeClasses(theme);
     const toast = useToast();

@@ -5,8 +5,9 @@ import {
 } from '../types';
 import { DEFAULT_EXCHANGE_RATE } from '../constants';
 import { IdGenerator } from '../utils/idGenerator';
-import { Plus, Trash2, Save, Calculator, Container, DollarSign, AlertTriangle, Truck, Scale, FileText, Users } from 'lucide-react';
+import { Plus, Minus, Trash2, Save, Calculator, Container, DollarSign, AlertTriangle, Truck, Scale, FileText, Users, Search, Package, X, Check, ShoppingCart } from 'lucide-react';
 import { useToast } from '../contexts/ToastContext';
+import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
 import { PaymentSplitModal, PaymentDistribution } from './Sales/PaymentSplitModal';
 import { useSuppliers } from '../hooks/useSuppliers';
 import { usePurchases } from '../hooks/usePurchases';
@@ -27,6 +28,9 @@ interface ImportProps {
 
 export const Import: React.FC<ImportProps> = ({ products, setProducts, settings, transactions, setTransactions }) => {
     const toast = useToast();
+    const { theme } = useTheme();
+    const t = getThemeClasses(theme);
+    const isDark = theme !== 'light';
     
     // Firebase hook for purchases
     const {
@@ -64,6 +68,45 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
 
     const [cart, setCart] = useState<PurchaseItem[]>([]);
 
+    // Product grid state
+    const [productSearch, setProductSearch] = useState('');
+    const [activeCategory, setActiveCategory] = useState<string>('all');
+
+    const IMPORT_CATEGORIES = useMemo(() => {
+        const types = new Set(products.map(p => p.type));
+        const all = [{ key: 'all', label: 'Все' }];
+        if (types.has(ProductType.PIPE)) all.push({ key: ProductType.PIPE, label: 'Трубы' });
+        if (types.has(ProductType.PROFILE)) all.push({ key: ProductType.PROFILE, label: 'Профили' });
+        if (types.has(ProductType.SHEET)) all.push({ key: ProductType.SHEET, label: 'Листы' });
+        if (types.has(ProductType.BEAM)) all.push({ key: ProductType.BEAM, label: 'Балки' });
+        if (types.has(ProductType.OTHER)) all.push({ key: ProductType.OTHER, label: 'Прочее' });
+        return all;
+    }, [products]);
+
+    const filteredGridProducts = useMemo(() => {
+        return products
+            .filter(p => {
+                const q = productSearch.toLowerCase();
+                const matchSearch = !q || p.name.toLowerCase().includes(q) || p.dimensions?.toLowerCase().includes(q);
+                const matchCat = activeCategory === 'all' || p.type === activeCategory;
+                return matchSearch && matchCat;
+            })
+            .sort((a, b) => a.name.localeCompare(b.name));
+    }, [products, productSearch, activeCategory]);
+
+    const cartProductIds = useMemo(() => new Set(cart.map(c => c.productId)), [cart]);
+
+    // Total weight calculation
+    const totalWeightKg = useMemo(() => {
+        return cart.reduce((sum, item) => {
+            const product = products.find(p => p.id === item.productId);
+            if (!product) return sum;
+            if (product.unit === 'т') return sum + item.quantity * 1000;
+            if (product.weightPerMeter) return sum + item.quantity * product.weightPerMeter;
+            return sum;
+        }, 0);
+    }, [cart, products]);
+
     // Overheads
     const [overheads, setOverheads] = useState<PurchaseOverheads>({
         logistics: 0,
@@ -75,6 +118,29 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
     // Repayment Modal
     const [isRepayModalOpen, setIsRepayModalOpen] = useState(false);
     const [selectedPurchaseForRepayment, setSelectedPurchaseForRepayment] = useState<Purchase | null>(null);
+
+    // Quick-add from product grid
+    const quickAddImportProduct = (product: Product) => {
+        if (cart.some(i => i.productId === product.id)) {
+            toast.warning('Этот товар уже в списке');
+            return;
+        }
+        const vatRate = settings.vatRate || 12;
+        const price = product.costPrice || product.pricePerUnit || 0;
+        const newItem: PurchaseItem = {
+            productId: product.id,
+            productName: product.name,
+            quantity: 1,
+            unit: product.unit,
+            invoicePrice: price,
+            invoicePriceWithoutVat: price / (1 + vatRate / 100),
+            vatAmount: price - (price / (1 + vatRate / 100)),
+            landedCost: price,
+            totalLineCost: price,
+            totalLineCostUZS: price
+        };
+        setCart(prev => [...prev, newItem]);
+    };
 
     // --- Logic to Add Item ---
     const handleAddItem = () => {
@@ -465,22 +531,26 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
     };
 
     return (
-        <div className="p-6 space-y-6 animate-fade-in h-[calc(100vh-2rem)] flex flex-col">
+        <div className={`p-6 space-y-5 animate-fade-in h-[calc(100vh-2rem)] flex flex-col`}>
             <div className="flex justify-between items-end">
                 <div>
-                    <h2 className="text-3xl font-bold text-white tracking-tight">Импорт и Закупка</h2>
-                    <p className="text-slate-400 mt-1">Оформление прихода и расчеты с поставщиками</p>
+                    <h2 className={`text-2xl font-bold ${t.text} tracking-tight`}>Импорт и Закупка</h2>
+                    <p className={`${t.textMuted} text-sm mt-1`}>Оформление прихода и расчеты с поставщиками</p>
                 </div>
-                <div className="flex bg-slate-800 p-1 rounded-lg border border-slate-700">
+                <div className={`flex ${isDark ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-200'} p-1 rounded-xl border`}>
                     <button
                         onClick={() => setActiveTab('new')}
-                        className={`px - 4 py - 2 rounded - md text - sm font - medium transition - all ${activeTab === 'new' ? 'bg-primary-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'} `}
+                        className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${activeTab === 'new'
+                            ? (isDark ? 'bg-primary-600 text-white shadow-lg' : 'bg-blue-500 text-white shadow-md')
+                            : `${t.textMuted} hover:${isDark ? 'text-white' : 'text-slate-700'}`}`}
                     >
                         Новая закупка
                     </button>
                     <button
                         onClick={() => setActiveTab('history')}
-                        className={`px - 4 py - 2 rounded - md text - sm font - medium transition - all ${activeTab === 'history' ? 'bg-primary-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'} `}
+                        className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${activeTab === 'history'
+                            ? (isDark ? 'bg-primary-600 text-white shadow-lg' : 'bg-blue-500 text-white shadow-md')
+                            : `${t.textMuted} hover:${isDark ? 'text-white' : 'text-slate-700'}`}`}
                     >
                         История и Долги
                     </button>
@@ -488,29 +558,32 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
             </div>
 
             {activeTab === 'new' ? (
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 overflow-hidden">
-                    {/* Left: Inputs & Overheads */}
-                    <div className="lg:col-span-1 space-y-6 overflow-y-auto pr-2 custom-scrollbar pb-20">
+                <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 flex-1 overflow-hidden">
+                    {/* Left: Settings + Product Grid */}
+                    <div className="lg:col-span-3 space-y-4 overflow-y-auto pr-1 custom-scrollbar pb-20">
                         {/* Document Info */}
-                        <div className="bg-slate-800 p-5 rounded-xl border border-slate-700 space-y-4 shadow-lg">
-                            <h3 className="text-white font-bold flex items-center gap-2">
-                                <FileText size={18} className="text-primary-500" /> Основное
-                            </h3>
-                            <div className="space-y-2">
-                                <label className="text-xs font-medium text-slate-400 flex items-center gap-2">
-                                    <Users size={14} /> Поставщик
-                                    {suppliersLoading && <span className="text-primary-400 text-xs">(загрузка...)</span>}
+                        <div className={`${isDark ? 'bg-gradient-to-br from-slate-800/90 to-slate-800/60' : 'bg-white'} p-5 rounded-2xl border ${t.border} space-y-4 shadow-sm`}>
+                            <div className="flex items-center gap-2.5 mb-1">
+                                <div className="p-2 rounded-lg bg-blue-500/10">
+                                    <FileText size={16} className="text-blue-500" />
+                                </div>
+                                <h3 className={`${t.text} font-bold text-sm`}>Основное (Импорт)</h3>
+                            </div>
+                            <div className="space-y-1.5">
+                                <label className={`text-xs font-semibold ${t.textMuted} uppercase tracking-wider flex items-center gap-1.5`}>
+                                    <Users size={12} /> Поставщик
+                                    {suppliersLoading && <span className="text-primary-400 text-[10px]">(загрузка...)</span>}
                                 </label>
                                 <div className="relative">
+                                    <Search size={14} className={`absolute left-3 top-1/2 -translate-y-1/2 ${t.textMuted}`} />
                                     <input
                                         type="text"
                                         list="suppliers-list"
-                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-primary-500 outline-none"
-                                        placeholder="Выберите или введите поставщика"
+                                        className={`w-full ${isDark ? 'bg-slate-800/60 border-slate-700/80 text-white placeholder-slate-500' : 'bg-white border-slate-200 text-slate-900 placeholder-slate-400'} border rounded-xl pl-9 pr-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500/30 transition-all`}
+                                        placeholder="Поиск поставщика..."
                                         value={supplierName}
                                         onChange={e => {
                                             setSupplierName(e.target.value);
-                                            // Find matching supplier
                                             const found = suppliers.find(s => 
                                                 s.name.toLowerCase() === e.target.value.toLowerCase()
                                             );
@@ -525,239 +598,282 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
                                         ))}
                                     </datalist>
                                 </div>
-                                {suppliers.length > 0 && (
-                                    <p className="text-xs text-slate-500">
-                                        {suppliers.length} поставщиков в базе
-                                    </p>
-                                )}
                             </div>
-                            <div className="space-y-2">
-                                <label className="text-xs font-medium text-slate-400">Дата прихода</label>
+                            <div className="space-y-1.5">
+                                <label className={`text-xs font-semibold ${t.textMuted} uppercase tracking-wider`}>Дата прихода</label>
                                 <input
                                     type="date"
-                                    className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-primary-500 outline-none"
+                                    className={`w-full ${isDark ? 'bg-slate-800/60 border-slate-700/80 text-white' : 'bg-white border-slate-200 text-slate-900'} border rounded-xl px-3.5 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-500/30 transition-all`}
                                     value={date}
                                     onChange={e => setDate(e.target.value)}
                                 />
                             </div>
-                            <div className="space-y-2">
-                                <label className="text-xs font-medium text-slate-400">Оплата</label>
+                            <div className="space-y-1.5">
+                                <label className={`text-xs font-semibold ${t.textMuted} uppercase tracking-wider`}>Оплата</label>
                                 <div className="grid grid-cols-3 gap-2">
-                                    <button
-                                        onClick={() => setPaymentMethod('cash')}
-                                        className={`px - 2 py - 2 rounded - lg text - xs font - bold border transition - all ${paymentMethod === 'cash' ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : 'bg-slate-900 border-slate-600 text-slate-400'} `}
-                                    >
-                                        Наличные
-                                    </button>
-                                    <button
-                                        onClick={() => setPaymentMethod('bank')}
-                                        className={`px - 2 py - 2 rounded - lg text - xs font - bold border transition - all ${paymentMethod === 'bank' ? 'bg-blue-500/20 border-blue-500 text-blue-400' : 'bg-slate-900 border-slate-600 text-slate-400'} `}
-                                    >
-                                        Перечисление
-                                    </button>
-                                    <button
-                                        onClick={() => setPaymentMethod('debt')}
-                                        className={`px-2 py-2 rounded-lg text-xs font-bold border transition-all ${paymentMethod === 'debt' ? 'bg-red-500/20 border-red-500 text-red-400' : 'bg-slate-900 border-slate-600 text-slate-400'}`}
-                                    >
-                                        В долг
-                                    </button>
-                                    <button
-                                        onClick={() => setPaymentMethod('mixed')}
-                                        className={`px-2 py-2 rounded-lg text-xs font-bold border transition-all col-span-3 ${paymentMethod === 'mixed' ? 'bg-amber-500/20 border-amber-500 text-amber-400' : 'bg-slate-900 border-slate-600 text-slate-400'}`}
-                                    >
-                                        Смешанная оплата (Частично)
-                                    </button>
+                                    {([
+                                        { key: 'cash' as const, label: 'Наличные', active: 'bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-sm' },
+                                        { key: 'bank' as const, label: 'Перечисление', active: 'bg-gradient-to-r from-blue-500 to-indigo-500 text-white shadow-sm' },
+                                        { key: 'debt' as const, label: 'В долг', active: 'bg-gradient-to-r from-red-500 to-rose-500 text-white shadow-sm' },
+                                    ] as const).map(pm => (
+                                        <button
+                                            key={pm.key}
+                                            onClick={() => setPaymentMethod(pm.key)}
+                                            className={`px-2 py-2 rounded-xl text-xs font-bold border transition-all ${paymentMethod === pm.key
+                                                ? pm.active
+                                                : `${isDark ? 'bg-slate-800/40 border-slate-700/60 text-slate-400 hover:border-slate-600' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`}`}
+                                        >
+                                            {pm.label}
+                                        </button>
+                                    ))}
                                 </div>
+                                <button
+                                    onClick={() => setPaymentMethod('mixed')}
+                                    className={`w-full px-2 py-2 rounded-xl text-xs font-bold border transition-all ${paymentMethod === 'mixed'
+                                        ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-sm'
+                                        : `${isDark ? 'bg-slate-800/40 border-slate-700/60 text-slate-400 hover:border-slate-600' : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'}`}`}
+                                >
+                                    Смешанная оплата
+                                </button>
                             </div>
                         </div>
 
-                        {/* Add Item Form with Quick Create */}
-                        <div className="bg-slate-800 p-5 rounded-xl border border-slate-700 space-y-4 shadow-lg">
-                            <h3 className="text-white font-bold flex items-center gap-2">
-                                <Plus size={18} className="text-emerald-500" /> Добавить товар
-                            </h3>
-
-                            <div className="space-y-2">
-                                <label className="text-xs font-medium text-slate-400">Товар</label>
-                                <div className="space-y-2">
-                                    <select
-                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-emerald-500 outline-none"
-                                        value={selectedProductId}
-                                        onChange={e => {
-                                            setSelectedProductId(e.target.value);
-                                            if (e.target.value) {
-                                                setInputProductName('');
-                                            }
-                                        }}
-                                    >
-                                        <option value="">-- Выберите товар из списка --</option>
-                                        {products.map(p => (
-                                            <option key={p.id} value={p.id}>
-                                                {p.name} ({p.dimensions}) {p.origin === 'import' ? '[Imp]' : '[Loc]'}
-                                            </option>
-                                        ))}
-                                    </select>
-                                    <div className="text-xs text-slate-500 text-center">или</div>
-                                    <input
-                                        type="text"
-                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-emerald-500 outline-none"
-                                        placeholder="Введите название нового товара (создастся автоматически)"
-                                        value={inputProductName}
-                                        onChange={e => {
-                                            setInputProductName(e.target.value);
-                                            if (e.target.value) {
-                                                setSelectedProductId('');
-                                            }
-                                        }}
-                                    />
-                                    {inputProductName && (
-                                        <div className="flex gap-2">
-                                            <select
-                                                className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
-                                                value={inputUnit}
-                                                onChange={e => setInputUnit(e.target.value as Unit)}
-                                            >
-                                                <option value={Unit.METER}>м (метр)</option>
-                                                <option value={Unit.TON}>т (тонна)</option>
-                                                <option value={Unit.PIECE}>шт (штука)</option>
-                                            </select>
-                                        </div>
-                                    )}
+                        {/* Product Selection Grid */}
+                        <div className={`${isDark ? 'bg-gradient-to-br from-slate-800/90 to-slate-800/60' : 'bg-white'} p-4 rounded-2xl border ${t.border} shadow-sm flex flex-col`} style={{ maxHeight: '55vh' }}>
+                            <div className="flex items-center justify-between mb-3 flex-shrink-0">
+                                <div className="flex items-center gap-2">
+                                    <div className="p-1.5 rounded-lg bg-emerald-500/10">
+                                        <ShoppingCart size={14} className="text-emerald-500" />
+                                    </div>
+                                    <h3 className={`${t.text} font-bold text-sm`}>Товары</h3>
+                                    <span className={`text-xs ${t.textMuted}`}>({filteredGridProducts.length})</span>
                                 </div>
                                 <button
                                     onClick={() => setIsProductModalOpen(true)}
-                                    className="w-full bg-slate-700 hover:bg-emerald-600 text-white py-2 rounded-lg transition-colors border border-slate-600 text-sm flex items-center justify-center gap-2"
-                                    title="Создать новый товар с полными параметрами"
+                                    className="px-2.5 py-1 rounded-lg bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-400 hover:to-purple-400 text-white text-[11px] font-bold transition-all shadow-sm"
                                 >
-                                    <Plus size={16} /> Создать товар с параметрами
+                                    + Новый
                                 </button>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-3">
-                                <div className="space-y-2">
-                                    <label className="text-xs font-medium text-slate-400">Кол-во</label>
-                                    <input
-                                        type="number"
-                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-emerald-500 outline-none"
-                                        placeholder="0"
-                                        value={inputQty || ''}
-                                        onChange={e => setInputQty(Number(e.target.value))}
-                                    />
-                                </div>
-                                <div className="space-y-2">
-                                    <label className="text-xs font-medium text-slate-400">Цена Invoice (USD)</label>
-                                    <input
-                                        type="number"
-                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-emerald-500 outline-none"
-                                        placeholder="0.00"
-                                        value={inputInvoicePrice || ''}
-                                        onChange={e => setInputInvoicePrice(Number(e.target.value))}
-                                    />
-                                </div>
+                            <div className="relative mb-2 flex-shrink-0">
+                                <Search size={14} className={`absolute left-3 top-1/2 -translate-y-1/2 ${t.textMuted}`} />
+                                <input
+                                    type="text"
+                                    placeholder="Поиск товара..."
+                                    value={productSearch}
+                                    onChange={e => setProductSearch(e.target.value)}
+                                    className={`w-full ${isDark ? 'bg-slate-800/60 border-slate-700/80 text-white placeholder-slate-500' : 'bg-slate-50 border-slate-200 text-slate-900 placeholder-slate-400'} border rounded-xl pl-9 pr-3 py-2 text-sm outline-none focus:ring-2 ${isDark ? 'focus:ring-blue-500/30' : 'focus:ring-blue-500/30'} transition-all`}
+                                />
+                                {productSearch && (
+                                    <button onClick={() => setProductSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2">
+                                        <X size={14} className={`${t.textMuted} hover:text-red-400`} />
+                                    </button>
+                                )}
                             </div>
 
-                            <button
-                                onClick={handleAddItem}
-                                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white py-2 rounded-lg font-medium transition-colors shadow-lg shadow-emerald-600/20"
-                            >
-                                Добавить в список
-                            </button>
+                            <div className="flex gap-1 mb-2 flex-shrink-0 flex-wrap">
+                                {IMPORT_CATEGORIES.map(tab => (
+                                    <button
+                                        key={tab.key}
+                                        onClick={() => setActiveCategory(tab.key)}
+                                        className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold whitespace-nowrap transition-all border ${
+                                            activeCategory === tab.key
+                                                ? (isDark ? 'bg-blue-500/20 text-blue-400 border-blue-500/40' : 'bg-blue-500 text-white border-blue-500')
+                                                : (isDark ? `bg-slate-800/40 ${t.textMuted} border-transparent hover:border-slate-600` : 'bg-slate-100 text-slate-600 border-transparent hover:bg-slate-200')}`}
+                                    >
+                                        {tab.label}
+                                    </button>
+                                ))}
+                            </div>
+
+                            <div className="flex-1 overflow-y-auto custom-scrollbar">
+                                {filteredGridProducts.length === 0 ? (
+                                    <div className={`flex flex-col items-center justify-center py-8 ${t.textMuted}`}>
+                                        <Package size={32} className="opacity-20 mb-2" />
+                                        <p className="text-xs">Товары не найдены</p>
+                                    </div>
+                                ) : (
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                        {filteredGridProducts.slice(0, 80).map(p => {
+                                            const inCart = cartProductIds.has(p.id);
+                                            return (
+                                                <button
+                                                    key={p.id}
+                                                    onClick={() => !inCart && quickAddImportProduct(p)}
+                                                    disabled={inCart}
+                                                    className={`text-left p-2.5 rounded-xl border transition-all duration-150 group relative overflow-hidden
+                                                        ${inCart
+                                                            ? (isDark ? 'bg-blue-500/10 border-blue-500/30 opacity-60' : 'bg-blue-50 border-blue-300 opacity-60')
+                                                            : (isDark
+                                                                ? 'bg-slate-800/50 border-slate-700/60 hover:border-blue-500/60 hover:bg-slate-800/90 active:bg-slate-700'
+                                                                : 'bg-white border-slate-200 hover:border-blue-400 hover:shadow-sm')
+                                                        } ${inCart ? 'cursor-default' : 'active:scale-[0.97] cursor-pointer'}`}
+                                                >
+                                                    <div className={`font-bold text-[12px] leading-snug ${t.text} truncate mb-0.5`}>{p.name}</div>
+                                                    <div className="flex items-center gap-1 mb-1.5">
+                                                        <span className={`text-[10px] font-mono font-bold ${isDark ? 'text-slate-300 bg-slate-700/60' : 'text-slate-700 bg-slate-100'} px-1.5 py-0.5 rounded`}>
+                                                            {p.dimensions}
+                                                        </span>
+                                                        {p.origin === 'import' && (
+                                                            <span className={`text-[8px] px-1 py-0.5 rounded font-bold ${isDark ? 'bg-purple-500/20 text-purple-400' : 'bg-purple-50 text-purple-600'}`}>IMP</span>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex items-center justify-between">
+                                                        <span className={`text-[11px] font-mono font-bold ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>
+                                                            ${p.pricePerUnit.toFixed(2)}
+                                                        </span>
+                                                        <div className="flex items-center gap-1">
+                                                            {p.weightPerMeter ? (
+                                                                <span className={`text-[9px] font-mono ${isDark ? 'text-blue-400/80' : 'text-blue-600/80'}`}>{p.weightPerMeter}кг/м</span>
+                                                            ) : null}
+                                                            <span className={`text-[10px] ${t.textMuted}`}>{p.quantity} {p.unit}</span>
+                                                        </div>
+                                                    </div>
+                                                    {inCart && (
+                                                        <div className={`absolute top-1 right-1 w-5 h-5 rounded-full flex items-center justify-center ${isDark ? 'bg-blue-500/30' : 'bg-blue-100'}`}>
+                                                            <Check size={10} className={`${isDark ? 'text-blue-400' : 'text-blue-600'}`} />
+                                                        </div>
+                                                    )}
+                                                    {!inCart && (
+                                                        <div className={`absolute inset-0 rounded-xl pointer-events-none transition-opacity opacity-0 group-hover:opacity-100
+                                                            ${isDark ? 'ring-1 ring-blue-500/30' : 'ring-1 ring-blue-400/40'}`} />
+                                                    )}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
                         </div>
 
                         {/* Overheads Form */}
-                        <div className="bg-slate-800 p-5 rounded-xl border border-slate-700 space-y-4 shadow-lg relative overflow-hidden">
-                            <div className="absolute -right-6 -top-6 text-slate-700 opacity-20">
-                                <Container size={100} />
+                        <div className={`${isDark ? 'bg-gradient-to-br from-slate-800/90 to-amber-900/10' : 'bg-gradient-to-br from-white to-amber-50'} p-5 rounded-2xl border ${t.border} space-y-4 shadow-sm relative overflow-hidden`}>
+                            <div className="flex items-center gap-2.5 mb-1">
+                                <div className="p-2 rounded-lg bg-amber-500/10">
+                                    <Truck size={16} className="text-amber-500" />
+                                </div>
+                                <div>
+                                    <h3 className={`${t.text} font-bold text-sm`}>Накладные расходы (USD)</h3>
+                                    <p className={`text-[11px] ${t.textMuted} mt-0.5`}>Распределяются пропорционально сумме</p>
+                                </div>
                             </div>
-                            <h3 className="text-white font-bold flex items-center gap-2">
-                                <Truck size={18} className="text-amber-500" /> Накладные расходы (USD)
-                            </h3>
-                            <p className="text-xs text-slate-500">Распределяются на себестоимость пропорционально сумме.</p>
 
                             <div className="grid grid-cols-2 gap-3">
-                                <div className="space-y-1">
-                                    <label className="text-xs text-slate-400">Логистика</label>
-                                    <input
-                                        type="number"
-                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-amber-500 outline-none text-sm"
-                                        value={overheads.logistics || ''}
-                                        onChange={e => setOverheads({ ...overheads, logistics: Number(e.target.value) })}
-                                    />
-                                </div>
-                                <div className="space-y-1">
-                                    <label className="text-xs text-slate-400">Тамож. Пошлина</label>
-                                    <input
-                                        type="number"
-                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-amber-500 outline-none text-sm"
-                                        value={overheads.customsDuty || ''}
-                                        onChange={e => setOverheads({ ...overheads, customsDuty: Number(e.target.value) })}
-                                    />
-                                </div>
-                                <div className="space-y-1">
-                                    <label className="text-xs text-slate-400">Тамож. НДС</label>
-                                    <input
-                                        type="number"
-                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-amber-500 outline-none text-sm"
-                                        value={overheads.importVat || ''}
-                                        onChange={e => setOverheads({ ...overheads, importVat: Number(e.target.value) })}
-                                    />
-                                </div>
-                                <div className="space-y-1">
-                                    <label className="text-xs text-slate-400">Прочее</label>
-                                    <input
-                                        type="number"
-                                        className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-amber-500 outline-none text-sm"
-                                        value={overheads.other || ''}
-                                        onChange={e => setOverheads({ ...overheads, other: Number(e.target.value) })}
-                                    />
-                                </div>
+                                {[
+                                    { label: 'Логистика', key: 'logistics' as const, icon: '🚚' },
+                                    { label: 'Тамож. пошлина', key: 'customsDuty' as const, icon: '📋' },
+                                    { label: 'Тамож. НДС', key: 'importVat' as const, icon: '🏛️' },
+                                    { label: 'Прочее', key: 'other' as const, icon: '📦' },
+                                ].map(({ label, key, icon }) => (
+                                    <div key={key} className="space-y-1">
+                                        <label className={`text-xs ${t.textMuted} flex items-center gap-1`}>{icon} {label}</label>
+                                        <input
+                                            type="number"
+                                            className={`w-full ${isDark ? 'bg-slate-800/60 border-slate-700/80 text-white' : 'bg-white border-slate-200 text-slate-900'} border rounded-xl px-3 py-2 text-sm font-mono outline-none focus:ring-2 focus:ring-amber-500/30 transition-all`}
+                                            value={overheads[key] || ''}
+                                            onChange={e => setOverheads({ ...overheads, [key]: Number(e.target.value) })}
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div className={`flex items-center justify-between p-2.5 rounded-xl ${isDark ? 'bg-amber-500/10 border-amber-500/20' : 'bg-amber-50 border-amber-200'} border`}>
+                                <span className={`text-xs font-medium ${t.textMuted}`}>Итого накладные:</span>
+                                <span className="text-sm font-mono font-bold text-amber-500">
+                                    ${(overheads.logistics + overheads.customsDuty + overheads.importVat + overheads.other).toFixed(2)}
+                                </span>
                             </div>
                         </div>
                     </div>
 
                     {/* Right: Items Table & Summary */}
-                    <div className="lg:col-span-2 flex flex-col h-full bg-slate-800 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden">
-                        <div className="p-4 bg-slate-900/50 border-b border-slate-700 flex justify-between items-center">
-                            <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                                <Scale className="text-blue-500" /> Список товаров к приходу
-                            </h3>
-                            <div className="bg-blue-500/10 px-3 py-1 rounded-lg border border-blue-500/20">
-                                <span className="text-xs text-blue-300">Позиций: </span>
-                                <span className="font-mono font-bold text-white">{cart.length}</span>
+                    <div className={`lg:col-span-2 flex flex-col h-full ${isDark ? 'bg-slate-800/80' : 'bg-white'} border ${t.border} rounded-2xl shadow-lg overflow-hidden min-w-0`}>
+                        <div className={`px-4 py-3 ${isDark ? 'bg-slate-900/50 border-slate-700' : 'bg-slate-50 border-slate-200'} border-b flex justify-between items-center`}>
+                            <div className="flex items-center gap-2">
+                                <Scale className="text-blue-500" size={15} />
+                                <h3 className={`text-sm font-bold ${t.text}`}>Корзина</h3>
+                            </div>
+                            <div className={`${isDark ? 'bg-blue-500/10 border-blue-500/20' : 'bg-blue-50 border-blue-200'} px-2.5 py-1 rounded-full border`}>
+                                <span className={`font-mono font-bold text-xs ${t.text}`}>{cart.length}</span>
                             </div>
                         </div>
 
                         <div className="flex-1 overflow-y-auto">
                             <table className="w-full text-left text-sm">
-                                <thead className="bg-slate-900/50 text-xs uppercase text-slate-400 font-medium sticky top-0">
+                                <thead className={`${isDark ? 'bg-slate-900/50 text-slate-400' : 'bg-slate-50 text-slate-500'} text-[10px] uppercase font-medium sticky top-0`}>
                                     <tr>
-                                        <th className="px-4 py-3">Товар</th>
-                                        <th className="px-4 py-3 text-right">Кол-во</th>
-                                        <th className="px-4 py-3 text-right">Цена (Inv.)</th>
-                                        <th className="px-4 py-3 text-right bg-amber-500/5 text-amber-200">Себест. (Landed)</th>
-                                        <th className="px-4 py-3 text-right">Сумма</th>
-                                        <th className="px-4 py-3 text-center"></th>
+                                        <th className="px-3 py-2.5">Товар</th>
+                                        <th className="px-2 py-2.5 text-right">Кол.</th>
+                                        <th className={`px-2 py-2.5 text-right ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>Вес</th>
+                                        <th className="px-2 py-2.5 text-right">Inv.</th>
+                                        <th className={`px-2 py-2.5 text-right ${isDark ? 'bg-amber-500/5 text-amber-300' : 'bg-amber-50 text-amber-700'}`}>Себ.</th>
+                                        <th className="px-2 py-2.5 text-right">Сумма</th>
+                                        <th className="px-1 py-2.5 w-8"></th>
                                     </tr>
                                 </thead>
-                                <tbody className="divide-y divide-slate-700">
+                                <tbody className={`divide-y ${isDark ? 'divide-slate-700/50' : 'divide-slate-100'}`}>
                                     {totals.itemsWithLandedCost.map((item) => (
-                                        <tr key={item.productId} className="hover:bg-slate-700/30">
-                                            <td className="px-4 py-3 font-medium text-slate-200">{item.productName}</td>
-                                            <td className="px-4 py-3 text-right font-mono">{item.quantity} <span className="text-xs text-slate-500">{item.unit}</span></td>
-                                            <td className="px-4 py-3 text-right font-mono text-slate-400">${item.invoicePrice.toFixed(2)}</td>
-                                            <td className="px-4 py-3 text-right font-mono font-bold text-amber-400 bg-amber-500/5">${item.landedCost.toFixed(2)}</td>
-                                            <td className="px-4 py-3 text-right font-mono text-slate-200">${item.totalLineCost.toFixed(2)}</td>
-                                            <td className="px-4 py-3 text-center">
-                                                <button onClick={() => removeItem(item.productId)} className="text-slate-600 hover:text-red-400 transition-colors">
-                                                    <Trash2 size={16} />
+                                        <tr key={item.productId} className={`${isDark ? 'hover:bg-slate-700/30' : 'hover:bg-slate-50'} transition-colors group`}>
+                                            <td className={`px-3 py-2 font-medium ${t.text} text-xs`}>{item.productName}</td>
+                                            <td className="px-2 py-2 text-right">
+                                                <div className="flex items-center justify-end gap-0.5">
+                                                    <button
+                                                        onClick={() => {
+                                                            const newQty = Math.max(1, item.quantity - 1);
+                                                            setCart(prev => prev.map(c => c.productId === item.productId ? { ...c, quantity: newQty } : c));
+                                                        }}
+                                                        className={`w-6 h-6 flex items-center justify-center rounded-md ${isDark ? 'bg-slate-700/60 hover:bg-slate-600 text-slate-300' : 'bg-slate-100 hover:bg-slate-200 text-slate-600'} transition-colors`}
+                                                    >
+                                                        <Minus size={10} />
+                                                    </button>
+                                                    <input
+                                                        type="number"
+                                                        className={`w-10 ${isDark ? 'bg-transparent text-white' : 'bg-transparent text-slate-900'} text-center font-mono outline-none text-xs [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`}
+                                                        value={item.quantity}
+                                                        onChange={(e) => {
+                                                            const newQty = Number(e.target.value);
+                                                            setCart(prev => prev.map(c => c.productId === item.productId ? { ...c, quantity: newQty } : c));
+                                                        }}
+                                                        min={1}
+                                                    />
+                                                    <button
+                                                        onClick={() => {
+                                                            setCart(prev => prev.map(c => c.productId === item.productId ? { ...c, quantity: c.quantity + 1 } : c));
+                                                        }}
+                                                        className={`w-6 h-6 flex items-center justify-center rounded-md ${isDark ? 'bg-slate-700/60 hover:bg-emerald-600 text-slate-300 hover:text-white' : 'bg-slate-100 hover:bg-emerald-500 text-slate-600 hover:text-white'} transition-colors`}
+                                                    >
+                                                        <Plus size={10} />
+                                                    </button>
+                                                </div>
+                                            </td>
+                                            <td className="px-2 py-2 text-right">
+                                                {(() => {
+                                                    const prod = products.find(p => p.id === item.productId);
+                                                    if (!prod) return <span className={`text-[10px] ${t.textMuted}`}>—</span>;
+                                                    if (prod.unit === 'т') return <span className={`text-xs font-mono ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>{(item.quantity * 1000).toFixed(0)} кг</span>;
+                                                    if (!prod.weightPerMeter) return <span className={`text-[10px] ${t.textMuted}`}>—</span>;
+                                                    const wKg = item.quantity * prod.weightPerMeter;
+                                                    return <span className={`text-xs font-mono font-semibold ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>{wKg >= 1000 ? `${(wKg / 1000).toFixed(2)} т` : `${wKg.toFixed(0)} кг`}</span>;
+                                                })()}
+                                            </td>
+                                            <td className={`px-2 py-2 text-right font-mono text-xs ${t.textMuted}`}>${item.invoicePrice.toFixed(2)}</td>
+                                            <td className={`px-2 py-2 text-right font-mono text-xs font-bold text-amber-500 ${isDark ? 'bg-amber-500/5' : 'bg-amber-50/50'}`}>${item.landedCost.toFixed(2)}</td>
+                                            <td className={`px-2 py-2 text-right font-mono text-xs ${t.text}`}>${item.totalLineCost.toFixed(2)}</td>
+                                            <td className="px-1 py-2 text-center">
+                                                <button onClick={() => removeItem(item.productId)} className={`opacity-0 group-hover:opacity-100 ${t.textMuted} hover:text-red-500 transition-all`}>
+                                                    <Trash2 size={13} />
                                                 </button>
                                             </td>
                                         </tr>
                                     ))}
                                     {cart.length === 0 && (
                                         <tr>
-                                            <td colSpan={6} className="px-6 py-12 text-center text-slate-500">
-                                                Список пуст. Добавьте товары слева.
+                                            <td colSpan={7} className={`px-6 py-16 text-center ${t.textMuted}`}>
+                                                <div className="flex flex-col items-center gap-2">
+                                                    <Package size={36} className="opacity-20" />
+                                                    <p className="text-sm">Нажмите на товар слева чтобы добавить</p>
+                                                </div>
                                             </td>
                                         </tr>
                                     )}
@@ -766,42 +882,53 @@ export const Import: React.FC<ImportProps> = ({ products, setProducts, settings,
                         </div>
 
                         {/* Footer Summary */}
-                        <div className="bg-slate-900 p-6 border-t border-slate-700">
-                            <div className="grid grid-cols-4 gap-8 mb-6">
-                                <div>
-                                    <p className="text-xs text-slate-500 uppercase">Сумма по Инвойсу</p>
-                                    <p className="text-xl font-mono font-bold text-slate-300">${totals.totalInvoiceValue.toFixed(2)}</p>
+                        <div className={`${isDark ? 'bg-slate-900/80 border-slate-700' : 'bg-slate-50 border-slate-200'} p-4 border-t`}>
+                            {/* Total Weight */}
+                            {totalWeightKg > 0 && (
+                                <div className={`flex items-center gap-2 mb-3 p-2 rounded-xl ${isDark ? 'bg-blue-500/10 border-blue-500/20' : 'bg-blue-50 border-blue-200'} border`}>
+                                    <Scale size={14} className="text-blue-500" />
+                                    <span className={`text-xs font-semibold ${isDark ? 'text-blue-300' : 'text-blue-700'}`}>Общий вес:</span>
+                                    <span className={`text-sm font-mono font-bold ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>
+                                        {totalWeightKg >= 1000 ? `${(totalWeightKg / 1000).toFixed(3)} т` : `${totalWeightKg.toFixed(1)} кг`}
+                                    </span>
+                                    {totalWeightKg >= 1000 && (
+                                        <span className={`text-[10px] ${t.textMuted}`}>({totalWeightKg.toFixed(0)} кг)</span>
+                                    )}
                                 </div>
-                                <div>
-                                    <p className="text-xs text-slate-500 uppercase">Накладные (Логистика+)</p>
-                                    <p className="text-xl font-mono font-bold text-amber-400">+${totals.totalOverheads.toFixed(2)}</p>
+                            )}
+                            <div className="grid grid-cols-2 gap-2.5 mb-3">
+                                <div className={`p-2.5 rounded-xl ${isDark ? 'bg-slate-800/60 border-slate-700/60' : 'bg-white border-slate-200'} border`}>
+                                    <p className={`text-[10px] ${t.textMuted} uppercase font-semibold`}>Инвойс</p>
+                                    <p className={`text-sm font-mono font-bold ${t.text}`}>${totals.totalInvoiceValue.toFixed(2)}</p>
                                 </div>
-                                <div>
-                                    <p className="text-xs text-slate-500 uppercase">Налоги (Пошлина+НДС)</p>
-                                    <p className="text-xl font-mono font-bold text-blue-400">+${totals.totalTaxes.toFixed(2)}</p>
+                                <div className={`p-2.5 rounded-xl ${isDark ? 'bg-amber-500/5 border-amber-500/20' : 'bg-amber-50 border-amber-200'} border`}>
+                                    <p className={`text-[10px] text-amber-500 uppercase font-semibold`}>Накладные</p>
+                                    <p className="text-sm font-mono font-bold text-amber-500">+${totals.totalOverheads.toFixed(2)}</p>
                                 </div>
-                                <div>
-                                    <p className="text-xs text-slate-500 uppercase">Итого Себестоимость</p>
-                                    <p className="text-2xl font-mono font-bold text-white border-b-2 border-primary-500 inline-block">
-                                        ${totals.totalLandedValue.toFixed(2)}
-                                    </p>
-                                    <p className="text-[10px] text-slate-500 mt-1">(Без учета налогов)</p>
+                                <div className={`p-2.5 rounded-xl ${isDark ? 'bg-blue-500/5 border-blue-500/20' : 'bg-blue-50 border-blue-200'} border`}>
+                                    <p className={`text-[10px] text-blue-500 uppercase font-semibold`}>Налоги</p>
+                                    <p className="text-sm font-mono font-bold text-blue-500">+${totals.totalTaxes.toFixed(2)}</p>
+                                </div>
+                                <div className={`p-2.5 rounded-xl ${isDark ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-emerald-50 border-emerald-200'} border`}>
+                                    <p className={`text-[10px] text-emerald-500 uppercase font-semibold`}>Себестоимость</p>
+                                    <p className="text-lg font-mono font-bold text-emerald-500">${totals.totalLandedValue.toFixed(2)}</p>
                                 </div>
                             </div>
 
-                            <div className="flex items-center gap-4 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg mb-4">
-                                <AlertTriangle className="text-amber-500 shrink-0" size={20} />
-                                <p className="text-xs text-amber-200/80">
-                                    При проведении документа остатки товаров увеличатся, а их учетная цена (Cost Price) будет пересчитана по методу <strong>средневзвешенной</strong> стоимости с учетом всех расходов.
+                            <div className={`flex items-center gap-2 p-2.5 ${isDark ? 'bg-amber-500/10 border-amber-500/20' : 'bg-amber-50 border-amber-200'} border rounded-xl mb-3`}>
+                                <AlertTriangle className="text-amber-500 shrink-0" size={14} />
+                                <p className={`text-[10px] ${isDark ? 'text-amber-200/80' : 'text-amber-700'}`}>
+                                    Cost Price — <strong>средневзвешенная</strong>.
                                 </p>
                             </div>
 
                             <button
                                 onClick={handleComplete}
                                 disabled={cart.length === 0 || !supplierName}
-                                className="w-full bg-primary-600 hover:bg-primary-500 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed text-white py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-3 transition-all shadow-lg shadow-primary-600/20"
+                                className={`w-full ${isDark ? 'bg-primary-600 hover:bg-primary-500 disabled:bg-slate-800 disabled:text-slate-600' : 'bg-blue-600 hover:bg-blue-500 disabled:bg-slate-100 disabled:text-slate-400'} disabled:cursor-not-allowed text-white py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all shadow-lg ${isDark ? 'shadow-primary-600/20' : 'shadow-blue-500/20'}`}
                             >
-                                <Save size={22} /> Провести закупку
+                                <Save size={16} /> Провести
+                                {cart.length > 0 && <span className="text-xs font-normal opacity-80">({cart.length})</span>}
                             </button>
                         </div>
                     </div>

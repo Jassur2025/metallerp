@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useRef, useCallback } from 'react';
-import { Product, WorkflowOrder, OrderItem, Order, Client, Transaction, AppSettings, Employee, JournalEvent, WarehouseLabels } from '../types';
+import { Product, ProductType, WorkflowOrder, OrderItem, Order, Client, Transaction, AppSettings, Employee, JournalEvent, WarehouseLabels } from '../types';
 import { DEFAULT_EXCHANGE_RATE } from '../constants';
 import { IdGenerator } from '../utils/idGenerator';
 import { findOrCreateClient } from '../services/clientService';
@@ -196,12 +196,24 @@ export const Workflow: React.FC<WorkflowProps> = ({
     };
   }, [products]);
 
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+
+  const productCategories = useMemo(() => {
+    const cats = new Set<string>();
+    products.forEach(p => { if (p.type) cats.add(p.type); });
+    return ['all', ...Array.from(cats)];
+  }, [products]);
+
   const filteredProducts = useMemo(() => {
     const q = searchTerm.toLowerCase().trim();
     return products
-      .filter(p => p.name.toLowerCase().includes(q) || p.dimensions.toLowerCase().includes(q))
+      .filter(p => {
+        if (selectedCategory !== 'all' && p.type !== selectedCategory) return false;
+        if (q && !p.name.toLowerCase().includes(q) && !p.dimensions.toLowerCase().includes(q)) return false;
+        return true;
+      })
       .sort((a, b) => b.quantity - a.quantity);
-  }, [products, searchTerm]);
+  }, [products, searchTerm, selectedCategory]);
 
   const addToCart = useCallback((p: Product) => {
     setCart(prev => {
@@ -643,41 +655,96 @@ export const Workflow: React.FC<WorkflowProps> = ({
                 </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto custom-scrollbar pr-2" style={{ maxHeight: 'calc(100vh - 220px)' }}>
+              {/* Category filter pills */}
+              <div className="flex gap-1.5 mb-3 flex-shrink-0 flex-wrap">
+                {productCategories.map(cat => (
+                  <button
+                    key={cat}
+                    onClick={() => setSelectedCategory(cat)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 border ${
+                      selectedCategory === cat
+                        ? (theme === 'light'
+                          ? 'bg-blue-500 text-white border-blue-500 shadow-sm'
+                          : 'bg-primary-500/20 text-primary-400 border-primary-500/50')
+                        : (theme === 'light'
+                          ? 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300'
+                          : `${t.bgInput} ${t.borderInput} ${t.textMuted} hover:border-slate-500`)
+                    }`}
+                  >
+                    {cat === 'all' ? `📦 Все (${products.length})` : `${cat} (${products.filter(p => p.type === cat).length})`}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex-1 overflow-y-auto custom-scrollbar pr-2" style={{ maxHeight: 'calc(100vh - 270px)' }}>
                 {/* === GRID VIEW === */}
                 {wfViewMode === 'grid' && (
-                  <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2">
-                    {filteredProducts.slice(0, 60).map(p => (
-                      <div key={p.id} className={`${t.bgCard} border ${t.border} rounded-lg p-2 transition-colors cursor-pointer ${theme === 'light' ? 'hover:border-[#1A73E8]/50 hover:shadow-md' : 'hover:border-primary-500/50'} group`}
-                        onClick={() => addToCart(p)}
-                      >
-                        <div className="flex justify-between items-start mb-1">
-                          <div className="flex-1 min-w-0">
-                            <div className={`font-medium text-xs truncate ${t.text}`}>{p.name}</div>
-                            <div className={`text-[10px] truncate ${t.textMuted}`}>{p.dimensions} • {p.steelGrade}</div>
-                            {(p.manufacturer || p.warehouse) && (
-                              <div className={`text-[10px] truncate ${t.textMuted}`}>
-                                {p.manufacturer && <span>{p.manufacturer}</span>}
-                                {p.manufacturer && p.warehouse && <span> • </span>}
-                                {p.warehouse && <span>{WarehouseLabels[p.warehouse]}</span>}
-                              </div>
+                  <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2.5">
+                    {filteredProducts.slice(0, 60).map(p => {
+                      const isLowStock = p.quantity <= 10;
+                      return (
+                        <div
+                          key={p.id}
+                          onClick={() => addToCart(p)}
+                          className={`${theme === 'light'
+                            ? 'bg-white border-slate-200 hover:border-blue-400 hover:shadow-md hover:shadow-blue-100'
+                            : 'bg-slate-800/60 border-slate-700/60 hover:border-primary-500/60 hover:bg-slate-800/90 active:bg-slate-700'
+                          } border rounded-xl p-3 text-left transition-all duration-150 cursor-pointer
+                            active:scale-[0.97] group relative overflow-hidden`}
+                        >
+                          {/* Name */}
+                          <div className="flex items-start gap-1.5 mb-1">
+                            <h3 className={`font-bold ${t.text} text-[13px] leading-snug flex-1 truncate`}>{p.name}</h3>
+                            {p.origin === 'import' && (
+                              <span className={`text-[9px] ${theme !== 'light' ? 'bg-purple-500/20 text-purple-400 border-purple-500/30' : 'bg-purple-50 text-purple-600 border-purple-200'} px-1.5 py-0.5 rounded font-bold border flex-shrink-0`}>
+                                IMP
+                              </span>
                             )}
                           </div>
-                          <div className="text-right ml-1">
-                            <div className={`${t.success} font-mono font-bold text-xs`}>${p.pricePerUnit.toFixed(2)}</div>
+
+                          {/* Dims + grade */}
+                          <div className="flex items-center gap-1.5 mb-2">
+                            <span className={`text-[11px] font-mono font-bold ${theme !== 'light' ? 'text-slate-300 bg-slate-700/60' : 'text-slate-700 bg-slate-100'} px-1.5 py-0.5 rounded`}>
+                              {p.dimensions}
+                            </span>
+                            {p.steelGrade && p.steelGrade !== '-' && (
+                              <span className={`text-[10px] ${t.textMuted}`}>{p.steelGrade}</span>
+                            )}
                           </div>
+
+                          {/* Price */}
+                          <div className={`rounded-lg px-2 py-1.5 mb-2 ${theme !== 'light' ? 'bg-emerald-500/10' : 'bg-emerald-50'}`}>
+                            <div className="flex items-baseline justify-between">
+                              <span className={`text-sm font-extrabold font-mono ${theme !== 'light' ? 'text-emerald-400' : 'text-emerald-600'} leading-tight`}>
+                                ${p.pricePerUnit.toFixed(2)}
+                              </span>
+                              {p.warehouse && (
+                                <span className={`text-[10px] ${t.textMuted}`}>{WarehouseLabels[p.warehouse]}</span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Stock */}
+                          <div className="flex items-center justify-between">
+                            <span className={`text-[11px] font-semibold flex items-center gap-1 ${isLowStock ? 'text-orange-400' : t.textMuted}`}>
+                              {isLowStock && <span className="text-orange-400">⚠</span>}
+                              {p.quantity.toLocaleString()} {p.unit}
+                            </span>
+                            <span className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all flex-shrink-0
+                              ${theme !== 'light'
+                                ? 'bg-primary-500/20 text-primary-400 group-hover:bg-primary-500/35'
+                                : 'bg-blue-100 text-blue-600 group-hover:bg-blue-200'
+                              }`}>
+                              <Plus size={15} strokeWidth={2.5} />
+                            </span>
+                          </div>
+
+                          {/* Hover ring */}
+                          <div className={`absolute inset-0 rounded-xl pointer-events-none transition-opacity opacity-0 group-hover:opacity-100
+                            ${theme !== 'light' ? 'ring-1 ring-primary-500/30' : 'ring-1 ring-blue-400/40'}`} />
                         </div>
-                        <div className="flex items-center justify-between">
-                          <span className={`text-[10px] ${t.textMuted}`}>Ост: {p.quantity}</span>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); addToCart(p); }}
-                            className={`${theme === 'light' ? 'bg-slate-100 hover:bg-[#1A73E8] hover:text-white text-slate-700' : 'bg-slate-700 hover:bg-primary-600 text-white'} px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 transition-colors`}
-                          >
-                            <Plus size={10} /> Добавить
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
 
@@ -718,14 +785,10 @@ export const Workflow: React.FC<WorkflowProps> = ({
                         <span className={`text-[10px] ${t.textMuted} truncate px-1`}>{p.warehouse ? WarehouseLabels[p.warehouse] : '—'}</span>
                         <span className={`text-xs font-bold font-mono ${t.success} text-right truncate px-1`}>${p.pricePerUnit.toFixed(2)}</span>
                         <span className={`text-[10px] ${t.textMuted} text-right truncate px-1`}>{p.quantity}</span>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); addToCart(p); }}
-                          className={`w-6 h-6 rounded flex items-center justify-center transition-all opacity-0 group-hover:opacity-100
-                          ${theme === 'light' ? 'bg-blue-50 text-blue-500 hover:bg-blue-100' : 'bg-primary-500/20 text-primary-400 hover:bg-primary-500/30'}`}
-                          title="Добавить"
-                        >
-                          <Plus size={12} />
-                        </button>
+                        <span className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all opacity-0 group-hover:opacity-100
+                          ${theme === 'light' ? 'bg-blue-100 text-blue-500' : 'bg-primary-500/20 text-primary-400'}`}>
+                          <Plus size={13} strokeWidth={2.5} />
+                        </span>
                       </div>
                     ))}
                   </div>
@@ -805,17 +868,11 @@ export const Workflow: React.FC<WorkflowProps> = ({
                     <UserPlus size={13} />
                   </button>
                 </div>
-                <div className="grid grid-cols-2 gap-1">
-                  <input
-                    value={customerPhone}
-                    onChange={(e) => setCustomerPhone(e.target.value)}
-                    className={`${t.bgInput} border ${t.borderInput} rounded px-2 py-1.5 ${t.text} outline-none text-xs ${t.focusRing} ${t.textPlaceholder}`}
-                    placeholder="Телефон"
-                  />
+                <div className="flex gap-1">
                   <input
                     value={exchangeRate}
                     onChange={(e) => setExchangeRate(Number(e.target.value))}
-                    className={`${t.bgInput} border ${t.borderInput} rounded px-2 py-1.5 ${t.text} outline-none font-mono text-xs ${t.focusRing}`}
+                    className={`${t.bgInput} border ${t.borderInput} rounded px-2 py-1.5 ${t.text} outline-none font-mono text-xs ${t.focusRing} w-full`}
                     placeholder="Курс"
                     type="number"
                   />
@@ -844,71 +901,70 @@ export const Workflow: React.FC<WorkflowProps> = ({
                 )}
               </div>
 
-              <div className="flex-1 overflow-y-auto custom-scrollbar px-3 py-2 space-y-1">
+              <div className="flex-1 overflow-y-auto custom-scrollbar">
                 {cart.length === 0 ? (
-                  <div className={`${t.textMuted} text-center py-4 text-sm`}>Корзина пуста</div>
-                ) : cart.map(it => (
-                  <div key={it.productId} className={`${t.bgPanelAlt} border ${t.border} rounded-lg px-2 py-1.5`}>
-                    <div className="flex items-center gap-1.5">
-                      {/* Название и размеры - flex-1 */}
-                      <div className="flex-1 min-w-0">
-                        <div className={`${t.text} text-xs font-semibold truncate`}>{it.productName}</div>
-                        {it.dimensions && it.dimensions !== '-' && (
-                          <div className={`text-[9px] ${t.textMuted} truncate`}>{it.dimensions}</div>
-                        )}
-                      </div>
-                      {/* Кол-во: - / input / + */}
-                      <div className="flex-shrink-0">
-                        <div className={`text-[8px] ${t.textMuted} text-center mb-0.5`}>Кол-во</div>
-                        <div className="flex items-center gap-0.5">
-                          <button
-                            type="button"
-                            onClick={() => updateQty(it.productId, it.quantity - 1)}
-                            className={`w-5 h-5 flex items-center justify-center rounded text-xs font-bold flex-shrink-0 transition-colors
-                              ${theme === 'light' ? 'bg-slate-200 hover:bg-slate-300 text-slate-700' : 'bg-slate-700 hover:bg-slate-600 text-slate-300'}`}
-                          >−</button>
-                          <input
-                            type="number"
-                            className={`w-10 ${t.bgInput} border ${t.borderInput} rounded px-0.5 py-0.5 ${t.text} font-mono text-[10px] text-center`}
-                            value={it.quantity}
-                            onChange={(e) => updateQty(it.productId, Number(e.target.value))}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => updateQty(it.productId, it.quantity + 1)}
-                            className={`w-5 h-5 flex items-center justify-center rounded text-xs font-bold flex-shrink-0 transition-colors
-                              ${theme === 'light' ? 'bg-blue-100 hover:bg-blue-200 text-blue-700' : 'bg-primary-500/20 hover:bg-primary-500/40 text-primary-400'}`}
-                          >+</button>
+                  <div className={`${t.textMuted} text-center py-8 text-sm`}>Корзина пуста</div>
+                ) : (
+                  <div className={`divide-y ${theme === 'light' ? 'divide-slate-100' : 'divide-slate-700/30'}`}>
+                    {cart.map(it => (
+                      <div key={it.productId} className={`px-3 py-2 transition-all ${theme === 'light' ? 'hover:bg-slate-50' : 'hover:bg-slate-800/40'} group`}>
+                        <div className="flex items-center gap-2">
+                          {/* Name (dims) unit */}
+                          <div className="min-w-0 flex-1">
+                            <span className={`font-semibold ${t.text} text-sm block truncate leading-tight`}>
+                              {it.productName}{it.dimensions && it.dimensions !== '-' ? ` (${it.dimensions})` : ''} <span className={`font-normal ${t.textMuted}`}>{it.unit || 'шт'}</span>
+                            </span>
+                          </div>
+                          {/* Qty controls */}
+                          <div className="flex items-center gap-0 flex-shrink-0">
+                            <button
+                              onClick={() => updateQty(it.productId, it.quantity - 1)}
+                              className={`w-7 h-7 flex items-center justify-center rounded-l-lg text-sm font-bold transition-all
+                                ${theme === 'light' ? 'bg-slate-200 hover:bg-slate-300 text-slate-600' : 'bg-slate-700/80 hover:bg-slate-600 text-slate-300'}`}
+                            >−</button>
+                            <input
+                              type="number"
+                              className={`w-9 h-7 bg-transparent text-center font-mono text-sm font-bold ${t.text} outline-none ${theme === 'light' ? 'bg-slate-50 border-y border-slate-200' : 'bg-slate-800/60 border-y border-slate-700'}`}
+                              value={it.quantity}
+                              onChange={(e) => updateQty(it.productId, Number(e.target.value))}
+                            />
+                            <button
+                              onClick={() => updateQty(it.productId, it.quantity + 1)}
+                              className={`w-7 h-7 flex items-center justify-center rounded-r-lg text-sm font-bold transition-all
+                                ${theme === 'light' ? 'bg-blue-100 hover:bg-blue-200 text-blue-700' : 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-400'}`}
+                            >+</button>
+                          </div>
+                          {/* Price input */}
+                          <div className={`flex items-center ${theme === 'light' ? 'bg-slate-50 border-slate-200' : 'bg-slate-800/60 border-slate-700'} rounded-lg border h-7 ${displayCurrency === 'UZS' ? 'w-[110px]' : 'w-[85px]'} flex-shrink-0`}>
+                            <input
+                              type="number"
+                              step={displayCurrency === 'USD' ? '0.01' : '100'}
+                              className={`w-full bg-transparent text-right font-mono text-sm ${t.text} outline-none pl-2 pr-1`}
+                              value={displayCurrency === 'USD' ? it.priceAtSale : toUZS(it.priceAtSale)}
+                              onChange={(e) => {
+                                const val = Number(e.target.value);
+                                updatePrice(it.productId, displayCurrency === 'USD' ? val : val / exchangeRate);
+                              }}
+                            />
+                            <span className={`text-[10px] font-bold pr-1.5 flex-shrink-0 ${displayCurrency === 'UZS' ? 'text-emerald-500' : (theme === 'light' ? 'text-blue-600' : 'text-blue-400')}`}>
+                              {displayCurrency === 'UZS' ? 'сўм' : '$'}
+                            </span>
+                          </div>
+                          {/* Total + delete */}
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            <span className={`font-mono font-bold text-sm text-right ${t.success} w-[75px]`}>
+                              {displayCurrency === 'USD' ? `$${it.total.toFixed(2)}` : toUZS(it.total).toLocaleString()}
+                            </span>
+                            <button onClick={() => removeItem(it.productId)}
+                              className={`p-1 rounded-md opacity-0 group-hover:opacity-100 transition-all flex-shrink-0 ${theme === 'light' ? 'text-slate-300 hover:text-red-500 hover:bg-red-50' : 'text-slate-600 hover:text-red-400 hover:bg-red-500/10'}`}>
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
                         </div>
                       </div>
-                      {/* Цена: чуть шире */}
-                      <div className="w-20 flex-shrink-0">
-                        <div className={`text-[8px] ${t.textMuted} text-center`}>Цена {displayCurrency === 'USD' ? '$' : 'сум'}</div>
-                        <input
-                          type="number"
-                          step={displayCurrency === 'USD' ? '0.01' : '100'}
-                          className={`w-full ${t.bgInput} border ${t.borderInput} rounded px-1 py-0.5 ${t.text} font-mono text-[10px] text-center`}
-                          value={displayCurrency === 'USD' ? it.priceAtSale : toUZS(it.priceAtSale)}
-                          onChange={(e) => {
-                            const val = Number(e.target.value);
-                            updatePrice(it.productId, displayCurrency === 'USD' ? val : val / exchangeRate);
-                          }}
-                        />
-                      </div>
-                      {/* Сумма */}
-                      <div className="w-14 text-right flex-shrink-0">
-                        <div className={`text-[8px] ${t.textMuted}`}>Сумма</div>
-                        <div className={`${t.success} font-mono font-bold text-[10px]`}>
-                          {displayCurrency === 'USD' ? `$${it.total.toFixed(2)}` : `${toUZS(it.total).toLocaleString()}`}
-                        </div>
-                      </div>
-                      {/* Кнопка удаления */}
-                      <button onClick={() => removeItem(it.productId)} className={`${t.textMuted} hover:text-red-500 flex-shrink-0 ml-0.5`}>
-                        <Trash2 size={12} />
-                      </button>
-                    </div>
+                    ))}
                   </div>
-                ))}
+                )}
               </div>
 
               <div className={`p-3 border-t ${t.border} ${t.bgPanelAlt} space-y-1 flex-shrink-0`}>
