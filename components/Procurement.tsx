@@ -30,6 +30,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, clients, set
     });
     const [procurementType, setProcurementType] = useState<ProcurementType>('local'); // Main switch
     const [supplierName, setSupplierName] = useState('');
+    const [selectedClientId, setSelectedClientId] = useState<string | undefined>(undefined);
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
 
     // Payment Logic
@@ -451,6 +452,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, clients, set
                     vatAmount: item.invoicePrice - (item.invoicePrice / (1 + vatRate / 100)),  // UZS VAT per unit
                 })),
                 supplierName,
+                clientId: selectedClientId,
                 overheads: procurementType === 'import'
                     ? overheads
                     : { logistics: 0, customsDuty: 0, importVat: 0, other: 0 },
@@ -465,6 +467,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, clients, set
             // Reset form
             setCart([]);
             setSupplierName('');
+            setSelectedClientId(undefined);
             setOverheads({ logistics: 0, customsDuty: 0, importVat: 0, other: 0 });
             setPaymentMethod('cash');
             setPaymentCurrency('USD');
@@ -619,6 +622,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, clients, set
             type: 'supplier_payment' as const,
             relatedId: selectedPurchaseForRepayment.id,
             supplierId: selectedPurchaseForRepayment.supplierId, // For supplier debt tracking in CF
+            clientId: selectedPurchaseForRepayment.clientId, // For client balance tracking
         };
 
         if (distribution) {
@@ -822,6 +826,8 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, clients, set
                     procurementType={procurementType}
                     supplierName={supplierName}
                     setSupplierName={setSupplierName}
+                    selectedClientId={selectedClientId}
+                    setSelectedClientId={setSelectedClientId}
                     clients={clients}
                     date={date}
                     setDate={setDate}

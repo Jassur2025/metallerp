@@ -57,6 +57,7 @@ interface CommitPurchaseInput {
   items: PurchaseItemInput[];
   supplierName: string;
   supplierId?: string; // Optional — if not provided, auto-resolve by supplierName
+  clientId?: string; // Optional — link to client when supplier is also a client
   overheads: PurchaseOverheadsInput;
   paymentMethod: "cash" | "bank" | "card" | "debt" | "mixed";
   paymentCurrency?: "USD" | "UZS";
@@ -185,6 +186,32 @@ export const commitPurchase = onCall(
           resolvedSupplierId = doc.id;
           supplierRef = doc.ref;
           supplierData = doc.data();
+        }
+      }
+
+      // Resolve client (when supplier is also a client — for netting/balance tracking)
+      let resolvedClientId: string | null = null;
+      let clientRef: FirebaseFirestore.DocumentReference | null = null;
+      let clientData: FirebaseFirestore.DocumentData | null = null;
+
+      if (data.clientId) {
+        clientRef = db.doc(`clients/${data.clientId}`);
+        const clientSnap = await tx.get(clientRef);
+        if (clientSnap.exists) {
+          resolvedClientId = data.clientId;
+          clientData = clientSnap.data()!;
+        }
+      } else {
+        // Auto-resolve client by supplierName
+        const clientQuery = db.collection("clients")
+          .where("name", "==", data.supplierName)
+          .limit(1);
+        const clientSnaps = await tx.get(clientQuery);
+        if (!clientSnaps.empty) {
+          const cDoc = clientSnaps.docs[0];
+          resolvedClientId = cDoc.id;
+          clientRef = cDoc.ref;
+          clientData = cDoc.data();
         }
       }
 
@@ -318,6 +345,18 @@ export const commitPurchase = onCall(
         });
       }
 
+      // Update client's purchasesFromUs (track how much we bought from this client)
+      if (clientRef && clientData && resolvedClientId) {
+        const currentPurchasesFromClient = safeNum(clientData.totalPurchasesFromUs);
+        const clientVersion = safeNum(clientData._version);
+
+        tx.update(clientRef, {
+          totalPurchasesFromUs: round2(currentPurchasesFromClient + totalLandedAmountUSD),
+          updatedAt: Timestamp.now(),
+          _version: clientVersion + 1,
+        });
+      }
+
       // Create purchase document
       const purchaseRef = db.doc(`purchases/${purchaseId}`);
       tx.set(purchaseRef, {
@@ -325,6 +364,7 @@ export const commitPurchase = onCall(
         date: nowIso,
         supplierName: data.supplierName,
         ...(resolvedSupplierId && { supplierId: resolvedSupplierId }),
+        ...(resolvedClientId && { clientId: resolvedClientId }),
         status: "completed",
         items: purchaseItems,
         overheads: {
@@ -360,6 +400,8 @@ export const commitPurchase = onCall(
           currency: "USD",
           method: data.paymentMethod === "mixed" ? "cash" : data.paymentMethod,
           relatedId: purchaseId,
+          ...(resolvedSupplierId && { supplierId: resolvedSupplierId }),
+          ...(resolvedClientId && { clientId: resolvedClientId }),
           description: `Оплата закупки #${purchaseId} (${data.supplierName})`,
           date: nowIso,
           createdAt: Timestamp.now(),
@@ -452,6 +494,7 @@ export const commitPurchase = onCall(
         date: nowIso,
         supplierName: data.supplierName,
         supplierId: resolvedSupplierId,
+        clientId: resolvedClientId,
         paymentMethod: data.paymentMethod,
         paymentCurrency: data.paymentCurrency || "UZS",
       };

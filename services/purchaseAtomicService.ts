@@ -31,6 +31,7 @@ interface CommitPurchaseInput {
   items: PurchaseItemInput[];
   supplierName: string;
   supplierId?: string;
+  clientId?: string;
   overheads: PurchaseOverheads;
   paymentMethod: 'cash' | 'bank' | 'card' | 'debt' | 'mixed';
   paymentCurrency?: 'USD' | 'UZS';
@@ -61,6 +62,7 @@ export interface AtomicPurchasePayload {
   items: PurchaseItemInput[];
   supplierName: string;
   supplierId?: string; // Optional — CF auto-resolves by name if not provided
+  clientId?: string; // Link to Client when supplier is also a client
   overheads: PurchaseOverheads;
   paymentMethod: 'cash' | 'bank' | 'card' | 'debt' | 'mixed';
   paymentCurrency?: 'USD' | 'UZS';
@@ -96,6 +98,7 @@ export const purchaseAtomicService = {
       })),
       supplierName: payload.supplierName,
       supplierId: payload.supplierId,
+      clientId: payload.clientId,
       overheads: payload.overheads,
       paymentMethod: payload.paymentMethod,
       paymentCurrency: payload.paymentCurrency,

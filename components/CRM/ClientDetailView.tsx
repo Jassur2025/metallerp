@@ -75,6 +75,7 @@ export const ClientDetailView: React.FC<ClientDetailViewProps> = ({
 
     // Helper: does this purchase match the client as supplier?
     const purchaseMatchesClient = (purchase: Purchase): boolean => {
+        if (purchase.clientId === client.id) return true;
         const name = client.name?.toLowerCase();
         const companyName = client.companyName?.toLowerCase();
         const supplierName = purchase.supplierName?.toLowerCase();
@@ -162,7 +163,8 @@ export const ClientDetailView: React.FC<ClientDetailViewProps> = ({
         // 4. Our payments to client/supplier (supplier_payment)
         transactions.forEach(tx => {
             if (tx.type !== 'supplier_payment') return;
-            // Match by client ID or by supplier name in description
+            // Match by clientId field, or by supplier/related ID, or by name in description
+            const matchByClientId = tx.clientId === client.id;
             const matchById = tx.relatedId === client.id || tx.supplierId === client.id;
             const matchByName = tx.description && (
                 tx.description.toLowerCase().includes(client.name?.toLowerCase() || '___') ||
@@ -174,7 +176,7 @@ export const ClientDetailView: React.FC<ClientDetailViewProps> = ({
             );
             const matchByPurchase = tx.relatedId && clientPurchaseIds.has(tx.relatedId);
 
-            if (!matchById && !matchByName && !matchByPurchase) return;
+            if (!matchByClientId && !matchById && !matchByName && !matchByPurchase) return;
 
             entries.push({
                 id: tx.id,
@@ -328,14 +330,14 @@ export const ClientDetailView: React.FC<ClientDetailViewProps> = ({
                         </div>
                     </div>
                 </div>
-                {stats.currentDebt > 0 && (
+                <div className="flex items-center gap-2 flex-shrink-0">
                     <button
                         onClick={() => onRepay(client)}
-                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-medium transition-colors flex items-center gap-2"
+                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-medium transition-colors flex items-center gap-2 shadow-lg shadow-emerald-600/20"
                     >
-                        <Wallet size={16} /> Погасить долг
+                        <Wallet size={16} /> <span className="hidden sm:inline">Провести оплату</span><span className="sm:hidden">Оплата</span>
                     </button>
-                )}
+                </div>
             </div>
 
             {/* Client Info Bar */}

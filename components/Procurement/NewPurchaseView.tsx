@@ -42,6 +42,8 @@ interface NewPurchaseViewProps {
 
   supplierName: string;
   setSupplierName: (v: string) => void;
+  selectedClientId?: string;
+  setSelectedClientId?: (v: string | undefined) => void;
   clients: Client[];
   date: string;
   setDate: (v: string) => void;
@@ -84,6 +86,8 @@ export const NewPurchaseView: React.FC<NewPurchaseViewProps> = ({
   procurementType,
   supplierName,
   setSupplierName,
+  selectedClientId,
+  setSelectedClientId,
   clients,
   date,
   setDate,
@@ -222,7 +226,7 @@ export const NewPurchaseView: React.FC<NewPurchaseViewProps> = ({
                 )}
                 {supplierName ? (
                   <button
-                    onClick={() => { setSupplierName(''); setSupplierSearch(''); }}
+                    onClick={() => { setSupplierName(''); setSelectedClientId?.(undefined); setSupplierSearch(''); }}
                     className="absolute right-3 top-1/2 -translate-y-1/2"
                   >
                     <X size={14} className={`${t.textMuted} hover:text-red-400 transition-colors`} />
@@ -240,6 +244,7 @@ export const NewPurchaseView: React.FC<NewPurchaseViewProps> = ({
                     <button
                       onClick={() => {
                         setSupplierName(supplierSearch.trim());
+                        setSelectedClientId?.(undefined);
                         setIsSupplierDropdownOpen(false);
                         setSupplierSearch('');
                       }}
@@ -262,6 +267,7 @@ export const NewPurchaseView: React.FC<NewPurchaseViewProps> = ({
                         key={c.id}
                         onClick={() => {
                           setSupplierName(c.name);
+                          setSelectedClientId?.(c.id);
                           setIsSupplierDropdownOpen(false);
                           setSupplierSearch('');
                         }}

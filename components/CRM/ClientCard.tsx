@@ -115,13 +115,6 @@ export const ClientCard: React.FC<ClientCardProps> = ({
                     <Eye size={16} />
                 </button>
                 <button
-                    onClick={() => onNotes(client)}
-                    className={`px-3 ${theme === 'dark' ? 'bg-slate-700 hover:bg-slate-600' : 'bg-slate-200 hover:bg-slate-300 text-slate-700'} py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-1`}
-                    title="Заметки"
-                >
-                    <MessageSquare size={16} />
-                </button>
-                <button
                     onClick={() => onHistory(client)}
                     className={`px-3 ${theme === 'dark' ? 'bg-slate-700 hover:bg-slate-600' : 'bg-slate-200 hover:bg-slate-300 text-slate-700'} py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-1`}
                     title="История долгов"
@@ -131,7 +124,10 @@ export const ClientCard: React.FC<ClientCardProps> = ({
                 <button
                     onClick={() => onRepay(client)}
                     disabled={debt <= 0}
-                    className={`flex-1 ${theme === 'dark' ? 'bg-slate-700' : 'bg-slate-200 text-slate-700'} hover:bg-emerald-600 hover:text-white disabled:opacity-50 disabled:hover:bg-slate-700 text-white py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2`}
+                    className={`flex-1 ${debt > 0
+                        ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                        : (theme === 'dark' ? 'bg-slate-700 text-slate-500' : 'bg-slate-200 text-slate-400')
+                    } disabled:opacity-50 disabled:cursor-not-allowed py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2`}
                 >
                     <Wallet size={16} /> Погасить долг
                 </button>

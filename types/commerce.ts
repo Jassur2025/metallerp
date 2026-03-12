@@ -20,6 +20,7 @@ export interface Client extends Versionable {
   notes?: string;
   totalPurchases?: number;
   totalDebt?: number;
+  totalPurchasesFromUs?: number; // How much we bought from this client (when client is also a supplier)
   // _version and updatedAt inherited from Versionable
 }
 
@@ -194,6 +195,7 @@ export interface Purchase extends Versionable {
   date: string;
   supplierName: string;
   supplierId?: string; // Link to Supplier for debt tracking (auto-resolved by CF)
+  clientId?: string; // Link to Client when supplier is also a client
   status: 'completed';
   items: PurchaseItem[];
   overheads: PurchaseOverheads;
@@ -234,6 +236,7 @@ export interface Transaction extends Versionable {
   orderId?: string; // Link to order for sale-linked payments
   relatedId?: string; // Client ID or Purchase ID
   supplierId?: string; // Supplier ID for supplier_payment (for debt tracking)
+  clientId?: string; // Client ID when supplier is also a client
   // _version and updatedAt inherited from Versionable
 }
 
