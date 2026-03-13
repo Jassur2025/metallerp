@@ -18,6 +18,7 @@ import { CartPanel } from './CartPanel';
 import { MobileCartModal } from './MobileCartModal';
 import { ExpenseForm } from './ExpenseForm';
 import { ReturnModal } from './ReturnModal';
+import { ReturnView } from './ReturnView';
 import { ReceiptModal } from './ReceiptModal';
 import { ClientModal } from './ClientModal';
 import { StaffModal } from './StaffModal';
@@ -1045,50 +1046,50 @@ export const Sales: React.FC = () => {
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-4 p-4 lg:p-5 relative overflow-hidden">
         {flyingItems.map(item => <FlyingIcon key={item.id} {...item} onComplete={() => removeFlyingItem(item.id)} />)}
 
-        <div className={`${mode === 'sale' ? 'lg:col-span-2' : 'lg:col-span-3'} flex flex-col h-full overflow-hidden transition-all duration-300`}>
-          {/* Mode Switcher — Tabs + Action buttons */}
-          <div className="flex items-center gap-2 mb-4">
-            {/* Main Tabs */}
-            <div className={`flex gap-1 flex-1 ${theme !== 'light' ? 'bg-slate-800/40' : 'bg-slate-100'} p-1 rounded-xl`}>
+        <div className={`lg:col-span-2 flex flex-col h-full overflow-hidden transition-all duration-300`}>
+          {/* Mode Switcher — Unified Tabs with sliding pill */}
+          <div className="relative flex mb-4">
+            <div className={`relative flex w-full ${theme !== 'light' ? 'bg-slate-800/50' : 'bg-slate-100'} p-1 rounded-xl`}>
+              {/* Sliding pill indicator */}
+              <div
+                className={`absolute top-1 bottom-1 rounded-lg transition-all duration-300 ease-in-out z-0 ${theme !== 'light' ? 'bg-slate-700 shadow-lg shadow-black/20' : 'bg-white shadow-md'}`}
+                style={(() => {
+                  const allTabs = [
+                    { key: 'sale' },
+                    { key: 'history' },
+                    ...(isCashier ? [{ key: 'workflow' }] : []),
+                    ...(isCashier ? [{ key: 'transactions' }] : []),
+                    { key: 'expense' },
+                    ...(currentEmployee?.permissions?.canProcessReturns !== false ? [{ key: 'return' }] : []),
+                  ];
+                  const idx = allTabs.findIndex(t => t.key === mode);
+                  const count = allTabs.length;
+                  return {
+                    width: `calc((100% - 8px) / ${count})`,
+                    left: `calc(4px + ${idx} * (100% - 8px) / ${count})`,
+                  };
+                })()}
+              />
+              {/* Tab buttons */}
               {[
-                { key: 'sale' as SalesMode, label: 'Продажа', icon: <ArrowDownRight size={16} />, active: 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/20' },
-                { key: 'history' as SalesMode, label: `Продажи${orders.length > 0 ? ` (${orders.length})` : ''}`, icon: <Clock size={16} />, active: 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' },
-                ...(isCashier ? [{ key: 'workflow' as SalesMode, label: 'Workflow', icon: <ClipboardList size={16} />, active: 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20' }] : []),
-                ...(isCashier ? [{ key: 'transactions' as SalesMode, label: 'Транзакции', icon: <List size={16} />, active: 'bg-purple-600 text-white shadow-lg shadow-purple-600/20' }] : []),
+                { key: 'sale' as SalesMode, label: 'Продажа', icon: <ArrowDownRight size={15} /> },
+                { key: 'history' as SalesMode, label: `Продажи (${orders.length})`, icon: <Clock size={15} /> },
+                ...(isCashier ? [{ key: 'workflow' as SalesMode, label: 'Workflow', icon: <ClipboardList size={15} /> }] : []),
+                ...(isCashier ? [{ key: 'transactions' as SalesMode, label: 'Транзакции', icon: <List size={15} /> }] : []),
+                { key: 'expense' as SalesMode, label: 'Расходы', icon: <ArrowUpRight size={15} /> },
+                ...(currentEmployee?.permissions?.canProcessReturns !== false ? [{ key: 'return' as SalesMode, label: 'Возврат', icon: <RefreshCw size={15} /> }] : []),
               ].map(tab => (
-                <button key={tab.key} onClick={() => setMode(tab.key)}
-                  className={`flex-1 py-2.5 rounded-lg font-semibold flex items-center justify-center gap-1.5 text-sm transition-all duration-200
-                    ${mode === tab.key ? tab.active : `${theme !== 'light' ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/40' : 'text-slate-600 hover:text-slate-900 hover:bg-white'}`}`}>
+                <button
+                  key={tab.key}
+                  onClick={() => setMode(tab.key)}
+                  className={`relative z-10 flex-1 py-2 rounded-lg font-semibold flex items-center justify-center gap-1.5 text-[13px] transition-colors duration-200
+                    ${mode === tab.key
+                      ? (theme !== 'light' ? 'text-white' : 'text-slate-800')
+                      : (theme !== 'light' ? 'text-slate-400 hover:text-slate-200' : 'text-slate-500 hover:text-slate-700')}`}
+                >
                   {tab.icon} {tab.label}
                 </button>
               ))}
-            </div>
-            {/* Action Buttons: Расход & Возврат */}
-            <div className="flex gap-1.5 flex-shrink-0">
-              <button
-                onClick={() => setMode(mode === 'expense' ? 'sale' : 'expense')}
-                className={`flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 border
-                  ${mode === 'expense'
-                    ? 'bg-red-600 text-white border-red-600 shadow-lg shadow-red-600/20'
-                    : (theme !== 'light'
-                      ? 'bg-slate-800/60 text-slate-400 border-slate-700/60 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/40'
-                      : 'bg-white text-slate-600 border-slate-200 hover:bg-red-50 hover:text-red-600 hover:border-red-300')}`}
-              >
-                <ArrowUpRight size={14} /> Расход
-              </button>
-              {currentEmployee?.permissions?.canProcessReturns !== false && (
-                <button
-                  onClick={() => setMode(mode === 'return' ? 'sale' : 'return')}
-                  className={`flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 border
-                    ${mode === 'return'
-                      ? 'bg-amber-600 text-white border-amber-600 shadow-lg shadow-amber-600/20'
-                      : (theme !== 'light'
-                        ? 'bg-slate-800/60 text-slate-400 border-slate-700/60 hover:bg-amber-500/10 hover:text-amber-400 hover:border-amber-500/40'
-                        : 'bg-white text-slate-600 border-slate-200 hover:bg-amber-50 hover:text-amber-600 hover:border-amber-300')}`}
-                >
-                  <RefreshCw size={14} /> Возврат
-                </button>
-              )}
             </div>
           </div>
 
@@ -1161,6 +1162,16 @@ export const Sales: React.FC = () => {
               setEditingOrderId={setEditingOrderId}
               onToast={(type, msg) => type === 'success' ? toast.success(msg) : toast.error(msg)}
             />
+          ) : mode === 'return' ? (
+            <ReturnView
+              returnClientName={returnClientName} setReturnClientName={setReturnClientName}
+              returnProductName={returnProductName} setReturnProductName={setReturnProductName}
+              returnQuantity={returnQuantity} setReturnQuantity={setReturnQuantity}
+              returnMethod={returnMethod} setReturnMethod={setReturnMethod}
+              clients={clients} products={products}
+              onSubmit={handleReturnSubmit}
+              onSubmitMoneyReturn={handleMoneyReturn}
+            />
           ) : null}
         </div>
 
@@ -1191,17 +1202,7 @@ export const Sales: React.FC = () => {
           />)}
       </div>
 
-      {/* Return Modal */}
-      {mode === 'return' && (
-        <ReturnModal returnClientName={returnClientName} setReturnClientName={setReturnClientName}
-          returnProductName={returnProductName} setReturnProductName={setReturnProductName}
-          returnQuantity={returnQuantity} setReturnQuantity={setReturnQuantity}
-          returnMethod={returnMethod} setReturnMethod={setReturnMethod}
-          clients={clients} products={products}
-          onSubmit={handleReturnSubmit}
-          onSubmitMoneyReturn={handleMoneyReturn}
-          onClose={() => setMode('sale')} />
-      )}
+
 
       {/* Receipt Modal */}
       {showReceiptModal && selectedOrderForReceipt && (

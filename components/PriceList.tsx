@@ -207,20 +207,22 @@ export const PriceList: React.FC<PriceListProps> = React.memo(({ products, onSav
             </div>
 
             {/* Bulk Update Panel */}
-            <div className={`${theme === 'dark' ? 'bg-slate-800/50' : 'bg-slate-100'} rounded-xl border ${t.border} overflow-hidden`}>
+            <div className="mb-2">
                 <button
                     onClick={() => setShowBulkPanel(!showBulkPanel)}
-                    className={`w-full flex items-center justify-between p-4 ${theme === 'dark' ? 'hover:bg-slate-700/30' : 'hover:bg-slate-200'} transition-colors`}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                        theme === 'light'
+                            ? 'text-slate-600 hover:bg-slate-100'
+                            : 'text-slate-400 hover:bg-slate-800/50'
+                    }`}
                 >
-                    <div className={`flex items-center gap-2 font-semibold ${t.text}`}>
-                        <Percent size={20} className="text-primary-400" />
-                        <span>Массовое изменение ({selectedIds.size})</span>
-                    </div>
-                    {showBulkPanel ? <ChevronUp size={20} className={t.text} /> : <ChevronDown size={20} className={t.text} />}
+                    <Percent size={13} className="text-primary-400" />
+                    <span>Массовое изменение ({selectedIds.size})</span>
+                    <ChevronDown size={13} className={`transition-transform duration-200 ${showBulkPanel ? 'rotate-180' : ''}`} />
                 </button>
 
                 {showBulkPanel && (
-                    <div className={`p-4 border-t ${t.border} ${theme === 'dark' ? 'bg-slate-900/20' : 'bg-slate-50'} animate-slide-down`}>
+                    <div className={`mt-2 p-4 border ${theme === 'light' ? 'border-slate-200 bg-slate-50' : 'border-slate-700 bg-slate-800/50'} rounded-xl animate-slide-down`}>
                         <div className="flex flex-wrap items-center gap-4">
                             <div className={`flex ${theme === 'dark' ? 'bg-slate-700' : 'bg-slate-200'} rounded-lg p-1`}>
                                 <button

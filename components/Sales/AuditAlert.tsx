@@ -25,19 +25,21 @@ export const AuditAlert: React.FC<AuditAlertProps> = React.memo(({
   const getRate = (rate: unknown) => getSafeRate(rate, num(exchangeRate));
 
   return (
-    <div className="mb-6 bg-red-500/10 border border-red-500/30 rounded-2xl overflow-hidden transition-all duration-300">
+    <div className="mb-2">
       <button
         onClick={() => setShowAuditAlert(!showAuditAlert)}
-        className="w-full flex items-center justify-between p-3 px-4 hover:bg-red-500/5 transition-colors"
+        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+          theme === 'light' 
+            ? 'text-red-500 hover:bg-red-50' 
+            : 'text-red-400 hover:bg-red-500/10'
+        }`}
       >
-        <div className="flex items-center gap-2 text-red-400 font-bold text-sm">
-          <AlertTriangle size={16} />
-          <span>Аномальные записи ({totalCount})</span>
-        </div>
-        {showAuditAlert ? <ChevronUp size={16} className="text-red-400" /> : <ChevronDown size={16} className="text-red-400" />}
+        <AlertTriangle size={13} />
+        <span>Аномальные записи ({totalCount})</span>
+        <ChevronDown size={13} className={`transition-transform duration-200 ${showAuditAlert ? 'rotate-180' : ''}`} />
       </button>
       {showAuditAlert && (
-        <div className="px-4 pb-3 space-y-2 animate-fade-in">
+        <div className={`mt-2 px-3 pb-2 space-y-2 animate-fade-in border ${theme === 'light' ? 'border-slate-200 bg-slate-50' : 'border-slate-700 bg-slate-800/50'} rounded-xl`}>
           <div className="space-y-1.5 max-h-[160px] overflow-y-auto custom-scrollbar">
             {suspicious.orders.map(o => (
               <div key={o.id} className={`text-xs ${theme === 'light' ? 'bg-red-50' : 'bg-slate-900/50'} p-2 rounded-lg flex justify-between border border-red-500/20`}>
