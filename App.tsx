@@ -248,7 +248,7 @@ const AppContent: React.FC = () => {
           onNavigateToProcurement={handleNavigateToProcurement}
         />);
       case 'reports':
-        return renderLazyComponent(<Reports orders={orders} expenses={expenses} products={products} purchases={purchases} settings={settings} transactions={transactions} fixedAssets={fixedAssets} onAddExpense={handleAddExpense} onUpdateExpense={updateExpense} onDeleteExpense={deleteExpense} />);
+        return renderLazyComponent(<Reports orders={orders} expenses={expenses} products={products} purchases={purchases} settings={settings} transactions={transactions} fixedAssets={fixedAssets} clients={clients} onAddExpense={handleAddExpense} onUpdateExpense={updateExpense} onDeleteExpense={deleteExpense} />);
       case 'fixedAssets':
         return renderLazyComponent(<FixedAssets
           assets={fixedAssets}

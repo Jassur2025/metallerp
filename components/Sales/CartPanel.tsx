@@ -94,7 +94,7 @@ export const CartPanel: React.FC<CartPanelProps> = ({
   const isDark = theme !== 'light';
 
   return (
-    <div className={`hidden lg:flex ${isDark ? 'bg-slate-900/95 border-slate-700/80' : `${t.bgCard} border-slate-200`} border rounded-2xl flex-col overflow-hidden h-full`}>
+    <div className={`hidden lg:flex ${isDark ? 'bg-slate-900/95 border-slate-700/80' : `${t.bgCard} border-slate-300`} border rounded-2xl flex-col overflow-hidden h-full`}>
       {/* ЧЕК Header */}
       <div id="cart-target" className={`px-4 py-3 ${isDark ? 'bg-slate-800/80 border-b border-slate-700/60' : 'bg-slate-50 border-b border-slate-200'} flex justify-between items-center`}>
         <div className="flex items-center gap-2.5">

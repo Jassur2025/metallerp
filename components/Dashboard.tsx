@@ -113,7 +113,7 @@ export const Dashboard: React.FC<DashboardProps> = React.memo(({ products, order
     const productSales: Record<string, { name: string; revenue: number; quantity: number }> = {};
 
     filteredOrders.forEach(order => {
-      order.items.forEach(item => {
+      (Array.isArray(order.items) ? order.items : []).forEach(item => {
         if (!productSales[item.productName]) {
           productSales[item.productName] = { name: item.productName, revenue: 0, quantity: 0 };
         }

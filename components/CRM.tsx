@@ -481,7 +481,7 @@ export const CRM: React.FC<CRMProps> = ({ clients: legacyClients, onSave, orders
     }, [transactions, clients, statsTimeRange]);
 
     return (
-        <div className="p-3 sm:p-4 lg:p-6 space-y-4 lg:space-y-6 animate-fade-in h-[calc(100vh-2rem)] flex flex-col">
+        <div className="p-3 sm:p-4 lg:p-6 lg:pr-10 xl:pr-14 space-y-4 lg:space-y-6 animate-fade-in h-[calc(100vh-2rem)] flex flex-col">
             {/* Client Detail View - Full Page */}
             {selectedClientForDetail ? (
                 <ClientDetailView

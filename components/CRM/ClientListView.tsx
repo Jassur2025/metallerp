@@ -25,7 +25,7 @@ export const ClientListView: React.FC<ClientListViewProps> = ({
     return (
         <div className={`${t.bgCard} border ${t.border} rounded-xl overflow-hidden overflow-y-auto pb-12 custom-scrollbar`}>
             {/* Table Header */}
-            <div className={`grid grid-cols-[1fr_140px_80px_120px_100px_140px] gap-3 px-4 py-2.5 ${theme === 'light' ? 'bg-slate-50 border-b border-slate-200' : 'bg-slate-800/60 border-b border-slate-700'} text-[11px] font-semibold uppercase ${t.textMuted} sticky top-0 z-10`}>
+            <div className={`grid grid-cols-[1fr_140px_70px_140px_150px_200px] gap-3 px-4 py-2.5 ${theme === 'light' ? 'bg-slate-50 border-b border-slate-200' : 'bg-slate-800/60 border-b border-slate-700'} text-[11px] font-semibold uppercase ${t.textMuted} sticky top-0 z-10`}>
                 <span>Клиент</span>
                 <span>Телефон</span>
                 <span>Тип</span>
@@ -41,7 +41,7 @@ export const ClientListView: React.FC<ClientListViewProps> = ({
                 return (
                     <div
                         key={client.id}
-                        className={`grid grid-cols-[1fr_140px_80px_120px_100px_140px] gap-3 items-center px-4 py-3 transition-colors group
+                        className={`grid grid-cols-[1fr_140px_70px_140px_150px_200px] gap-3 items-center px-4 py-3 transition-colors group
                             ${i % 2 === 0 ? '' : (theme === 'light' ? 'bg-slate-50/50' : 'bg-slate-800/30')}
                             ${theme === 'light' ? 'hover:bg-blue-50/60' : 'hover:bg-slate-700/40'}`}
                     >
