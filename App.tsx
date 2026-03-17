@@ -274,7 +274,7 @@ const AppContent: React.FC = () => {
       case 'balance':
         return renderLazyComponent(<Balance balance={balance} />);
       case 'settings':
-        return renderLazyComponent(<SettingsComponent settings={settings} onSave={handleSaveSettings} currentUserEmail={user?.email || undefined} />);
+        return renderLazyComponent(<SettingsComponent settings={settings} onSave={handleSaveSettings} currentUserEmail={user?.email || undefined} employees={employees} />);
       case 'priceList':
         return renderLazyComponent(<PriceList products={products} onSaveProducts={handleSaveProducts} settings={settings} />);
       default:

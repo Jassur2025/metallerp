@@ -50,6 +50,16 @@ interface DeleteTransactionResult {
   txId: string;
 }
 
+interface UpdateTransactionInput {
+  txId: string;
+  updates: Partial<Omit<Transaction, 'id'>>;
+}
+
+interface UpdateTransactionResult {
+  success: boolean;
+  txId: string;
+}
+
 // ─── Service ────────────────────────────────────────────────
 
 export const paymentAtomicService = {
@@ -104,5 +114,23 @@ export const paymentAtomicService = {
 
     await callable({ txId });
     logger.info('PaymentAtomicService', `Transaction deleted via CF: ${txId}`);
+  },
+
+  /**
+   * Update a transaction via the updateTransaction Cloud Function.
+   * The CF atomically: reverses old debt, applies new debt, creates
+   * contra-ledger entries (СТОРНО), writes new ledger entries, updates
+   * the transaction — all inside a single Firestore transaction.
+   */
+  async updateTransaction(txId: string, updates: Partial<Transaction>): Promise<void> {
+    assertAuth();
+
+    const callable = httpsCallable<UpdateTransactionInput, UpdateTransactionResult>(
+      functions,
+      'updateTransaction',
+    );
+
+    await callable({ txId, updates });
+    logger.info('PaymentAtomicService', `Transaction updated via CF: ${txId}`);
   },
 };

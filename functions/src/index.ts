@@ -19,6 +19,7 @@ export { deletePurchase } from "./purchases/deletePurchase";
 
 // ─── Orders (Задача B.4) ───────────────────────────────────
 export { deleteOrder } from "./orders/deleteOrder";
+export { updateOrder } from "./orders/updateOrder";
 
 // ─── Payments (Задача 6.2) ──────────────────────────────────
 export { processPayment } from "./payments/processPayment";

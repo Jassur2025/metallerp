@@ -683,7 +683,7 @@ export const Sales: React.FC = () => {
 
   // --- Order Finalization (Shared) ---
   const finalizeSale = async (dist: PaymentDistribution, method: PaymentMethod = 'mixed', customStatus?: 'paid' | 'unpaid' | 'partial') => {
-    const { cashUSD, cashUZS, cardUZS, bankUZS, isPaid, remainingUSD } = dist;
+    const { cashUSD, cashUZS, cardUZS, bankUZS, isPaid, remainingUSD, linkedBankTransferId } = dist;
 
     const paymentStatus = customStatus || (isPaid ? 'paid' : (cashUSD + cashUZS + cardUZS + bankUZS === 0 ? 'unpaid' : 'partial'));
     const totalPaidUSD = cashUSD + (cashUZS / exchangeRate) + (cardUZS / exchangeRate) + (bankUZS / exchangeRate);
@@ -750,7 +750,8 @@ export const Sales: React.FC = () => {
         order: newOrderWithClient,
         client: foundClient,
         clientPurchaseDeltaUSD: totalAmountUSD,
-        transactions: newTrx
+        transactions: newTrx,
+        linkedBankTransferId,
       });
 
       const updatedOrders = [newOrderWithClient, ...orders];
@@ -1152,7 +1153,7 @@ export const Sales: React.FC = () => {
             />
           ) : mode === 'transactions' ? (
             <SalesTransactionsView
-              orders={orders} transactions={transactions} expenses={expenses}
+              orders={orders} transactions={transactions} expenses={expenses} clients={clients}
               setOrders={setOrders}
               onSaveOrders={onSaveOrders} onSaveTransactions={onSaveTransactions} onSaveExpenses={onSaveExpenses}
               onDeleteTransaction={onDeleteTransaction} onDeleteExpense={onDeleteExpense}
@@ -1236,6 +1237,7 @@ export const Sales: React.FC = () => {
         totalAmountUSD={totalAmountUSD}
         totalAmountUZS={totalAmountUZS}
         exchangeRate={exchangeRate}
+        bankTransfers={transactions}
         onConfirm={(dist, method, modalDebtDueDate) => {
           const pm = method as PaymentMethod;
           const isDebt = pm === 'debt';

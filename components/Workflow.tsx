@@ -906,7 +906,12 @@ export const Workflow: React.FC<WorkflowProps> = ({
                   <div className={`${t.textMuted} text-center py-8 text-sm`}>Корзина пуста</div>
                 ) : (
                   <div className={`divide-y ${theme === 'light' ? 'divide-slate-100' : 'divide-slate-700/30'}`}>
-                    {cart.map(it => (
+                    {cart.map(it => {
+                      const product = products.find(p => p.id === it.productId);
+                      const weightPerMeter = product?.weightPerMeter;
+                      const showTonConversion = it.unit === 'м' && weightPerMeter && weightPerMeter > 0;
+                      const tonValue = showTonConversion ? (it.quantity * weightPerMeter / 1000) : null;
+                      return (
                       <div key={it.productId} className={`px-3 py-2 transition-all ${theme === 'light' ? 'hover:bg-slate-50' : 'hover:bg-slate-800/40'} group`}>
                         <div className="flex items-center gap-2">
                           {/* Name (dims) unit */}
@@ -914,6 +919,11 @@ export const Workflow: React.FC<WorkflowProps> = ({
                             <span className={`font-semibold ${t.text} text-sm block truncate leading-tight`}>
                               {it.productName}{it.dimensions && it.dimensions !== '-' ? ` (${it.dimensions})` : ''} <span className={`font-normal ${t.textMuted}`}>{it.unit || 'шт'}</span>
                             </span>
+                            {tonValue !== null && (
+                              <span className={`text-[10px] font-mono ${theme === 'light' ? 'text-blue-600' : 'text-cyan-400'}`}>
+                                ≈ {tonValue.toFixed(4)} тн ({weightPerMeter} кг/м)
+                              </span>
+                            )}
                           </div>
                           {/* Qty controls */}
                           <div className="flex items-center gap-0 flex-shrink-0">
@@ -962,12 +972,28 @@ export const Workflow: React.FC<WorkflowProps> = ({
                           </div>
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
 
               <div className={`p-3 border-t ${t.border} ${t.bgPanelAlt} space-y-1 flex-shrink-0`}>
+                {(() => {
+                  const totalTons = cart.reduce((sum, it) => {
+                    const prod = products.find(p => p.id === it.productId);
+                    if (it.unit === 'м' && prod?.weightPerMeter && prod.weightPerMeter > 0) {
+                      return sum + (it.quantity * prod.weightPerMeter / 1000);
+                    }
+                    return sum;
+                  }, 0);
+                  return totalTons > 0 ? (
+                    <div className={`flex justify-between text-xs ${theme === 'light' ? 'text-blue-600' : 'text-cyan-400'}`}>
+                      <span>Общий вес</span>
+                      <span className="font-mono font-bold">{totalTons.toFixed(3)} тн</span>
+                    </div>
+                  ) : null;
+                })()}
                 <div className={`flex justify-between text-xs ${t.textSecondary}`}>
                   <span>Подытог</span>
                   <span className="font-mono">

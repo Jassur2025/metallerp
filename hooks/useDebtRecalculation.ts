@@ -21,6 +21,34 @@ interface UseDebtRecalculationParams {
  * Calculate debt for a single client given orders and transactions.
  * Pure function — no side effects.
  */
+/**
+ * Find all orders belonging to a client (by ID or name match).
+ */
+function findClientOrders(
+  client: Client,
+  allOrders: Order[],
+): Order[] {
+  const clientName = (client.name || '').toLowerCase().trim();
+  const companyName = (client.companyName || '').toLowerCase().trim();
+  return allOrders.filter(o => {
+    const orderClientName = (o.customerName || '').toLowerCase().trim();
+    return o.clientId === client.id ||
+      (clientName && orderClientName === clientName) ||
+      (companyName && orderClientName === companyName);
+  });
+}
+
+/**
+ * Calculate totalPurchases for a client (sum of all order totals).
+ */
+function calculateClientTotalPurchases(
+  client: Client,
+  allOrders: Order[],
+): number {
+  return findClientOrders(client, allOrders)
+    .reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+}
+
 function calculateClientDebt(
   client: Client,
   allOrders: Order[],
@@ -135,9 +163,17 @@ export function useDebtRecalculation({
     if (!client) return;
 
     const finalDebt = calculateClientDebt(client, ordersRef.current, transactionsRef.current);
+    const finalPurchases = calculateClientTotalPurchases(client, ordersRef.current);
+    const updates: Partial<Client> = {};
     if (Math.abs(finalDebt - (client.totalDebt || 0)) > 0.01) {
-      await updateClientRef.current(client.id, { totalDebt: finalDebt });
-      logger.debug('DebtRecalc', `Updated debt for client ${client.name}: ${client.totalDebt} → ${finalDebt}`);
+      updates.totalDebt = finalDebt;
+    }
+    if (Math.abs(finalPurchases - (client.totalPurchases || 0)) > 0.01) {
+      updates.totalPurchases = finalPurchases;
+    }
+    if (Object.keys(updates).length > 0) {
+      await updateClientRef.current(client.id, updates);
+      logger.debug('DebtRecalc', `Updated client ${client.name}: debt ${client.totalDebt}→${updates.totalDebt ?? client.totalDebt}, purchases ${client.totalPurchases}→${updates.totalPurchases ?? client.totalPurchases}`);
     }
   }, []);
 
@@ -207,9 +243,16 @@ export function useDebtRecalculation({
         if (!client) continue;
 
         const finalDebt = calculateClientDebt(client, currentOrders, currentTransactions);
-
+        const finalPurchases = calculateClientTotalPurchases(client, currentOrders);
+        const updates: Partial<Client> = {};
         if (Math.abs(finalDebt - (client.totalDebt || 0)) > 0.01) {
-          await updateClientRef.current(client.id, { totalDebt: finalDebt });
+          updates.totalDebt = finalDebt;
+        }
+        if (Math.abs(finalPurchases - (client.totalPurchases || 0)) > 0.01) {
+          updates.totalPurchases = finalPurchases;
+        }
+        if (Object.keys(updates).length > 0) {
+          await updateClientRef.current(client.id, updates);
           updatesCount++;
         }
       }

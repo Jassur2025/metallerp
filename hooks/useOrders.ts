@@ -98,7 +98,7 @@ export const useOrders = (initialOrders: Order[] = []) => {
             // Optimistic
             setOrders(prev => prev.map(o => o.id === id ? { ...o, ...updates } : o));
             
-            await orderService.update(id, updates);
+            await orderAtomicService.updateOrder(id, updates);
             // toast.success('Заказ обновлен');
             return true;
         } catch (err: unknown) {

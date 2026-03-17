@@ -15,6 +15,7 @@ export interface AtomicSaleCommitPayload {
   transactions: Transaction[];
   workflowOrderId?: string;
   workflowConvertedAt?: string;
+  linkedBankTransferId?: string;
 }
 
 /** Input sent to the commitSale Cloud Function */
@@ -29,6 +30,7 @@ interface CommitSaleCloudInput {
   sellerId?: string;
   sellerName?: string;
   requestId: string; // Idempotency key (UUID v4) — prevents duplicate sales
+  linkedBankTransferId?: string;
 }
 
 /** Response from the commitSale Cloud Function */
@@ -73,6 +75,7 @@ export const salesAtomicService = {
       sellerId: payload.order.sellerId,
       sellerName: payload.order.sellerName,
       requestId: crypto.randomUUID(),
+      linkedBankTransferId: payload.linkedBankTransferId,
     };
 
     const callable = httpsCallable<CommitSaleCloudInput, CommitSaleCloudResult>(

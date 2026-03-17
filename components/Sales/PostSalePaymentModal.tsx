@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { X, Wallet, CreditCard, Building, Banknote, DollarSign, AlertCircle, Calendar, Zap, CheckCircle } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { X, Wallet, CreditCard, Building, Banknote, DollarSign, AlertCircle, Calendar, Zap, CheckCircle, Check } from 'lucide-react';
+import { Transaction } from '../../types';
 
 export interface PaymentDistribution {
   cashUSD: number;
@@ -8,6 +9,7 @@ export interface PaymentDistribution {
   bankUZS: number;
   isPaid: boolean;
   remainingUSD: number;
+  linkedBankTransferId?: string;
 }
 
 export type QuickPaymentMethod = 'cash_uzs' | 'cash_usd' | 'card' | 'bank' | 'debt' | 'mixed';
@@ -19,10 +21,11 @@ interface PostSalePaymentModalProps {
   totalAmountUZS: number;
   exchangeRate: number;
   onConfirm: (distribution: PaymentDistribution, method: string, debtDueDate?: string) => void;
+  bankTransfers?: Transaction[];
 }
 
 export const PostSalePaymentModal: React.FC<PostSalePaymentModalProps> = ({
-  isOpen, onClose, totalAmountUSD, totalAmountUZS, exchangeRate, onConfirm
+  isOpen, onClose, totalAmountUSD, totalAmountUZS, exchangeRate, onConfirm, bankTransfers
 }) => {
   const [selectedMethod, setSelectedMethod] = useState<QuickPaymentMethod | null>(null);
   const [cashUSD, setCashUSD] = useState('');
@@ -30,12 +33,20 @@ export const PostSalePaymentModal: React.FC<PostSalePaymentModalProps> = ({
   const [cardUZS, setCardUZS] = useState('');
   const [bankUZS, setBankUZS] = useState('');
   const [debtDueDate, setDebtDueDate] = useState('');
+  const [selectedBankTransferId, setSelectedBankTransferId] = useState('');
+
+  // Available unallocated bank transfers
+  const availableBankTransfers = useMemo(() => {
+    if (!bankTransfers) return [];
+    return bankTransfers.filter(tx => !tx.orderId && tx.method === 'bank' && tx.type === 'client_payment');
+  }, [bankTransfers]);
 
   useEffect(() => {
     if (isOpen) {
       setSelectedMethod(null);
       setCashUSD(''); setCashUZS(''); setCardUZS(''); setBankUZS('');
       setDebtDueDate('');
+      setSelectedBankTransferId('');
     }
   }, [isOpen, totalAmountUSD]);
 
@@ -69,6 +80,12 @@ export const PostSalePaymentModal: React.FC<PostSalePaymentModalProps> = ({
       return;
     }
 
+    // If bank and there are available transfers, show selection
+    if (method === 'bank' && availableBankTransfers.length > 0) {
+      setSelectedMethod('bank');
+      return;
+    }
+
     let dist: PaymentDistribution = {
       cashUSD: 0, cashUZS: 0, cardUZS: 0, bankUZS: 0,
       isPaid: method !== 'debt', remainingUSD: method === 'debt' ? totalAmountUSD : 0
@@ -87,6 +104,16 @@ export const PostSalePaymentModal: React.FC<PostSalePaymentModalProps> = ({
     };
 
     onConfirm(dist, paymentMethodMap[method], method === 'debt' ? debtDueDate : undefined);
+    onClose();
+  };
+
+  const handleBankConfirm = () => {
+    const dist: PaymentDistribution = {
+      cashUSD: 0, cashUZS: 0, cardUZS: 0, bankUZS: totalAmountUZS,
+      isPaid: true, remainingUSD: 0,
+      linkedBankTransferId: selectedBankTransferId || undefined
+    };
+    onConfirm(dist, 'bank');
     onClose();
   };
 
@@ -116,7 +143,7 @@ export const PostSalePaymentModal: React.FC<PostSalePaymentModalProps> = ({
           <div>
             <h3 className="text-lg font-bold text-white flex items-center gap-2">
               <Wallet className="text-emerald-400" size={20} />
-              {selectedMethod === 'mixed' ? 'Смешанная оплата' : 'Способ оплаты'}
+              {selectedMethod === 'mixed' ? 'Смешанная оплата' : selectedMethod === 'bank' ? 'Перечисление' : 'Способ оплаты'}
             </h3>
             <div className="flex gap-4 mt-1">
               <span className="text-xs text-slate-400">К оплате: <span className="text-white font-bold font-mono">${totalAmountUSD.toFixed(2)}</span></span>
@@ -184,6 +211,76 @@ export const PostSalePaymentModal: React.FC<PostSalePaymentModalProps> = ({
                   className="py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-xl font-bold text-sm transition-all shadow-lg shadow-red-600/20"
                 >
                   Оформить в долг
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Bank Transfer Selection Mode */}
+          {selectedMethod === 'bank' && (
+            <div className="space-y-4 animate-fade-in">
+              <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 text-center">
+                <Building className="text-amber-400 mx-auto mb-2" size={32} />
+                <div className="text-lg font-bold text-white font-mono">{totalAmountUZS.toLocaleString()} сўм</div>
+                <div className="text-xs text-amber-400 mt-1">Оплата перечислением</div>
+              </div>
+
+              {availableBankTransfers.length > 0 && (
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 text-sm font-medium text-slate-300">
+                    <Check size={16} className="text-amber-400" />
+                    Привязать к тушган пулга (необязательно)
+                  </label>
+                  <div className="max-h-[200px] overflow-y-auto space-y-1 custom-scrollbar">
+                    <button
+                      onClick={() => setSelectedBankTransferId('')}
+                      className={`w-full text-left p-2 rounded-lg border text-xs transition-colors ${
+                        !selectedBankTransferId
+                          ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
+                          : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-600'
+                      }`}
+                    >
+                      Новое перечисление (не привязывать)
+                    </button>
+                    {availableBankTransfers.map(tx => {
+                      const txRate = tx.exchangeRate || exchangeRate;
+                      const amountUZS = tx.currency === 'UZS' ? tx.amount : tx.amount * txRate;
+                      return (
+                        <button
+                          key={tx.id}
+                          onClick={() => setSelectedBankTransferId(tx.id)}
+                          className={`w-full text-left p-2 rounded-lg border text-xs transition-colors ${
+                            selectedBankTransferId === tx.id
+                              ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300'
+                              : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-600'
+                          }`}
+                        >
+                          <div className="flex justify-between">
+                            <span className="truncate">{tx.description}</span>
+                            <span className="font-mono font-bold ml-2">{amountUZS.toLocaleString()} сўм</span>
+                          </div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">
+                            {new Date(tx.date).toLocaleDateString('ru-RU')}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3 pt-2">
+                <button
+                  onClick={() => setSelectedMethod(null)}
+                  className="py-2.5 bg-slate-700 hover:bg-slate-600 text-white rounded-xl font-bold text-sm transition-all"
+                >
+                  Назад
+                </button>
+                <button
+                  onClick={handleBankConfirm}
+                  className="py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl font-bold text-sm transition-all shadow-lg shadow-amber-600/20"
+                >
+                  Подтвердить
                 </button>
               </div>
             </div>

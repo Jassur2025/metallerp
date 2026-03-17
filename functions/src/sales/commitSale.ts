@@ -51,6 +51,7 @@ interface CommitSaleInput {
   sellerId?: string;
   sellerName?: string;
   requestId?: string; // Idempotency key (UUID v4) — prevents duplicate sales
+  linkedBankTransferId?: string; // Existing bank transfer to link instead of creating new
 }
 
 const PAYMENT_METHODS = ["cash", "bank", "card", "debt", "mixed"] as const;
@@ -224,6 +225,22 @@ export const commitSale = onCall(
       // 3g. Read next report number from settings
       const nextReportNo = safeNum(settings.nextReportNo) || 1;
 
+      // 3h. Read linked bank transfer if provided
+      let linkedBankTransferRef: FirebaseFirestore.DocumentReference | null = null;
+      let linkedBankTransferSnap: FirebaseFirestore.DocumentSnapshot | null = null;
+      if (data.linkedBankTransferId && typeof data.linkedBankTransferId === "string") {
+        linkedBankTransferRef = db.doc(`transactions/${data.linkedBankTransferId}`);
+        linkedBankTransferSnap = await tx.get(linkedBankTransferRef);
+        if (!linkedBankTransferSnap.exists) {
+          throw new HttpsError("not-found", `Linked bank transfer ${data.linkedBankTransferId} not found`);
+        }
+        // Verify it's actually a bank transfer without an orderId (unallocated)
+        const ltData = linkedBankTransferSnap.data()!;
+        if (ltData.method !== "bank" || ltData.orderId) {
+          throw new HttpsError("failed-precondition", "Linked transfer is not an unallocated bank transfer");
+        }
+      }
+
       // ── Compute phase (SERVER calculates everything) ───
 
       // Build order items with SERVER-side prices
@@ -382,23 +399,48 @@ export const commitSale = onCall(
       }> = [];
 
       if (amountPaid > 0) {
-        const txId = generateTransactionId();
-        const txRef = db.doc(`transactions/${txId}`);
-        const txData = {
-          type: "client_payment",
-          amount: amountPaid,
-          currency: "USD",
-          method: paymentMethod === "mixed" ? "cash" : paymentMethod,
-          relatedId: data.clientId,
-          orderId,
-          description: `Оплата по заказу #${orderId}`,
-          date: nowIso,
-          createdAt: Timestamp.now(),
-          updatedAt: nowIso,
-          _version: 1,
-        };
-        tx.set(txRef, txData);
-        transactions.push({ id: txId, ...txData });
+        if (linkedBankTransferRef && linkedBankTransferSnap) {
+          // Link existing bank transfer to this order instead of creating a duplicate
+          const ltData = linkedBankTransferSnap.data()!;
+          const ltVersion = safeNum(ltData._version);
+          tx.update(linkedBankTransferRef, {
+            orderId,
+            relatedId: data.clientId,
+            description: `Оплата по заказу #${orderId}`,
+            updatedAt: Timestamp.now(),
+            _version: ltVersion + 1,
+          });
+          transactions.push({
+            id: data.linkedBankTransferId!,
+            type: ltData.type || "client_payment",
+            amount: safeNum(ltData.amount),
+            currency: ltData.currency || "UZS",
+            method: "bank",
+            relatedId: data.clientId,
+            orderId,
+            description: `Оплата по заказу #${orderId}`,
+            date: ltData.date || nowIso,
+          });
+        } else {
+          // No linked transfer — create new transaction as usual
+          const txId = generateTransactionId();
+          const txRef = db.doc(`transactions/${txId}`);
+          const txData = {
+            type: "client_payment",
+            amount: amountPaid,
+            currency: "USD",
+            method: paymentMethod === "mixed" ? "cash" : paymentMethod,
+            relatedId: data.clientId,
+            orderId,
+            description: `Оплата по заказу #${orderId}`,
+            date: nowIso,
+            createdAt: Timestamp.now(),
+            updatedAt: nowIso,
+            _version: 1,
+          };
+          tx.set(txRef, txData);
+          transactions.push({ id: txId, ...txData });
+        }
       }
 
       if (debtUSD > 0) {

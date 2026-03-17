@@ -60,11 +60,17 @@ export const WorkflowQueueTab = React.memo<WorkflowQueueTabProps>(({
                     const product = products.find(p => p.id === it.productId);
                     const priceListPrice = product?.pricePerUnit || it.priceAtSale;
                     const itemDiscount = priceListPrice > it.priceAtSale;
+                    const weightPerMeter = product?.weightPerMeter;
+                    const showTon = it.unit === 'м' && weightPerMeter && weightPerMeter > 0;
+                    const tonValue = showTon ? (it.quantity * weightPerMeter / 1000) : null;
                     return (
                     <div key={idx} className={`flex justify-between ${t.textSecondary}`}>
                       <span className="truncate max-w-[140px]">
                         {it.productName}
-                        <span className={`${t.textMuted} ml-1`}>× {it.quantity}</span>
+                        <span className={`${t.textMuted} ml-1`}>× {it.quantity}{it.unit === 'м' ? 'м' : ''}</span>
+                        {tonValue !== null && (
+                          <span className="text-[9px] text-cyan-400 ml-1">({tonValue.toFixed(3)}тн)</span>
+                        )}
                       </span>
                       <div className="flex items-center gap-1">
                         {itemDiscount && (
@@ -95,7 +101,23 @@ export const WorkflowQueueTab = React.memo<WorkflowQueueTabProps>(({
                 )}
 
                 <div className="mt-2 flex items-center justify-between">
-                  <div className={`font-mono font-bold ${t.success} text-sm`}>{wf.totalAmountUZS.toLocaleString()} сум</div>
+                  <div>
+                    <div className={`font-mono font-bold ${t.success} text-sm`}>{wf.totalAmountUZS.toLocaleString()} сум</div>
+                    {(() => {
+                      const totalTons = (Array.isArray(wf.items) ? wf.items : []).reduce((sum, it) => {
+                        const prod = products.find(p => p.id === it.productId);
+                        if (it.unit === 'м' && prod?.weightPerMeter && prod.weightPerMeter > 0) {
+                          return sum + (it.quantity * prod.weightPerMeter / 1000);
+                        }
+                        return sum;
+                      }, 0);
+                      return totalTons > 0 ? (
+                        <div className={`text-[10px] font-mono ${theme === 'light' ? 'text-blue-600' : 'text-cyan-400'}`}>
+                          Общий вес: {totalTons.toFixed(3)} тн
+                        </div>
+                      ) : null;
+                    })()}
+                  </div>
                   {wf.status === 'sent_to_procurement' && (
                     <button onClick={onNavigateToProcurement} className={`px-2 py-1 rounded ${t.warningBg} border ${theme === 'light' ? 'border-amber-200' : 'border-amber-500/20'} ${t.warning} text-[10px] font-medium`}>
                       В закуп

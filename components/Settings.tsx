@@ -1,14 +1,15 @@
 
 import React, { useState } from 'react';
-import { AppSettings, CompanyDetails, ExpenseCategory, ExchangeRateEntry } from '../types';
+import { AppSettings, CompanyDetails, ExpenseCategory, ExchangeRateEntry, Employee } from '../types';
 import { IdGenerator } from '../utils/idGenerator';
-import { Save, Settings as SettingsIcon, AlertCircle, History, TrendingUp, Receipt, Factory, RefreshCw } from 'lucide-react';
+import { Save, Settings as SettingsIcon, AlertCircle, History, TrendingUp, Receipt, Factory, RefreshCw, Trash2, ShieldAlert } from 'lucide-react';
 import { useTheme, getThemeClasses } from '../contexts/ThemeContext';
 import { ExpenseCategoriesTab } from './Settings/ExpenseCategoriesTab';
 import { ManufacturersTab } from './Settings/ManufacturersTab';
 import { AccountingPeriodsTab } from './Settings/AccountingPeriodsTab';
 import { DEFAULT_EXPENSE_CATEGORIES, DEFAULT_MANUFACTURERS } from '../constants';
 import { useConfirm } from './ConfirmDialog';
+import { resetAllData, ResetProgress, COLLECTION_LABELS } from '../services/resetService';
 
 const EMPTY_COMPANY: CompanyDetails = {
   name: '', address: '', phone: '', inn: '', mfo: '', bankName: '', accountNumber: ''
@@ -18,9 +19,10 @@ interface SettingsProps {
     settings: AppSettings;
     onSave: (settings: AppSettings) => void;
     currentUserEmail?: string;
+    employees?: Employee[];
 }
 
-export const Settings: React.FC<SettingsProps> = React.memo(({ settings, onSave, currentUserEmail }) => {
+export const Settings: React.FC<SettingsProps> = React.memo(({ settings, onSave, currentUserEmail, employees }) => {
     const { theme } = useTheme();
     const t = getThemeClasses(theme);
     const { confirm: confirmDialog } = useConfirm();
@@ -31,7 +33,16 @@ export const Settings: React.FC<SettingsProps> = React.memo(({ settings, onSave,
     });
     const [message, setMessage] = useState<string | null>(null);
 
-    const [activeTab, setActiveTab] = useState<'general' | 'expenses' | 'manufacturers' | 'periods'>('general');
+    const [activeTab, setActiveTab] = useState<'general' | 'expenses' | 'manufacturers' | 'periods' | 'danger'>('general');
+
+    // Danger zone state
+    const [resetConfirmText, setResetConfirmText] = useState('');
+    const [resetProgress, setResetProgress] = useState<ResetProgress[] | null>(null);
+    const [isResetting, setIsResetting] = useState(false);
+    const [resetResult, setResetResult] = useState<{ success: boolean; totalDeleted: number; errors: string[] } | null>(null);
+
+    const currentEmployee = employees?.find(e => e.email?.toLowerCase() === (currentUserEmail || '').toLowerCase());
+    const isAdmin = currentEmployee?.role === 'admin';
 
 
     // Sync state with props when they change (e.g. loaded from localStorage)
@@ -120,6 +131,18 @@ export const Settings: React.FC<SettingsProps> = React.memo(({ settings, onSave,
                     <History size={18} className="inline mr-2" />
                     Учётные периоды
                 </button>
+                {isAdmin && (
+                    <button
+                        onClick={() => setActiveTab('danger')}
+                        className={`px-6 py-3 rounded-xl font-medium transition-all ${activeTab === 'danger'
+                            ? 'bg-red-600 text-white shadow-lg shadow-red-600/20'
+                            : `${t.bgCard} text-red-400 hover:text-red-300 border border-red-500/30`
+                            }`}
+                    >
+                        <ShieldAlert size={18} className="inline mr-2" />
+                        Сброс данных
+                    </button>
+                )}
             </div>
 
             {/* Tab: General Settings */}
@@ -463,6 +486,168 @@ export const Settings: React.FC<SettingsProps> = React.memo(({ settings, onSave,
             {activeTab === 'periods' && (
                 <div className={`${t.bgCard} rounded-2xl border ${t.border} p-8 shadow-lg`}>
                     <AccountingPeriodsTab />
+                </div>
+            )}
+
+            {/* Tab: Danger Zone - Data Reset */}
+            {activeTab === 'danger' && isAdmin && (
+                <div className={`${t.bgCard} rounded-2xl border-2 border-red-500/50 p-8 shadow-lg`}>
+                    <div className="space-y-6">
+                        <div className="flex items-center gap-3">
+                            <ShieldAlert className="text-red-500" size={28} />
+                            <div>
+                                <h3 className={`text-xl font-bold text-red-500`}>Сброс всех данных</h3>
+                                <p className={`text-sm ${t.textMuted} mt-1`}>
+                                    Удаляет все бизнес-данные. <strong className={t.text}>Сотрудники и настройки сохранятся.</strong>
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className={`bg-red-500/10 border border-red-500/30 rounded-xl p-4`}>
+                            <h4 className="text-red-400 font-bold text-sm mb-2">⚠️ Будут удалены:</h4>
+                            <div className="grid grid-cols-3 gap-2">
+                                {Object.entries(COLLECTION_LABELS).map(([key, label]) => (
+                                    <div key={key} className="flex items-center gap-1.5 text-xs">
+                                        <Trash2 size={10} className="text-red-400" />
+                                        <span className={t.textMuted}>{label}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className={`bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-4`}>
+                            <h4 className="text-emerald-400 font-bold text-sm mb-1">✓ Сохранятся:</h4>
+                            <div className="flex gap-4 text-xs">
+                                <span className={t.textMuted}>• Сотрудники (аккаунты)</span>
+                                <span className={t.textMuted}>• Настройки системы</span>
+                            </div>
+                        </div>
+
+                        {/* Confirmation input */}
+                        {!resetResult && (
+                            <div className="space-y-3">
+                                <label className={`block text-sm font-medium text-red-400`}>
+                                    Для подтверждения напишите: <strong className="text-white font-mono">УДАЛИТЬ ВСЕ</strong>
+                                </label>
+                                <input
+                                    type="text"
+                                    value={resetConfirmText}
+                                    onChange={(e) => setResetConfirmText(e.target.value)}
+                                    className={`w-full bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3 ${t.text} outline-none focus:ring-2 focus:ring-red-500/50 font-mono`}
+                                    placeholder="УДАЛИТЬ ВСЕ"
+                                    disabled={isResetting}
+                                />
+                                <button
+                                    onClick={async () => {
+                                        if (resetConfirmText !== 'УДАЛИТЬ ВСЕ') return;
+                                        if (!await confirmDialog({
+                                            title: 'ПОСЛЕДНЕЕ ПРЕДУПРЕЖДЕНИЕ',
+                                            message: 'Все данные (товары, заказы, клиенты, транзакции и т.д.) будут безвозвратно удалены. Продолжить?',
+                                            variant: 'danger',
+                                            confirmText: 'Да, удалить все данные'
+                                        })) return;
+
+                                        setIsResetting(true);
+                                        setResetResult(null);
+                                        try {
+                                            const result = await resetAllData(
+                                                currentEmployee?.role || '',
+                                                (progress) => setResetProgress([...progress])
+                                            );
+                                            setResetResult(result);
+                                        } catch (err) {
+                                            setResetResult({
+                                                success: false,
+                                                totalDeleted: 0,
+                                                errors: [err instanceof Error ? err.message : String(err)]
+                                            });
+                                        } finally {
+                                            setIsResetting(false);
+                                            setResetConfirmText('');
+                                        }
+                                    }}
+                                    disabled={resetConfirmText !== 'УДАЛИТЬ ВСЕ' || isResetting}
+                                    className={`w-full py-3 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 ${
+                                        resetConfirmText === 'УДАЛИТЬ ВСЕ' && !isResetting
+                                            ? 'bg-red-600 hover:bg-red-500 text-white shadow-lg shadow-red-600/30 cursor-pointer'
+                                            : 'bg-slate-700 text-slate-500 cursor-not-allowed'
+                                    }`}
+                                >
+                                    {isResetting ? (
+                                        <>
+                                            <RefreshCw size={16} className="animate-spin" />
+                                            Удаление...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Trash2 size={16} />
+                                            Удалить все данные
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        )}
+
+                        {/* Progress */}
+                        {resetProgress && (
+                            <div className="space-y-1">
+                                <h4 className={`text-sm font-bold ${t.text} mb-2`}>Прогресс удаления:</h4>
+                                {resetProgress.map((p) => (
+                                    <div key={p.collection} className={`flex items-center justify-between text-xs py-1.5 px-3 rounded-lg ${
+                                        p.status === 'done' ? 'bg-emerald-500/10' :
+                                        p.status === 'deleting' ? 'bg-amber-500/10' :
+                                        p.status === 'error' ? 'bg-red-500/10' : ''
+                                    }`}>
+                                        <span className={t.textMuted}>
+                                            {COLLECTION_LABELS[p.collection] || p.collection}
+                                        </span>
+                                        <span className={`font-mono ${
+                                            p.status === 'done' ? 'text-emerald-400' :
+                                            p.status === 'deleting' ? 'text-amber-400' :
+                                            p.status === 'error' ? 'text-red-400' :
+                                            t.textMuted
+                                        }`}>
+                                            {p.status === 'pending' ? '⏳' :
+                                             p.status === 'deleting' ? '🔄' :
+                                             p.status === 'done' ? `✓ ${p.deleted}` :
+                                             `✕ ${p.error?.slice(0, 30)}`}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {/* Result */}
+                        {resetResult && (
+                            <div className={`p-4 rounded-xl border ${
+                                resetResult.success
+                                    ? 'bg-emerald-500/10 border-emerald-500/30'
+                                    : 'bg-red-500/10 border-red-500/30'
+                            }`}>
+                                {resetResult.success ? (
+                                    <div className="text-center">
+                                        <div className="text-emerald-400 font-bold text-lg mb-1">✓ Данные удалены</div>
+                                        <div className={`text-sm ${t.textMuted}`}>
+                                            Удалено {resetResult.totalDeleted} записей. Перезагрузите страницу.
+                                        </div>
+                                        <button
+                                            onClick={() => window.location.reload()}
+                                            className="mt-3 px-6 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold text-sm"
+                                        >
+                                            Перезагрузить
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div>
+                                        <div className="text-red-400 font-bold text-sm mb-1">Ошибки при удалении:</div>
+                                        {resetResult.errors.map((e, i) => (
+                                            <div key={i} className="text-xs text-red-300">{e}</div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
                 </div>
             )}
         </div>

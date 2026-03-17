@@ -105,10 +105,10 @@ export const useTransactions = (options: UseTransactionsOptions = {}): UseTransa
         }
     }, [realtime, toast]);
 
-    // Update Transaction
+    // Update Transaction — routes through updateTransaction Cloud Function
     const updateTransaction = useCallback(async (id: string, updates: Partial<Transaction>): Promise<boolean> => {
         try {
-            await transactionService.update(id, updates);
+            await paymentAtomicService.updateTransaction(id, updates);
             // Optimistic update
             if (!realtime) {
                 setTransactions(prev => prev.map(t => t.id === id ? { ...t, ...updates } as Transaction : t));

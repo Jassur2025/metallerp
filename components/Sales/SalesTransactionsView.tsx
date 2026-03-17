@@ -1,14 +1,16 @@
 import React from 'react';
-import { Order, Transaction, Expense, JournalEvent } from '../../types';
+import { Order, Transaction, Expense, JournalEvent, Client } from '../../types';
 import { num } from '../../utils/finance';
 import { DEFAULT_EXCHANGE_RATE } from '../../constants';
 import { TransactionsManager } from './TransactionsManager';
+import { BankTransfersView } from './BankTransfersView';
 import { useConfirm } from '../ConfirmDialog';
 
 interface SalesTransactionsViewProps {
   orders: Order[];
   transactions: Transaction[];
   expenses: Expense[];
+  clients: Client[];
   setOrders: (o: Order[]) => void;
   setTransactions?: (t: Transaction[]) => void;
   setExpenses?: (e: Expense[]) => void;
@@ -27,7 +29,7 @@ interface SalesTransactionsViewProps {
 }
 
 export const SalesTransactionsView: React.FC<SalesTransactionsViewProps> = React.memo(({
-  orders, transactions, expenses, setOrders, setTransactions, setExpenses,
+  orders, transactions, expenses, clients, setOrders, setTransactions, setExpenses,
   onSaveOrders, onSaveTransactions, onSaveExpenses, onDeleteTransaction, onDeleteExpense,
   onAddJournalEvent, currentUserEmail, exchangeRate, t, theme,
   setEditingOrderId, onToast
@@ -120,6 +122,16 @@ export const SalesTransactionsView: React.FC<SalesTransactionsViewProps> = React
           💡 Зелёные строки добавляются к балансу USD. Если видите огромные суммы - это ошибки в данных.
         </div>
       </div>
+
+      {/* Тушган пуллар — банк перечисление */}
+      <BankTransfersView
+        transactions={transactions}
+        orders={orders}
+        clients={clients || []}
+        exchangeRate={exchangeRate}
+        onSaveTransactions={onSaveTransactions}
+        onToast={onToast}
+      />
 
       <TransactionsManager
         transactions={transactions}
