@@ -1100,4 +1100,4 @@ Firebase Console → Billing → Budget alerts. $50/$100/$200 пороги.
   A.6  → Backup Firestore
   B.13 → Budget alerts
 ```
-ываавыавы
+ываавыавы update
