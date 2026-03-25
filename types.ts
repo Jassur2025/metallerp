@@ -468,6 +468,10 @@ export interface JournalEvent {
   metadata?: Record<string, unknown>;
 }
 
+// Shared payment & currency types
+export type PaymentMethod = 'cash' | 'bank' | 'card' | 'debt' | 'mixed';
+export type Currency = 'USD' | 'UZS';
+
 // ═══ Balance Data (computed and cached in Firestore) ═══
 
 export interface BalanceData {

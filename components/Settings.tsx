@@ -80,7 +80,7 @@ export const Settings: React.FC<SettingsProps> = React.memo(({ settings, onSave,
     };
 
     return (
-        <div className="h-full overflow-y-auto custom-scrollbar p-6 space-y-8 animate-fade-in max-w-4xl mx-auto">
+        <div className="h-full overflow-y-auto custom-scrollbar p-4 md:p-6 space-y-6 animate-fade-in max-w-6xl mx-auto">
             <div className={`border-b ${t.border} pb-6`}>
                 <h2 className={`text-3xl font-bold ${t.text} tracking-tight flex items-center gap-3`}>
                     <SettingsIcon size={32} className="text-primary-500" />
@@ -90,66 +90,64 @@ export const Settings: React.FC<SettingsProps> = React.memo(({ settings, onSave,
             </div>
 
             {/* Tabs */}
-            <div className="flex gap-2 mb-6">
+            <div className="flex flex-wrap gap-2 mb-6">
                 <button
                     onClick={() => setActiveTab('general')}
-                    className={`px-6 py-3 rounded-xl font-medium transition-all ${activeTab === 'general'
+                    className={`px-4 md:px-6 py-2.5 md:py-3 rounded-xl font-medium transition-all text-sm md:text-base ${activeTab === 'general'
                         ? 'bg-primary-600 text-white shadow-lg shadow-primary-600/20'
                         : `${t.bgCard} ${t.textMuted} hover:${t.text} border ${t.border}`
                         }`}
                 >
-                    <SettingsIcon size={18} className="inline mr-2" />
-                    Основные настройки
+                    <SettingsIcon size={18} className="inline mr-1.5" />
+                    Основные
                 </button>
                 <button
                     onClick={() => setActiveTab('expenses')}
-                    className={`px-6 py-3 rounded-xl font-medium transition-all ${activeTab === 'expenses'
+                    className={`px-4 md:px-6 py-2.5 md:py-3 rounded-xl font-medium transition-all text-sm md:text-base ${activeTab === 'expenses'
                         ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/20'
                         : `${t.bgCard} ${t.textMuted} hover:${t.text} border ${t.border}`
                         }`}
                 >
-                    <Receipt size={18} className="inline mr-2" />
+                    <Receipt size={18} className="inline mr-1.5" />
                     Категории расходов
                 </button>
                 <button
                     onClick={() => setActiveTab('manufacturers')}
-                    className={`px-6 py-3 rounded-xl font-medium transition-all ${activeTab === 'manufacturers'
+                    className={`px-4 md:px-6 py-2.5 md:py-3 rounded-xl font-medium transition-all text-sm md:text-base ${activeTab === 'manufacturers'
                         ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/20'
                         : `${t.bgCard} ${t.textMuted} hover:${t.text} border ${t.border}`
                         }`}
                 >
-                    <Factory size={18} className="inline mr-2" />
+                    <Factory size={18} className="inline mr-1.5" />
                     Производители
                 </button>
                 <button
                     onClick={() => setActiveTab('periods')}
-                    className={`px-6 py-3 rounded-xl font-medium transition-all ${activeTab === 'periods'
+                    className={`px-4 md:px-6 py-2.5 md:py-3 rounded-xl font-medium transition-all text-sm md:text-base ${activeTab === 'periods'
                         ? 'bg-amber-600 text-white shadow-lg shadow-amber-600/20'
                         : `${t.bgCard} ${t.textMuted} hover:${t.text} border ${t.border}`
                         }`}
                 >
-                    <History size={18} className="inline mr-2" />
+                    <History size={18} className="inline mr-1.5" />
                     Учётные периоды
                 </button>
                 {isAdmin && (
                     <button
                         onClick={() => setActiveTab('danger')}
-                        className={`px-6 py-3 rounded-xl font-medium transition-all ${activeTab === 'danger'
+                        className={`px-4 md:px-6 py-2.5 md:py-3 rounded-xl font-bold transition-all text-sm md:text-base ${activeTab === 'danger'
                             ? 'bg-red-600 text-white shadow-lg shadow-red-600/20'
-                            : `${t.bgCard} text-red-400 hover:text-red-300 border border-red-500/30`
+                            : 'bg-red-500/10 text-red-500 hover:bg-red-500/20 border-2 border-red-500/40 hover:border-red-500/60'
                             }`}
                     >
-                        <ShieldAlert size={18} className="inline mr-2" />
-                        Сброс данных
+                        <ShieldAlert size={18} className="inline mr-1.5" />
+                        🗑️ Сброс данных
                     </button>
                 )}
             </div>
 
             {/* Tab: General Settings */}
             {activeTab === 'general' && (
-                <div className={`${t.bgCard} rounded-2xl border ${t.border} p-8 shadow-lg space-y-8`}>
-
-                    <div className={`border-t ${t.border} my-6`}></div>
+                <div className={`${t.bgCard} rounded-2xl border ${t.border} p-5 md:p-8 shadow-lg space-y-8`}>
 
                     {/* Theme Settings */}
                     <div className="space-y-6">
@@ -167,10 +165,10 @@ export const Settings: React.FC<SettingsProps> = React.memo(({ settings, onSave,
                             <p className={`text-xs ${t.textMuted} mb-3`}>
                                 Выберите светлую тему (Material Design, стиль Google Drive) или темную тему для работы.
                             </p>
-                            <div className="flex gap-4">
+                            <div className="grid grid-cols-2 gap-4">
                                 <button
                                     onClick={() => setFormData({ ...formData, theme: 'light' })}
-                                    className={`flex-1 p-4 rounded-xl border-2 transition-all ${formData.theme === 'light' || !formData.theme
+                                    className={`p-4 rounded-xl border-2 transition-all ${formData.theme === 'light' || !formData.theme
                                         ? 'border-blue-500 bg-blue-500/10 shadow-lg shadow-blue-500/20'
                                         : `${t.border} ${t.bgCard} hover:border-slate-500`
                                         }`}
@@ -189,7 +187,7 @@ export const Settings: React.FC<SettingsProps> = React.memo(({ settings, onSave,
 
                                 <button
                                     onClick={() => setFormData({ ...formData, theme: 'dark' })}
-                                    className={`flex-1 p-4 rounded-xl border-2 transition-all ${formData.theme === 'dark'
+                                    className={`p-4 rounded-xl border-2 transition-all ${formData.theme === 'dark'
                                         ? 'border-slate-400 bg-slate-700/30 shadow-lg shadow-slate-500/20'
                                         : `${t.border} ${t.bgCard} hover:border-slate-500`
                                         }`}
@@ -491,49 +489,57 @@ export const Settings: React.FC<SettingsProps> = React.memo(({ settings, onSave,
 
             {/* Tab: Danger Zone - Data Reset */}
             {activeTab === 'danger' && isAdmin && (
-                <div className={`${t.bgCard} rounded-2xl border-2 border-red-500/50 p-8 shadow-lg`}>
+                <div className={`${t.bgCard} rounded-2xl border-2 border-red-500/50 p-5 md:p-8 shadow-lg`}>
                     <div className="space-y-6">
-                        <div className="flex items-center gap-3">
-                            <ShieldAlert className="text-red-500" size={28} />
-                            <div>
-                                <h3 className={`text-xl font-bold text-red-500`}>Сброс всех данных</h3>
-                                <p className={`text-sm ${t.textMuted} mt-1`}>
-                                    Удаляет все бизнес-данные. <strong className={t.text}>Сотрудники и настройки сохранятся.</strong>
-                                </p>
-                            </div>
+                        {/* Warning banner */}
+                        <div className="bg-red-500/10 border-2 border-red-500/40 rounded-2xl p-6 text-center">
+                            <ShieldAlert className="text-red-500 mx-auto mb-3" size={48} />
+                            <h3 className="text-2xl font-extrabold text-red-500">Сброс всех данных</h3>
+                            <p className={`text-sm ${t.textMuted} mt-2 max-w-lg mx-auto`}>
+                                Удаляет все бизнес-данные (товары, заказы, клиенты и т.д.).
+                                <strong className={`block mt-1 ${t.text}`}>Сотрудники и настройки системы сохранятся.</strong>
+                            </p>
                         </div>
 
-                        <div className={`bg-red-500/10 border border-red-500/30 rounded-xl p-4`}>
-                            <h4 className="text-red-400 font-bold text-sm mb-2">⚠️ Будут удалены:</h4>
-                            <div className="grid grid-cols-3 gap-2">
-                                {Object.entries(COLLECTION_LABELS).map(([key, label]) => (
-                                    <div key={key} className="flex items-center gap-1.5 text-xs">
-                                        <Trash2 size={10} className="text-red-400" />
-                                        <span className={t.textMuted}>{label}</span>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className={`bg-red-500/10 border border-red-500/30 rounded-xl p-5`}>
+                                <h4 className="text-red-400 font-bold text-sm mb-3">⚠️ Будут удалены:</h4>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {Object.entries(COLLECTION_LABELS).map(([key, label]) => (
+                                        <div key={key} className="flex items-center gap-1.5 text-xs">
+                                            <Trash2 size={10} className="text-red-400 flex-shrink-0" />
+                                            <span className={t.textMuted}>{label}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className={`bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-5`}>
+                                <h4 className="text-emerald-400 font-bold text-sm mb-3">✓ Сохранятся:</h4>
+                                <div className="space-y-2 text-sm">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-emerald-400">✓</span>
+                                        <span className={t.textMuted}>Сотрудники (аккаунты)</span>
                                     </div>
-                                ))}
-                            </div>
-                        </div>
-
-                        <div className={`bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-4`}>
-                            <h4 className="text-emerald-400 font-bold text-sm mb-1">✓ Сохранятся:</h4>
-                            <div className="flex gap-4 text-xs">
-                                <span className={t.textMuted}>• Сотрудники (аккаунты)</span>
-                                <span className={t.textMuted}>• Настройки системы</span>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-emerald-400">✓</span>
+                                        <span className={t.textMuted}>Настройки системы</span>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
                         {/* Confirmation input */}
                         {!resetResult && (
-                            <div className="space-y-3">
-                                <label className={`block text-sm font-medium text-red-400`}>
-                                    Для подтверждения напишите: <strong className="text-white font-mono">УДАЛИТЬ ВСЕ</strong>
+                            <div className={`${theme === 'light' ? 'bg-slate-50 border border-slate-200' : 'bg-slate-800/50 border border-slate-700'} rounded-xl p-5 space-y-4`}>
+                                <label className={`block text-sm font-bold ${theme === 'light' ? 'text-red-600' : 'text-red-400'}`}>
+                                    Для подтверждения напишите: <span className={`font-mono ${theme === 'light' ? 'text-red-700 bg-red-50 px-2 py-0.5 rounded' : 'text-white bg-slate-700 px-2 py-0.5 rounded'}`}>УДАЛИТЬ ВСЕ</span>
                                 </label>
                                 <input
                                     type="text"
                                     value={resetConfirmText}
                                     onChange={(e) => setResetConfirmText(e.target.value)}
-                                    className={`w-full bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3 ${t.text} outline-none focus:ring-2 focus:ring-red-500/50 font-mono`}
+                                    className={`w-full ${theme === 'light' ? 'bg-white border-red-300 focus:border-red-500' : 'bg-red-500/10 border-red-500/30'} border-2 rounded-xl px-4 py-3.5 ${t.text} outline-none focus:ring-2 focus:ring-red-500/50 font-mono text-lg text-center`}
                                     placeholder="УДАЛИТЬ ВСЕ"
                                     disabled={isResetting}
                                 />
@@ -567,20 +573,20 @@ export const Settings: React.FC<SettingsProps> = React.memo(({ settings, onSave,
                                         }
                                     }}
                                     disabled={resetConfirmText !== 'УДАЛИТЬ ВСЕ' || isResetting}
-                                    className={`w-full py-3 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 ${
+                                    className={`w-full py-4 rounded-xl font-bold text-base transition-all flex items-center justify-center gap-2 ${
                                         resetConfirmText === 'УДАЛИТЬ ВСЕ' && !isResetting
-                                            ? 'bg-red-600 hover:bg-red-500 text-white shadow-lg shadow-red-600/30 cursor-pointer'
-                                            : 'bg-slate-700 text-slate-500 cursor-not-allowed'
+                                            ? 'bg-red-600 hover:bg-red-500 text-white shadow-lg shadow-red-600/30 cursor-pointer active:scale-[0.98]'
+                                            : `${theme === 'light' ? 'bg-slate-200 text-slate-400' : 'bg-slate-700 text-slate-500'} cursor-not-allowed`
                                     }`}
                                 >
                                     {isResetting ? (
                                         <>
-                                            <RefreshCw size={16} className="animate-spin" />
+                                            <RefreshCw size={18} className="animate-spin" />
                                             Удаление...
                                         </>
                                     ) : (
                                         <>
-                                            <Trash2 size={16} />
+                                            <Trash2 size={18} />
                                             Удалить все данные
                                         </>
                                     )}

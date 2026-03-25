@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useRef, useCallback } from 'react';
-import { Product, ProductType, WorkflowOrder, OrderItem, Order, Client, Transaction, AppSettings, Employee, JournalEvent, WarehouseLabels } from '../types';
+import { Product, ProductType, WorkflowOrder, OrderItem, Order, Client, Transaction, AppSettings, Employee, JournalEvent, WarehouseLabels, PaymentMethod, Currency } from '../types';
 import { DEFAULT_EXCHANGE_RATE } from '../constants';
 import { IdGenerator } from '../utils/idGenerator';
 import { findOrCreateClient } from '../services/clientService';
@@ -30,8 +30,7 @@ interface WorkflowProps {
   onNavigateToProcurement?: () => void;
 }
 
-type PaymentMethod = 'cash' | 'bank' | 'card' | 'debt';
-type Currency = 'USD' | 'UZS';
+// PaymentMethod and Currency imported from '../types'
 
 export const Workflow: React.FC<WorkflowProps> = ({
   products,
@@ -170,6 +169,13 @@ export const Workflow: React.FC<WorkflowProps> = ({
 
   const toUZS = useCallback((usd: number) => Math.round(usd * (exchangeRate || 1)), [exchangeRate]);
 
+  // Product lookup map to avoid O(n²) searches
+  const productMap = useMemo(() => {
+    const map = new Map<string, Product>();
+    products.forEach(p => map.set(p.id, p));
+    return map;
+  }, [products]);
+
   // Расчёт скидки для заказа относительно прайс-листа
   const getOrderDiscount = useCallback((items: OrderItem[]) => {
     if (!Array.isArray(items) || items.length === 0) return { hasDiscount: false, totalDiscount: 0, discountPercent: 0 };
@@ -178,7 +184,7 @@ export const Workflow: React.FC<WorkflowProps> = ({
     let actualTotal = 0;
 
     items.forEach(it => {
-      const product = products.find(p => p.id === it.productId);
+      const product = productMap.get(it.productId);
       const priceListPrice = product?.pricePerUnit || it.priceAtSale;
       priceListTotal += priceListPrice * it.quantity;
       actualTotal += it.priceAtSale * it.quantity;
@@ -194,7 +200,7 @@ export const Workflow: React.FC<WorkflowProps> = ({
       priceListTotal,
       actualTotal
     };
-  }, [products]);
+  }, [productMap]);
 
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
 
@@ -275,57 +281,70 @@ export const Workflow: React.FC<WorkflowProps> = ({
       toast.warning('Корзина пуста');
       return;
     }
-
-    const missing = getMissingItems(cart, products);
-    const status: WorkflowOrder['status'] = missing.length > 0 ? 'sent_to_procurement' : 'sent_to_cash';
-
-    const isDebt = paymentMethod === 'debt';
-    const amountPaid = isDebt ? 0 : totalUSD;
-    const paymentStatus: WorkflowOrder['paymentStatus'] = isDebt ? 'unpaid' : 'paid';
-    const finalCurrency: Currency | undefined =
-      paymentMethod === 'cash' ? paymentCurrency : paymentMethod === 'debt' ? 'USD' : 'UZS';
-
-    const wf: WorkflowOrder = {
-      id: IdGenerator.workflow(),
-      date: new Date().toISOString(),
-      customerName: customerName.trim(),
-      customerPhone: customerPhone.trim() || undefined,
-      createdBy: currentEmployee?.name || currentEmployee?.email || currentUserEmail || 'sales',
-      sellerId: currentEmployee?.id, // ID продавца для KPI
-      sellerName: currentEmployee?.name || currentUserEmail || 'sales', // Имя продавца
-      items: cart,
-      subtotalAmount: subtotalUSD,
-      vatRateSnapshot: settings.vatRate,
-      vatAmount: vatAmountUSD,
-      totalAmount: totalUSD,
-      exchangeRate,
-      totalAmountUZS: totalUZS,
-      status,
-      notes: notes.trim() || undefined,
-      paymentMethod,
-      paymentStatus,
-      paymentCurrency: finalCurrency,
-      amountPaid
-    };
-
-    await saveWorkflowOrders([wf, ...workflowOrders]);
-
-    if (missing.length > 0) {
-      toast.warning(`Заявка отправлена в закуп (нет остатка по ${missing.length} позициям).`);
-      localStorage.setItem('procurement_active_tab', 'workflow');
-      onNavigateToProcurement?.();
-    } else {
-      toast.success('Заявка отправлена в кассу.');
-      setTab('queue');
+    if (!exchangeRate || exchangeRate <= 0) {
+      toast.warning('Укажите корректный курс обмена');
+      return;
+    }
+    const invalidItem = cart.find(i => i.quantity <= 0 || i.priceAtSale < 0);
+    if (invalidItem) {
+      toast.warning(`Некорректное количество или цена: ${invalidItem.productName}`);
+      return;
     }
 
-    // reset
-    setCart([]);
-    setCustomerName('');
-    setCustomerPhone('');
-    setNotes('');
-    setPaymentMethod('cash');
-    setPaymentCurrency('UZS');
+    try {
+      const missing = getMissingItems(cart, products);
+      const status: WorkflowOrder['status'] = missing.length > 0 ? 'sent_to_procurement' : 'sent_to_cash';
+
+      const isDebt = paymentMethod === 'debt';
+      const amountPaid = isDebt ? 0 : totalUSD;
+      const paymentStatus: WorkflowOrder['paymentStatus'] = isDebt ? 'unpaid' : 'paid';
+      const finalCurrency: Currency | undefined =
+        paymentMethod === 'cash' ? paymentCurrency : paymentMethod === 'debt' ? 'USD' : 'UZS';
+
+      const wf: WorkflowOrder = {
+        id: IdGenerator.workflow(),
+        date: new Date().toISOString(),
+        customerName: customerName.trim(),
+        customerPhone: customerPhone.trim() || undefined,
+        createdBy: currentEmployee?.name || currentEmployee?.email || currentUserEmail || 'sales',
+        sellerId: currentEmployee?.id, // ID продавца для KPI
+        sellerName: currentEmployee?.name || currentUserEmail || 'sales', // Имя продавца
+        items: cart,
+        subtotalAmount: subtotalUSD,
+        vatRateSnapshot: settings.vatRate,
+        vatAmount: vatAmountUSD,
+        totalAmount: totalUSD,
+        exchangeRate,
+        totalAmountUZS: totalUZS,
+        status,
+        notes: notes.trim() || undefined,
+        paymentMethod,
+        paymentStatus,
+        paymentCurrency: finalCurrency,
+        amountPaid
+      };
+
+      await saveWorkflowOrders([wf, ...workflowOrders]);
+
+      if (missing.length > 0) {
+        toast.warning(`Заявка отправлена в закуп (нет остатка по ${missing.length} позициям).`);
+        try { localStorage.setItem('procurement_active_tab', 'workflow'); } catch { /* ignore */ }
+        onNavigateToProcurement?.();
+      } else {
+        toast.success('Заявка отправлена в кассу.');
+        setTab('queue');
+      }
+
+      // Reset only on success
+      setCart([]);
+      setCustomerName('');
+      setCustomerPhone('');
+      setNotes('');
+      setPaymentMethod('cash');
+      setPaymentCurrency('UZS');
+    } catch (error) {
+      toast.error(`Ошибка при создании заявки: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`);
+    }
   };
 
   const approveAndConvert = async (wf: WorkflowOrder) => {
@@ -337,98 +356,103 @@ export const Workflow: React.FC<WorkflowProps> = ({
     const missing = getMissingItems(wf.items, products);
     if (missing.length > 0) {
       toast.warning('Недостаточно остатков. Заявка отправлена в закуп.');
-      const next = workflowOrders.map(o => o.id === wf.id ? { ...o, status: 'sent_to_procurement' as const } : o);
-      await saveWorkflowOrders(next);
+      try {
+        const next = workflowOrders.map(o => o.id === wf.id ? { ...o, status: 'sent_to_procurement' as const } : o);
+        await saveWorkflowOrders(next);
+      } catch (error) {
+        toast.error(`Ошибка при обновлении статуса: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`);
+      }
       onNavigateToProcurement?.();
       return;
     }
 
-    // Create Order (real sale)
-    const newOrder: Order = {
-      id: IdGenerator.order(),
-      date: new Date().toISOString(),
-      customerName: wf.customerName,
-      sellerId: wf.sellerId, // ID продавца для KPI
-      sellerName: wf.sellerName || wf.createdBy || 'Sales',
-      items: wf.items,
-      subtotalAmount: wf.subtotalAmount,
-      vatRateSnapshot: wf.vatRateSnapshot,
-      vatAmount: wf.vatAmount,
-      totalAmount: wf.totalAmount,
-      exchangeRate: wf.exchangeRate,
-      totalAmountUZS: wf.totalAmountUZS,
-      status: 'completed',
-      paymentMethod: wf.paymentMethod,
-      paymentStatus: wf.paymentStatus,
-      amountPaid: wf.amountPaid,
-      paymentCurrency: wf.paymentCurrency
-    };
-
-    // Deduct stock
-    const updatedProducts = products.map(p => {
-      const it = wf.items.find(i => i.productId === p.id);
-      return it ? { ...p, quantity: p.quantity - it.quantity } : p;
-    });
-    // CRITICAL: Save to Sheets FIRST, then update state
-    await onSaveProducts?.(updatedProducts);
-
-    // Update clients stats (auto-create if missing)
-    const { client: foundClient, index: idx, clients: currentClients } = findOrCreateClient(
-      clients, wf.customerName, wf.customerPhone || '', 'Автоматически создан из Workflow'
-    );
-    const clientId = foundClient.id;
-    const isDebt = wf.paymentMethod === 'debt';
-    currentClients[idx] = {
-      ...currentClients[idx],
-      totalPurchases: (currentClients[idx].totalPurchases || 0) + wf.totalAmount,
-      totalDebt: isDebt ? (currentClients[idx].totalDebt || 0) + wf.totalAmount : (currentClients[idx].totalDebt || 0)
-    };
-    onSaveClients(currentClients);
-
-    // Create transaction for debt obligation
-    if (isDebt) {
-      const trx: Transaction = {
-        id: IdGenerator.transaction(),
+    try {
+      // Create Order (real sale)
+      const newOrder: Order = {
+        id: IdGenerator.order(),
         date: new Date().toISOString(),
-        type: 'debt_obligation',
-        amount: wf.totalAmount,
-        currency: 'USD',
-        method: 'debt',
-        description: `Workflow → Долг: ${wf.id}`,
-        relatedId: clientId
+        customerName: wf.customerName,
+        sellerId: wf.sellerId, // ID продавца для KPI
+        sellerName: wf.sellerName || wf.createdBy || 'Sales',
+        items: wf.items,
+        subtotalAmount: wf.subtotalAmount,
+        vatRateSnapshot: wf.vatRateSnapshot,
+        vatAmount: wf.vatAmount,
+        totalAmount: wf.totalAmount,
+        exchangeRate: wf.exchangeRate,
+        totalAmountUZS: wf.totalAmountUZS,
+        status: 'completed',
+        paymentMethod: wf.paymentMethod,
+        paymentStatus: wf.paymentStatus,
+        amountPaid: wf.amountPaid,
+        paymentCurrency: wf.paymentCurrency
       };
-      const updatedTx = [...transactions, trx];
-      // CRITICAL: Save to Sheets FIRST, then update state
-      await onSaveTransactions?.(updatedTx);
+
+      // Deduct stock
+      const updatedProducts = products.map(p => {
+        const it = wf.items.find(i => i.productId === p.id);
+        return it ? { ...p, quantity: p.quantity - it.quantity } : p;
+      });
+      await onSaveProducts?.(updatedProducts);
+
+      // Update clients stats (auto-create if missing)
+      const { client: foundClient, index: idx, clients: currentClients } = findOrCreateClient(
+        clients, wf.customerName, wf.customerPhone || '', 'Автоматически создан из Workflow'
+      );
+      const clientId = foundClient.id;
+      const isDebt = wf.paymentMethod === 'debt';
+      currentClients[idx] = {
+        ...currentClients[idx],
+        totalPurchases: (currentClients[idx].totalPurchases || 0) + wf.totalAmount,
+        totalDebt: isDebt ? (currentClients[idx].totalDebt || 0) + wf.totalAmount : (currentClients[idx].totalDebt || 0)
+      };
+      onSaveClients(currentClients);
+
+      // Create transaction for debt obligation
+      if (isDebt) {
+        const trx: Transaction = {
+          id: IdGenerator.transaction(),
+          date: new Date().toISOString(),
+          type: 'debt_obligation',
+          amount: wf.totalAmount,
+          currency: 'USD',
+          method: 'debt',
+          description: `Workflow → Долг: ${wf.id}`,
+          relatedId: clientId
+        };
+        const updatedTx = [...transactions, trx];
+        await onSaveTransactions?.(updatedTx);
+      }
+
+      // Save orders
+      const updatedOrders = [newOrder, ...orders];
+      await onSaveOrders?.(updatedOrders);
+      setOrders(updatedOrders);
+
+      // Update workflow status
+      const nextWorkflow = workflowOrders.map(o =>
+        o.id === wf.id ? { ...o, status: 'completed' as const, convertedToOrderId: newOrder.id, convertedAt: new Date().toISOString() } : o
+      );
+      await saveWorkflowOrders(nextWorkflow);
+
+      // Journal
+      await onAddJournalEvent?.({
+        id: IdGenerator.journalEvent(),
+        date: new Date().toISOString(),
+        type: 'employee_action',
+        employeeName: currentEmployee?.name || 'Кассир',
+        action: 'Workflow подтвержден',
+        description: `Workflow ${wf.id} подтвержден. Создан заказ ${newOrder.id} на сумму ${wf.totalAmountUZS.toLocaleString()} сум.`,
+        module: 'workflow',
+        relatedType: 'workflow',
+        relatedId: wf.id,
+        metadata: { convertedTo: newOrder.id }
+      });
+
+      toast.success('Подтверждено: продажа создана и склад списан.');
+    } catch (error) {
+      toast.error(`Ошибка при подтверждении заявки: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`);
     }
-
-    // Save orders
-    const updatedOrders = [newOrder, ...orders];
-    // CRITICAL: Save to Sheets FIRST, then update state
-    await onSaveOrders?.(updatedOrders);
-    setOrders(updatedOrders);
-
-    // Update workflow status
-    const nextWorkflow = workflowOrders.map(o =>
-      o.id === wf.id ? { ...o, status: 'completed' as const, convertedToOrderId: newOrder.id, convertedAt: new Date().toISOString() } : o
-    );
-    await saveWorkflowOrders(nextWorkflow);
-
-    // Journal
-    await onAddJournalEvent?.({
-      id: IdGenerator.journalEvent(),
-      date: new Date().toISOString(),
-      type: 'employee_action',
-      employeeName: currentEmployee?.name || 'Кассир',
-      action: 'Workflow подтвержден',
-      description: `Workflow ${wf.id} подтвержден. Создан заказ ${newOrder.id} на сумму ${wf.totalAmountUZS.toLocaleString()} сум.`,
-      module: 'workflow',
-      relatedType: 'workflow',
-      relatedId: wf.id,
-      metadata: { convertedTo: newOrder.id }
-    });
-
-    toast.success('Подтверждено: продажа создана и склад списан.');
   };
 
   // Редактирование аннулированного заказа
@@ -455,72 +479,85 @@ export const Workflow: React.FC<WorkflowProps> = ({
       toast.warning('Корзина пуста');
       return;
     }
-
-    const missing = getMissingItems(cart, products);
-    const status: WorkflowOrder['status'] = missing.length > 0 ? 'sent_to_procurement' : 'sent_to_cash';
-
-    const isDebt = paymentMethod === 'debt';
-    const amountPaid = isDebt ? 0 : totalUSD;
-    const paymentStatus: WorkflowOrder['paymentStatus'] = isDebt ? 'unpaid' : 'paid';
-    const finalCurrency: Currency | undefined =
-      paymentMethod === 'cash' ? paymentCurrency : paymentMethod === 'debt' ? 'USD' : 'UZS';
-
-    // Обновляем существующий заказ (сохраняем оригинального продавца)
-    const updatedWf: WorkflowOrder = {
-      ...editingOrder,
-      date: new Date().toISOString(),
-      customerName: customerName.trim(),
-      customerPhone: customerPhone.trim() || undefined,
-      // Сохраняем оригинального продавца или ставим текущего если не было
-      sellerId: editingOrder.sellerId || currentEmployee?.id,
-      sellerName: editingOrder.sellerName || currentEmployee?.name || currentUserEmail || 'sales',
-      items: cart,
-      subtotalAmount: subtotalUSD,
-      vatRateSnapshot: settings.vatRate,
-      vatAmount: vatAmountUSD,
-      totalAmount: totalUSD,
-      exchangeRate,
-      totalAmountUZS: totalUZS,
-      status,
-      notes: notes.trim() || undefined,
-      paymentMethod,
-      paymentStatus,
-      paymentCurrency: finalCurrency,
-      amountPaid
-    };
-
-    const nextWorkflow = workflowOrders.map(o => o.id === editingOrder.id ? updatedWf : o);
-    await saveWorkflowOrders(nextWorkflow);
-
-    // Journal
-    await onAddJournalEvent?.({
-      id: IdGenerator.journalEvent(),
-      date: new Date().toISOString(),
-      type: 'employee_action',
-      employeeName: currentEmployee?.name || 'Продажи',
-      action: 'Workflow переотправлен',
-      description: `Аннулированный заказ ${editingOrder.id} был отредактирован и переотправлен.`,
-      module: 'workflow',
-      relatedType: 'workflow',
-      relatedId: editingOrder.id
-    });
-
-    if (missing.length > 0) {
-      toast.warning(`Заявка отправлена в закуп (нет остатка по ${missing.length} позициям).`);
-      onNavigateToProcurement?.();
-    } else {
-      toast.success('Заявка переотправлена в кассу.');
+    if (!exchangeRate || exchangeRate <= 0) {
+      toast.warning('Укажите корректный курс обмена');
+      return;
+    }
+    const invalidItem = cart.find(i => i.quantity <= 0 || i.priceAtSale < 0);
+    if (invalidItem) {
+      toast.warning(`Некорректное количество или цена: ${invalidItem.productName}`);
+      return;
     }
 
-    // Reset
-    setEditingOrder(null);
-    setCart([]);
-    setCustomerName('');
-    setCustomerPhone('');
-    setNotes('');
-    setPaymentMethod('cash');
-    setPaymentCurrency('UZS');
-    setTab('queue');
+    try {
+      const missing = getMissingItems(cart, products);
+      const status: WorkflowOrder['status'] = missing.length > 0 ? 'sent_to_procurement' : 'sent_to_cash';
+
+      const isDebt = paymentMethod === 'debt';
+      const amountPaid = isDebt ? 0 : totalUSD;
+      const paymentStatus: WorkflowOrder['paymentStatus'] = isDebt ? 'unpaid' : 'paid';
+      const finalCurrency: Currency | undefined =
+        paymentMethod === 'cash' ? paymentCurrency : paymentMethod === 'debt' ? 'USD' : 'UZS';
+
+      // Обновляем существующий заказ (сохраняем оригинального продавца)
+      const updatedWf: WorkflowOrder = {
+        ...editingOrder,
+        date: new Date().toISOString(),
+        customerName: customerName.trim(),
+        customerPhone: customerPhone.trim() || undefined,
+        // Сохраняем оригинального продавца или ставим текущего если не было
+        sellerId: editingOrder.sellerId || currentEmployee?.id,
+        sellerName: editingOrder.sellerName || currentEmployee?.name || currentUserEmail || 'sales',
+        items: cart,
+        subtotalAmount: subtotalUSD,
+        vatRateSnapshot: settings.vatRate,
+        vatAmount: vatAmountUSD,
+        totalAmount: totalUSD,
+        exchangeRate,
+        totalAmountUZS: totalUZS,
+        status,
+        notes: notes.trim() || undefined,
+        paymentMethod,
+        paymentStatus,
+        paymentCurrency: finalCurrency,
+        amountPaid
+      };
+
+      const nextWorkflow = workflowOrders.map(o => o.id === editingOrder.id ? updatedWf : o);
+      await saveWorkflowOrders(nextWorkflow);
+
+      // Journal
+      await onAddJournalEvent?.({
+        id: IdGenerator.journalEvent(),
+        date: new Date().toISOString(),
+        type: 'employee_action',
+        employeeName: currentEmployee?.name || 'Продажи',
+        action: 'Workflow переотправлен',
+        description: `Аннулированный заказ ${editingOrder.id} был отредактирован и переотправлен.`,
+        module: 'workflow',
+        relatedType: 'workflow',
+        relatedId: editingOrder.id
+      });
+
+      if (missing.length > 0) {
+        toast.warning(`Заявка отправлена в закуп (нет остатка по ${missing.length} позициям).`);
+        onNavigateToProcurement?.();
+      } else {
+        toast.success('Заявка переотправлена в кассу.');
+      }
+
+      // Reset only on success
+      setEditingOrder(null);
+      setCart([]);
+      setCustomerName('');
+      setCustomerPhone('');
+      setNotes('');
+      setPaymentMethod('cash');
+      setPaymentCurrency('UZS');
+      setTab('queue');
+    } catch (error) {
+      toast.error(`Ошибка при переотправке: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`);
+    }
   };
 
   const cancelEdit = () => {
@@ -550,18 +587,22 @@ export const Workflow: React.FC<WorkflowProps> = ({
     return s;
   }, []);
 
-  const queue = useMemo(() => {
-    // Sales sees own + all if manager/admin
+  // DRY: shared filter for role-based order access
+  const accessibleOrders = useMemo(() => {
     const isManager = currentEmployee?.role === 'manager' || currentEmployee?.role === 'admin';
-    const list = isManager ? workflowOrders : workflowOrders.filter(o => (o.createdBy || '').toLowerCase().includes((currentEmployee?.name || currentEmployee?.email || '').toLowerCase()));
-    return list.filter(o => o.status !== 'cancelled' && o.status !== 'completed');
+    if (isManager) return workflowOrders;
+    const userIdentifier = (currentEmployee?.name || currentEmployee?.email || '').toLowerCase();
+    if (!userIdentifier) return workflowOrders;
+    return workflowOrders.filter(o => (o.createdBy || '').toLowerCase() === userIdentifier);
   }, [workflowOrders, currentEmployee]);
 
+  const queue = useMemo(() => {
+    return accessibleOrders.filter(o => o.status !== 'cancelled' && o.status !== 'completed');
+  }, [accessibleOrders]);
+
   const cancelledOrders = useMemo(() => {
-    const isManager = currentEmployee?.role === 'manager' || currentEmployee?.role === 'admin';
-    const list = isManager ? workflowOrders : workflowOrders.filter(o => (o.createdBy || '').toLowerCase().includes((currentEmployee?.name || currentEmployee?.email || '').toLowerCase()));
-    return list.filter(o => o.status === 'cancelled');
-  }, [workflowOrders, currentEmployee]);
+    return accessibleOrders.filter(o => o.status === 'cancelled');
+  }, [accessibleOrders]);
 
   return (
     <div className="p-4 space-y-4 animate-fade-in h-[calc(100vh-80px)] flex flex-col">

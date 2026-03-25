@@ -149,11 +149,6 @@ import {
      */
     async update(id: string, updates: Partial<Client>): Promise<void> {
       try {
-        const validation = validateClient(updates);
-        if (!validation.isValid) {
-          throw new Error(`Ошибка валидации: ${validation.errors.join(', ')}`);
-        }
-
         const docRef = doc(db, CLIENTS_COLLECTION, id);
 
         await runTransaction(db, async (transaction) => {
@@ -164,10 +159,17 @@ import {
           }
 
           const currentData = fromFirestore(docSnap);
+          const mergedData = { ...currentData, ...updates, id };
+
+          const validation = validateClient(mergedData);
+          if (!validation.isValid) {
+            throw new Error(`Ошибка валидации: ${validation.errors.join(', ')}`);
+          }
+
           const newVersion = (currentData._version || 0) + 1;
 
           const updateData: Record<string, unknown> = {
-            ...toFirestore({ ...currentData, ...updates, id } as Client),
+            ...toFirestore(mergedData as Client),
             _version: newVersion
           };
 
