@@ -94,3 +94,26 @@ jobs:
         id: deployment
         uses: actions/deploy-pages@v4
 
+  deploy-functions:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Cloud Functions dependencies
+        run: cd functions && npm ci
+
+      - name: Deploy Cloud Functions to Firebase
+        uses: w9jds/firebase-action@master
+        with:
+          args: deploy --only functions
+        env:
+          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+

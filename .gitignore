@@ -18,6 +18,9 @@ dist-ssr
 .env.production
 .env.development
 
+# Firebase Admin SDK service account keys
+*-adminsdk-*.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
