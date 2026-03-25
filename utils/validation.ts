@@ -68,9 +68,7 @@ export const validateClient = (client: {
     errors.push('Имя обязательно для заполнения');
   }
 
-  if (!validateRequired(client.phone)) {
-    errors.push('Телефон обязателен для заполнения');
-  } else if (!validatePhone(client.phone)) {
+  if (client.phone && !validatePhone(client.phone)) {
     errors.push('Некорректный формат телефона');
   }
 
