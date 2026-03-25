@@ -328,7 +328,10 @@ export const Workflow: React.FC<WorkflowProps> = ({
 
       if (missing.length > 0) {
         toast.warning(`Заявка отправлена в закуп (нет остатка по ${missing.length} позициям).`);
-        try { localStorage.setItem('procurement_active_tab', 'workflow'); } catch { /* ignore */ }
+        try {
+          localStorage.setItem('procurement_active_tab', 'workflow');
+          localStorage.setItem('procurement_prefill_workflow_id', wf.id);
+        } catch { /* ignore */ }
         onNavigateToProcurement?.();
       } else {
         toast.success('Заявка отправлена в кассу.');
@@ -362,6 +365,7 @@ export const Workflow: React.FC<WorkflowProps> = ({
       } catch (error) {
         toast.error(`Ошибка при обновлении статуса: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`);
       }
+      try { localStorage.setItem('procurement_prefill_workflow_id', wf.id); } catch { /* ignore */ }
       onNavigateToProcurement?.();
       return;
     }
@@ -541,6 +545,7 @@ export const Workflow: React.FC<WorkflowProps> = ({
 
       if (missing.length > 0) {
         toast.warning(`Заявка отправлена в закуп (нет остатка по ${missing.length} позициям).`);
+        try { localStorage.setItem('procurement_prefill_workflow_id', editingOrder.id); } catch { /* ignore */ }
         onNavigateToProcurement?.();
       } else {
         toast.success('Заявка переотправлена в кассу.');

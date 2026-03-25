@@ -103,6 +103,42 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, clients, set
         localStorage.setItem('procurement_active_tab', activeTab);
     }, [activeTab]);
 
+    // Auto-fill cart when navigating from Workflow "В закуп" button
+    React.useEffect(() => {
+        const prefillId = localStorage.getItem('procurement_prefill_workflow_id');
+        if (!prefillId) return;
+        const wf = workflowOrders.find(o => o.id === prefillId && o.status === 'sent_to_procurement');
+        if (!wf) return;
+        localStorage.removeItem('procurement_prefill_workflow_id');
+        const missing = getMissingItems(wf.items, products);
+        if (missing.length === 0) {
+            toast.info('Все позиции уже есть в остатках. Можно отправить заявку в кассу.');
+            setActiveTab('workflow');
+            return;
+        }
+        setProcurementType('local');
+        setActiveTab('new');
+        setSupplierName(`Workflow: ${wf.customerName} (${wf.id})`);
+        setDate(new Date().toISOString().split('T')[0]);
+        setPaymentMethod('debt');
+        setPaymentCurrency('USD');
+        setCart(missing.map(m => {
+            const p = products.find(pp => pp.id === m.item.productId);
+            return {
+                productId: m.item.productId,
+                productName: m.item.productName,
+                quantity: m.missingQty,
+                unit: p?.unit || m.item.unit,
+                invoicePrice: 0,
+                landedCost: 0,
+                totalLineCost: 0,
+                dimensions: p?.dimensions || m.item.dimensions || ''
+            } as PurchaseItem;
+        }));
+        toast.success('Черновик закупки создан из заявки. Укажите цены и проведите закупку.');
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [workflowOrders, products]);
+
     const isFullyInStock = (wf: WorkflowOrder) => getMissingItems(wf.items, products).length === 0;
 
     const workflowQueue = useMemo(() => {
@@ -463,6 +499,33 @@ export const Procurement: React.FC<ProcurementProps> = ({ products, clients, set
             });
 
             logger.info('Procurement', `Purchase committed via CF: ${result.purchaseId}`);
+
+            // Auto-promote workflow orders that are now fully in stock
+            const pendingWorkflows = workflowOrders.filter(o => o.status === 'sent_to_procurement');
+            if (pendingWorkflows.length > 0) {
+                // Compute expected post-purchase quantities (Firestore subscription hasn't updated yet)
+                const purchasedQtyMap = new Map<string, number>();
+                for (const item of cart) {
+                    purchasedQtyMap.set(item.productId, (purchasedQtyMap.get(item.productId) || 0) + item.quantity);
+                }
+                const updatedProducts = products.map(p => {
+                    const added = purchasedQtyMap.get(p.id);
+                    return added ? { ...p, quantity: (p.quantity || 0) + added } : p;
+                });
+                const toPromote = pendingWorkflows.filter(wf => getMissingItems(wf.items, updatedProducts).length === 0);
+                if (toPromote.length > 0) {
+                    const promoteIds = new Set(toPromote.map(w => w.id));
+                    const nextOrders = workflowOrders.map(o =>
+                        promoteIds.has(o.id) ? { ...o, status: 'sent_to_cash' as const } : o
+                    );
+                    try {
+                        await onSaveWorkflowOrders(nextOrders);
+                        toast.success(`${toPromote.length} заявок автоматически отправлено в кассу.`);
+                    } catch {
+                        logger.warn('Procurement', 'Auto-promote workflow orders failed');
+                    }
+                }
+            }
 
             // Reset form
             setCart([]);

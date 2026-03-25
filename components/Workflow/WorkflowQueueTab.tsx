@@ -119,7 +119,10 @@ export const WorkflowQueueTab = React.memo<WorkflowQueueTabProps>(({
                     })()}
                   </div>
                   {wf.status === 'sent_to_procurement' && (
-                    <button onClick={onNavigateToProcurement} className={`px-2 py-1 rounded ${t.warningBg} border ${theme === 'light' ? 'border-amber-200' : 'border-amber-500/20'} ${t.warning} text-[10px] font-medium`}>
+                    <button onClick={() => {
+                      try { localStorage.setItem('procurement_prefill_workflow_id', wf.id); } catch { /* ignore */ }
+                      onNavigateToProcurement?.();
+                    }} className={`px-2 py-1 rounded ${t.warningBg} border ${theme === 'light' ? 'border-amber-200' : 'border-amber-500/20'} ${t.warning} text-[10px] font-medium`}>
                       В закуп
                     </button>
                   )}
