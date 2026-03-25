@@ -1,21 +1,41 @@
 import React, { useState, useEffect, lazy, Suspense, useMemo, useCallback } from 'react';
 import { Shield, RefreshCw } from 'lucide-react';
 
+// Retry wrapper for lazy imports — handles stale chunk 404s after Vercel redeploy
+function lazyRetry<T extends React.ComponentType<any>>(
+  factory: () => Promise<{ default: T }>,
+): React.LazyExoticComponent<T> {
+  return lazy(() =>
+    factory().catch((err: unknown) => {
+      // If chunk failed to load (404 after deploy), reload once
+      const reloaded = sessionStorage.getItem('chunk_reload');
+      if (!reloaded) {
+        sessionStorage.setItem('chunk_reload', '1');
+        window.location.reload();
+        // Return a never-resolving promise so React doesn't render the error
+        return new Promise<{ default: T }>(() => {});
+      }
+      sessionStorage.removeItem('chunk_reload');
+      throw err;
+    }),
+  );
+}
+
 // Lazy load components for better performance
-const Dashboard = lazy(() => import('./components/Dashboard').then(m => ({ default: m.Dashboard })));
-const Inventory = lazy(() => import('./components/Inventory').then(m => ({ default: m.Inventory })));
-const Sales = lazy(() => import('./components/Sales').then(m => ({ default: m.Sales })));
-const Procurement = lazy(() => import('./components/Procurement').then(m => ({ default: m.Procurement })));
-const Balance = lazy(() => import('./components/Balance').then(m => ({ default: m.Balance })));
-const CRM = lazy(() => import('./components/CRM').then(m => ({ default: m.CRM })));
-const Reports = lazy(() => import('./components/Reports').then(m => ({ default: m.Reports })));
-const Staff = lazy(() => import('./components/Staff').then(m => ({ default: m.Staff })));
-const JournalEventsView = lazy(() => import('./components/JournalEventsView').then(m => ({ default: m.JournalEventsView })));
-const FixedAssets = lazy(() => import('./components/FixedAssets').then(m => ({ default: m.FixedAssets })));
-const SettingsComponent = lazy(() => import('./components/Settings').then(m => ({ default: m.Settings })));
-const Workflow = lazy(() => import('./components/Workflow').then(m => ({ default: m.Workflow })));
-const PriceList = lazy(() => import('./components/PriceList').then(m => ({ default: m.PriceList })));
-const Payroll = lazy(() => import('./components/Payroll').then(m => ({ default: m.Payroll })));
+const Dashboard = lazyRetry(() => import('./components/Dashboard').then(m => ({ default: m.Dashboard })));
+const Inventory = lazyRetry(() => import('./components/Inventory').then(m => ({ default: m.Inventory })));
+const Sales = lazyRetry(() => import('./components/Sales').then(m => ({ default: m.Sales })));
+const Procurement = lazyRetry(() => import('./components/Procurement').then(m => ({ default: m.Procurement })));
+const Balance = lazyRetry(() => import('./components/Balance').then(m => ({ default: m.Balance })));
+const CRM = lazyRetry(() => import('./components/CRM').then(m => ({ default: m.CRM })));
+const Reports = lazyRetry(() => import('./components/Reports').then(m => ({ default: m.Reports })));
+const Staff = lazyRetry(() => import('./components/Staff').then(m => ({ default: m.Staff })));
+const JournalEventsView = lazyRetry(() => import('./components/JournalEventsView').then(m => ({ default: m.JournalEventsView })));
+const FixedAssets = lazyRetry(() => import('./components/FixedAssets').then(m => ({ default: m.FixedAssets })));
+const SettingsComponent = lazyRetry(() => import('./components/Settings').then(m => ({ default: m.Settings })));
+const Workflow = lazyRetry(() => import('./components/Workflow').then(m => ({ default: m.Workflow })));
+const PriceList = lazyRetry(() => import('./components/PriceList').then(m => ({ default: m.PriceList })));
+const Payroll = lazyRetry(() => import('./components/Payroll').then(m => ({ default: m.Payroll })));
 
 import { Login } from './components/Login';
 import { ErrorBoundary } from './components/ErrorBoundary';
