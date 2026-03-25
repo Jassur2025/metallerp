@@ -309,7 +309,7 @@ function generateVat(
 export const generateReport = onCall(
   {
     region: "europe-west1",
-    enforceAppCheck: true,
+    enforceAppCheck: false,
     memory: "512MiB",
     timeoutSeconds: 120,
   },

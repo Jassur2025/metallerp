@@ -25,7 +25,7 @@ import type { LedgerEntryData } from "../utils/finance";
 export const deleteOrder = onCall(
   {
     region: "europe-west1",
-    enforceAppCheck: true,
+    enforceAppCheck: false,
     memory: "256MiB",
     timeoutSeconds: 30,
   },

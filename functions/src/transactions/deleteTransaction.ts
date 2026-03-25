@@ -33,7 +33,7 @@ function toUSD(tx: { amount?: number; currency?: string; exchangeRate?: number }
 export const deleteTransaction = onCall(
   {
     region: "europe-west1",
-    enforceAppCheck: true,
+    enforceAppCheck: false,
     memory: "256MiB",
     timeoutSeconds: 30,
   },

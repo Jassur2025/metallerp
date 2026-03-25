@@ -34,7 +34,7 @@ import { AccountCode, cashAccount, type LedgerEntryData } from "../utils/finance
 export const purchaseFixedAsset = onCall(
   {
     region: "europe-west1",
-    enforceAppCheck: true,
+    enforceAppCheck: false,
     memory: "256MiB",
     timeoutSeconds: 30,
   },

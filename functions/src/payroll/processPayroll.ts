@@ -27,7 +27,7 @@ const DEFAULT_EXCHANGE_RATE = 12800;
 export const processPayroll = onCall(
   {
     region: "europe-west1",
-    enforceAppCheck: true,
+    enforceAppCheck: false,
     memory: "512MiB",
     timeoutSeconds: 60,
   },

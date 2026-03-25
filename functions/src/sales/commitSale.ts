@@ -76,7 +76,7 @@ function generateTransactionId(): string {
 export const commitSale = onCall(
   {
     region: "europe-west1",
-    enforceAppCheck: true,
+    enforceAppCheck: false,
     memory: "256MiB",
     timeoutSeconds: 60,
   },

@@ -87,7 +87,7 @@ function buildLedgerEntries(
 export const updateTransaction = onCall(
   {
     region: "europe-west1",
-    enforceAppCheck: true,
+    enforceAppCheck: false,
     memory: "256MiB",
     timeoutSeconds: 30,
   },
