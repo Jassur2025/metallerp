@@ -88,6 +88,7 @@ export const updateTransaction = onCall(
   {
     region: "europe-west1",
     enforceAppCheck: false,
+    cors: true,
     memory: "256MiB",
     timeoutSeconds: 30,
   },

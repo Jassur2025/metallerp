@@ -25,6 +25,7 @@ export const deleteFixedAsset = onCall(
   {
     region: "europe-west1",
     enforceAppCheck: false,
+    cors: true,
     memory: "256MiB",
     timeoutSeconds: 30,
   },

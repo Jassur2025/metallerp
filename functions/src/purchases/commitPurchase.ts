@@ -87,6 +87,7 @@ export const commitPurchase = onCall(
   {
     region: "europe-west1",
     enforceAppCheck: false,
+    cors: true,
     memory: "256MiB",
     timeoutSeconds: 60,
   },

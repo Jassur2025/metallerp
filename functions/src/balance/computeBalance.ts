@@ -142,6 +142,7 @@ export const computeBalance = onCall(
   {
     region: "europe-west1",
     enforceAppCheck: false,
+    cors: true,
     memory: "512MiB", // Larger — reads many collections
     timeoutSeconds: 120,
   },

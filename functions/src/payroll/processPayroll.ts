@@ -28,6 +28,7 @@ export const processPayroll = onCall(
   {
     region: "europe-west1",
     enforceAppCheck: false,
+    cors: true,
     memory: "512MiB",
     timeoutSeconds: 60,
   },

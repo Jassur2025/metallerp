@@ -310,6 +310,7 @@ export const generateReport = onCall(
   {
     region: "europe-west1",
     enforceAppCheck: false,
+    cors: true,
     memory: "512MiB",
     timeoutSeconds: 120,
   },
