@@ -89,17 +89,17 @@ export const commitSale = onCall(
     const userEmail = request.auth.token.email || request.auth.uid;
     const uid = request.auth.uid;
 
-    // 1b. Role check — only admin or active employees can create sales
-    const userDoc = await getFirestore().doc(`users/${uid}`).get();
-    if (!userDoc.exists || userDoc.data()?.role !== "admin") {
-      // Fallback: check employees collection for active status
-      const empDoc = await getFirestore().doc(`employees/${uid}`).get();
-      if (!empDoc.exists || empDoc.data()?.status === "inactive") {
-        throw new HttpsError(
-          "permission-denied",
-          "You do not have permission to create sales",
-        );
-      }
+    // 1b. Check employee status and permissions by email
+    const empSnapshot = await getFirestore().collection("employees")
+      .where("email", "==", userEmail)
+      .limit(1)
+      .get();
+    
+    if (empSnapshot.empty || empSnapshot.docs[0].data()?.status === "inactive") {
+      throw new HttpsError(
+        "permission-denied",
+        "You do not have permission to create sales",
+      );
     }
 
     // 2. Rate limiting

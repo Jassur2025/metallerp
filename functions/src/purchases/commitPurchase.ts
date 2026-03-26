@@ -101,9 +101,13 @@ export const commitPurchase = onCall(
 
     const db = getFirestore();
     
-    // Check if employee has 'import' (procurement) permission
-    const userDoc = await db.doc(`employees/${uid}`).get();
-    if (!userDoc.exists || !userDoc.data()?.permissions?.import) {
+    // Check if employee has 'import' (procurement) permission by email
+    const empSnapshot = await db.collection("employees")
+      .where("email", "==", userEmail)
+      .limit(1)
+      .get();
+    
+    if (empSnapshot.empty || !empSnapshot.docs[0].data()?.permissions?.import) {
       throw new HttpsError("permission-denied", "No permission to create purchases");
     }
 

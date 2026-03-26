@@ -91,13 +91,14 @@ export const processPayment = onCall(
 
     const db = getFirestore();
 
-    // Check admin or active employee
-    const userDoc = await db.doc(`users/${uid}`).get();
-    if (!userDoc.exists || userDoc.data()?.role !== "admin") {
-      const empDoc = await db.doc(`employees/${uid}`).get();
-      if (!empDoc.exists || empDoc.data()?.status === "inactive") {
-        throw new HttpsError("permission-denied", "Insufficient permissions");
-      }
+    // Check employee by email
+    const empSnapshot = await db.collection("employees")
+      .where("email", "==", userEmail)
+      .limit(1)
+      .get();
+    
+    if (empSnapshot.empty || empSnapshot.docs[0].data()?.status === "inactive") {
+      throw new HttpsError("permission-denied", "Insufficient permissions");
     }
 
     // 2. Rate limiting
