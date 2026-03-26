@@ -100,9 +100,11 @@ export const commitPurchase = onCall(
     const userEmail = request.auth.token.email || uid;
 
     const db = getFirestore();
-    const userDoc = await db.doc(`users/${uid}`).get();
-    if (!userDoc.exists || userDoc.data()?.role !== "admin") {
-      throw new HttpsError("permission-denied", "Only admins can create purchases");
+    
+    // Check if employee has 'import' (procurement) permission
+    const userDoc = await db.doc(`employees/${uid}`).get();
+    if (!userDoc.exists || !userDoc.data()?.permissions?.import) {
+      throw new HttpsError("permission-denied", "No permission to create purchases");
     }
 
     // 2. Rate limiting
