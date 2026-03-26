@@ -87,7 +87,7 @@ export const processPayment = onCall(
       throw new HttpsError("unauthenticated", "Authentication required");
     }
     const uid = request.auth.uid;
-    const userEmail = request.auth.token.email || uid;
+    const userEmail = (request.auth.token.email || uid).toLowerCase();
 
     const db = getFirestore();
 

@@ -86,7 +86,7 @@ export const commitSale = onCall(
     if (!request.auth) {
       throw new HttpsError("unauthenticated", "Authentication required");
     }
-    const userEmail = request.auth.token.email || request.auth.uid;
+    const userEmail = (request.auth.token.email || request.auth.uid).toLowerCase();
     const uid = request.auth.uid;
 
     // 1b. Check employee status and permissions by email

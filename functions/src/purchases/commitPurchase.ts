@@ -97,11 +97,11 @@ export const commitPurchase = onCall(
       throw new HttpsError("unauthenticated", "Authentication required");
     }
     const uid = request.auth.uid;
-    const userEmail = request.auth.token.email || uid;
+    const userEmail = (request.auth.token.email || uid).toLowerCase();
 
     const db = getFirestore();
     
-    // Check if employee has 'import' (procurement) permission by email
+    // Check if employee has 'import' (procurement) permission by email (case-insensitive)
     const empSnapshot = await db.collection("employees")
       .where("email", "==", userEmail)
       .limit(1)
